@@ -1,3 +1,4 @@
+import { noiseLib   } from './noiseLib.js';
 import { shadingLib } from './shadingLib.js';
 
 export const mainVert = `
@@ -46,20 +47,10 @@ void loadBalls() {
   p=texture2D(stateTex,vec2(33.5*S,0.5)); v=texture2D(stateTex,vec2(34.5*S,0.5)); gC11=p.xyz; gR_11=p.w; gS_11=v.w;
 }
 
-// ── perlin noise ──────────────────────────────────────────────────────────────
+// ── noise (noiseLib) ──────────────────────────────────────────────────────────
+// Provides: perlin2D, worley2D, worley3D
 
-vec2 fade(vec2 t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
-vec2 grad(vec2 p) { float h = hash(p) * 6.2831853; return vec2(cos(h), sin(h)); }
-
-float perlin2D(vec2 p) {
-  vec2 i = floor(p); vec2 f = fract(p); vec2 u = fade(f);
-  float a = dot(grad(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0));
-  float b = dot(grad(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
-  float c = dot(grad(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
-  float d = dot(grad(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
-  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
+${noiseLib}
 
 // ── radius modulation: r_i(t) = r_i^0 * (1 + alpha * N(c_i, t)) ──────────────
 
