@@ -6,30 +6,43 @@ void main() {
 
 export const mainFrag = `
 precision highp float;
+precision highp sampler2D;
 
-uniform float time;
-uniform vec2  resolution;
-uniform vec3  camPos;
-uniform float phase;
+uniform float     time;
+uniform vec2      resolution;
+uniform vec3      camPos;
+uniform float     phase;
 uniform sampler2D envMap;
 uniform sampler2D envMapNext;
-uniform float envBlend;
-uniform float reflectAll;
+uniform float     envBlend;
+uniform float     reflectAll;
+uniform sampler2D stateTex;
 
-uniform vec3 p1;
-uniform vec3 p2;
-uniform vec3 p3;
-uniform vec3 p4;
-uniform vec3 p5;
-uniform vec3 p6;
-uniform vec3 p7;
-uniform vec3 p8;
-uniform vec3 p9;
-uniform vec3 p10;
-uniform vec3 p11;
-uniform vec3 p12;
+// ── ball data cache (populated once per fragment) ─────────────────────────────
+// Avoids repeated texture reads inside the raymarch / normal loops.
 
-// ── env map ──────────────────────────────────────────────────────────────────
+vec3  gC0,  gC1,  gC2,  gC3,  gC4,  gC5,  gC6,  gC7,  gC8,  gC9,  gC10, gC11;
+float gR_0, gR_1, gR_2, gR_3, gR_4, gR_5, gR_6, gR_7, gR_8, gR_9, gR_10, gR_11;
+float gS_0, gS_1, gS_2, gS_3, gS_4, gS_5, gS_6, gS_7, gS_8, gS_9, gS_10, gS_11;
+
+void loadBalls() {
+  const float S = 1.0 / 36.0;
+  vec4 p; vec4 v;
+  p=texture2D(stateTex,vec2( 0.5*S,0.5)); v=texture2D(stateTex,vec2( 1.5*S,0.5)); gC0 =p.xyz; gR_0 =p.w; gS_0 =v.w;
+  p=texture2D(stateTex,vec2( 3.5*S,0.5)); v=texture2D(stateTex,vec2( 4.5*S,0.5)); gC1 =p.xyz; gR_1 =p.w; gS_1 =v.w;
+  p=texture2D(stateTex,vec2( 6.5*S,0.5)); v=texture2D(stateTex,vec2( 7.5*S,0.5)); gC2 =p.xyz; gR_2 =p.w; gS_2 =v.w;
+  p=texture2D(stateTex,vec2( 9.5*S,0.5)); v=texture2D(stateTex,vec2(10.5*S,0.5)); gC3 =p.xyz; gR_3 =p.w; gS_3 =v.w;
+  p=texture2D(stateTex,vec2(12.5*S,0.5)); v=texture2D(stateTex,vec2(13.5*S,0.5)); gC4 =p.xyz; gR_4 =p.w; gS_4 =v.w;
+  p=texture2D(stateTex,vec2(15.5*S,0.5)); v=texture2D(stateTex,vec2(16.5*S,0.5)); gC5 =p.xyz; gR_5 =p.w; gS_5 =v.w;
+  p=texture2D(stateTex,vec2(18.5*S,0.5)); v=texture2D(stateTex,vec2(19.5*S,0.5)); gC6 =p.xyz; gR_6 =p.w; gS_6 =v.w;
+  p=texture2D(stateTex,vec2(21.5*S,0.5)); v=texture2D(stateTex,vec2(22.5*S,0.5)); gC7 =p.xyz; gR_7 =p.w; gS_7 =v.w;
+  p=texture2D(stateTex,vec2(24.5*S,0.5)); v=texture2D(stateTex,vec2(25.5*S,0.5)); gC8 =p.xyz; gR_8 =p.w; gS_8 =v.w;
+  p=texture2D(stateTex,vec2(27.5*S,0.5)); v=texture2D(stateTex,vec2(28.5*S,0.5)); gC9 =p.xyz; gR_9 =p.w; gS_9 =v.w;
+  p=texture2D(stateTex,vec2(30.5*S,0.5)); v=texture2D(stateTex,vec2(31.5*S,0.5)); gC10=p.xyz; gR_10=p.w; gS_10=v.w;
+  p=texture2D(stateTex,vec2(33.5*S,0.5)); v=texture2D(stateTex,vec2(34.5*S,0.5)); gC11=p.xyz; gR_11=p.w; gS_11=v.w;
+}
+
+// ── env map ───────────────────────────────────────────────────────────────────
 
 vec2 envUV(vec3 dir) {
   const float PI = 3.14159265;
@@ -40,33 +53,23 @@ vec2 envUV(vec3 dir) {
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
-vec3 backgroundColor  = vec3(0.0);
-vec3 lightDirection   = normalize(vec3(2.0, 2.5, 2.0));
-
-vec3 base             = vec3(0.35, 0.47, 0.5);
-vec3 innerColor       = vec3(0.5,  0.75, 1.2);
-vec3 outerGlowColor   = vec3(0.35, 0.9,  0.7);
-vec3 innerGlowColor   = vec3(0.2,  0.9,  0.8);
+vec3 backgroundColor = vec3(0.0);
+vec3 lightDirection  = normalize(vec3(2.0, 2.5, 2.0));
+vec3 base            = vec3(0.35, 0.47, 0.5);
+vec3 innerColor      = vec3(0.5,  0.75, 1.2);
+vec3 outerGlowColor  = vec3(0.35, 0.9,  0.7);
+vec3 innerGlowColor  = vec3(0.2,  0.9,  0.8);
 
 // ── perlin noise ──────────────────────────────────────────────────────────────
 
-vec2 fade(vec2 t) {
-  return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
-}
+vec2 fade(vec2 t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
 
-float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-}
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
 
-vec2 grad(vec2 p) {
-  float h = hash(p) * 6.2831853;
-  return vec2(cos(h), sin(h));
-}
+vec2 grad(vec2 p) { float h = hash(p) * 6.2831853; return vec2(cos(h), sin(h)); }
 
 float perlin2D(vec2 p) {
-  vec2 i = floor(p);
-  vec2 f = fract(p);
-  vec2 u = fade(f);
+  vec2 i = floor(p); vec2 f = fract(p); vec2 u = fade(f);
   float a = dot(grad(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0));
   float b = dot(grad(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
   float c = dot(grad(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
@@ -85,38 +88,37 @@ float radiusMod(vec3 c, float r0, float seed) {
 
 // ── SDF ───────────────────────────────────────────────────────────────────────
 
-float sphere(vec3 p, vec3 c, float r) {
-  return length(p - c) - r;
-}
+float sphere(vec3 p, vec3 c, float r) { return length(p - c) - r; }
 
 float smin(float a, float b, float k) {
   float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
   return mix(b, a, h) - k * h * (1.0 - h);
 }
 
-// d_hat(x,t) = smin(...) + beta * N(x,t)
+// d_hat(x,t) = smin_i(sphere(x, c_i, r_i(t))) + beta * N(x,t)
+// Uses pre-loaded globals — no texture reads inside this function.
 float map(vec3 p) {
-  float d = smin(sphere(p, p1,  radiusMod(p1,  0.20, 1.0)),
-                 sphere(p, p2,  radiusMod(p2,  0.17, 2.0)), 0.35);
-  d = smin(d, sphere(p, p3,  radiusMod(p3,  0.13, 3.0)),  0.35);
-  d = smin(d, sphere(p, p4,  radiusMod(p4,  0.15, 4.0)),  0.35);
-  d = smin(d, sphere(p, p5,  radiusMod(p5,  0.18, 5.0)),  0.35);
-  d = smin(d, sphere(p, p6,  radiusMod(p6,  0.14, 6.0)),  0.35);
-  d = smin(d, sphere(p, p7,  radiusMod(p7,  0.16, 7.0)),  0.35);
-  d = smin(d, sphere(p, p8,  radiusMod(p8,  0.19, 8.0)),  0.35);
-  d = smin(d, sphere(p, p9,  radiusMod(p9,  0.12, 9.0)),  0.35);
-  d = smin(d, sphere(p, p10, radiusMod(p10, 0.21, 10.0)), 0.35);
-  d = smin(d, sphere(p, p11, radiusMod(p11, 0.15, 11.0)), 0.35);
-  d = smin(d, sphere(p, p12, radiusMod(p12, 0.17, 12.0)), 0.35);
+  float d = sphere(p, gC0,  radiusMod(gC0,  gR_0,  gS_0));
+  d = smin(d, sphere(p, gC1,  radiusMod(gC1,  gR_1,  gS_1)),  0.35);
+  d = smin(d, sphere(p, gC2,  radiusMod(gC2,  gR_2,  gS_2)),  0.35);
+  d = smin(d, sphere(p, gC3,  radiusMod(gC3,  gR_3,  gS_3)),  0.35);
+  d = smin(d, sphere(p, gC4,  radiusMod(gC4,  gR_4,  gS_4)),  0.35);
+  d = smin(d, sphere(p, gC5,  radiusMod(gC5,  gR_5,  gS_5)),  0.35);
+  d = smin(d, sphere(p, gC6,  radiusMod(gC6,  gR_6,  gS_6)),  0.35);
+  d = smin(d, sphere(p, gC7,  radiusMod(gC7,  gR_7,  gS_7)),  0.35);
+  d = smin(d, sphere(p, gC8,  radiusMod(gC8,  gR_8,  gS_8)),  0.35);
+  d = smin(d, sphere(p, gC9,  radiusMod(gC9,  gR_9,  gS_9)),  0.35);
+  d = smin(d, sphere(p, gC10, radiusMod(gC10, gR_10, gS_10)), 0.35);
+  d = smin(d, sphere(p, gC11, radiusMod(gC11, gR_11, gS_11)), 0.35);
 
+  // surface perturbation: d_hat = d + beta * N(x, t)
   float noise = perlin2D(p.xy * 4.0 + time * 0.30)
               + perlin2D(p.yz * 4.0 + time * 0.25);
   d += noise * 0.15;
-
   return d;
 }
 
-// ── normal (finite differences) ───────────────────────────────────────────────
+// ── normal (central finite differences) ──────────────────────────────────────
 
 vec3 normal(vec3 p) {
   vec2 e = vec2(0.001, 0.0);
@@ -143,6 +145,10 @@ float raymarch(vec3 ro, vec3 rd) {
 // ── main ──────────────────────────────────────────────────────────────────────
 
 void main() {
+  // Load all ball positions/radii/seeds from the state texture once per fragment.
+  // All subsequent map() calls (raymarch + normals) read these globals — no texture overhead.
+  loadBalls();
+
   vec2 uv = (gl_FragCoord.xy - 0.5 * resolution.xy) / resolution.y;
   vec3 ro  = camPos;
   vec3 rd  = normalize(vec3(uv, -1.5));
@@ -165,9 +171,9 @@ void main() {
     vec3 envSample = mix(envA, envB, envBlend);
     envSample      = envSample / (envSample + 1.0);
 
-    vec3 metalColor = base * diffuse * 0.4;
-    metalColor     += (vec3(0.02) + envSample) * (1.0 + fresnel);
-    metalColor     += spec * 2.3;
+    vec3 metalColor  = base * diffuse * 0.4;
+    metalColor      += (vec3(0.02) + envSample) * (1.0 + fresnel);
+    metalColor      += spec * 2.3;
 
     if (reflectAll > 0.5) {
       color = metalColor;
@@ -184,9 +190,9 @@ void main() {
       clusterColor += spec           * 1.8;
       clusterColor += outerGlowColor * scatter;
 
-      float edgeFade  = pow(1.0 - invFresnel, 1.5);
-      clusterColor    = mix(backgroundColor, clusterColor, 0.3);
-      clusterColor   *= (1.0 - edgeFade * 0.5);
+      float edgeFade = pow(1.0 - invFresnel, 1.5);
+      clusterColor   = mix(backgroundColor, clusterColor, 0.3);
+      clusterColor  *= (1.0 - edgeFade * 0.5);
 
       float blend = smoothstep(0.0, 0.4, phase) * (1.0 - smoothstep(1.0, 2.0, phase));
       color = mix(metalColor, clusterColor, blend);
