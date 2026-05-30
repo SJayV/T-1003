@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { balls } from './balls.js';
-import { simVert, simFrag } from '../shaders/simShader.js';
+import { simulationVert, simulationFrag } from '../shaders/simulationShader.js';
 
 const N = 12;
 const W = N * 3; // 36 texels wide, 1 texel tall
@@ -56,8 +56,8 @@ export function initSimulation(renderer) {
       time:     { value: 0.0 },
       phase:    { value: 0.0 },
     },
-    vertexShader:   simVert,
-    fragmentShader: simFrag,
+    vertexShader:   simulationVert,
+    fragmentShader: simulationFrag,
     depthTest:      false,
     depthWrite:     false,
   });
@@ -80,7 +80,6 @@ export function stepSimulation(phase, time) {
   isFirstFrame = false;
 }
 
-// Uniform interface: main.js spreads this into ShaderMaterial uniforms at setup.
 export function getUniformDefs() {
   return { stateTex: { value: null } };
 }

@@ -1,15 +1,12 @@
 import { noiseLib } from './noiseLib.js';
 
-export const pmremVert = `
+export const environmentVert = `
 void main() {
   gl_Position = vec4(position, 1.0);
 }
 `;
 
-// Equirectangular environment generator.
-// UV → sphere direction → phase/time-parameterised abstract color (linear HDR).
-// Output is consumed by PMREMGenerator.fromEquirectangular in envmap.js.
-export const pmremFrag = `
+export const environmentFrag = `
 precision highp float;
 
 uniform float phase;

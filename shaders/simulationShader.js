@@ -1,13 +1,10 @@
-export const simVert = `
+export const simulationVert = `
 void main() {
   gl_Position = vec4(position, 1.0);
 }
 `;
 
-// Sim pass: reads state texture (36x1 RGBA32F), computes one physics step, writes result.
-// Layout: texel 3i = pos.xyz + r0, texel 3i+1 = vel.xyz + seed, texel 3i+2 = reserved.
-// Each fragment corresponds to one texel; ballIdx = texelIdx / 3, subIdx = texelIdx % 3.
-export const simFrag = `
+export const simulationFrag = `
 precision highp float;
 precision highp sampler2D;
 
