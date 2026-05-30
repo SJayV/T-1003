@@ -1,36 +1,25 @@
 import * as THREE from 'three';
-import { scene, camera, renderer, controls } from './src/renderer.js';
-import { tick, getTime, getPhase }           from './src/phase.js';
-import { stepSimulation, applyBallUniforms } from './src/simulation.js';
-import { initEnvMap, updateEnvMap, getEnvUniforms, fallbackEnvMap } from './src/envmap.js';
-import { initCamera, updateCamera }          from './src/camera.js';
-import { initAudio,  updateAudio  }          from './src/audio.js';
-import { mainVert, mainFrag }                from './shaders/raymarchShader.js';
+import { scene, camera, renderer, controls }                          from './src/renderer.js';
+import { tick, getTime, getPhase }                                    from './src/phase.js';
+import { getUniformDefs as simDefs, stepSimulation, applyStateToMaterial as applySimState }   from './src/simulation.js';
+import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState }       from './src/envmap.js';
+import { initCamera, updateCamera }                                   from './src/camera.js';
+import { initAudio,  updateAudio  }                                   from './src/audio.js';
+import { mainVert, mainFrag }                                         from './shaders/raymarchShader.js';
 
 // ── material ──────────────────────────────────────────────────────────────────
+// Uniforms owned by each module are spread in via getUniformDefs().
+// Switching simulation or envmap implementation requires no changes here.
 
 const material = new THREE.ShaderMaterial({
   uniforms: {
     time:       { value: 0 },
     resolution: { value: new THREE.Vector2() },
     camPos:     { value: new THREE.Vector3() },
-    p1:         { value: new THREE.Vector3() },
-    p2:         { value: new THREE.Vector3() },
-    p3:         { value: new THREE.Vector3() },
-    p4:         { value: new THREE.Vector3() },
-    p5:         { value: new THREE.Vector3() },
-    p6:         { value: new THREE.Vector3() },
-    p7:         { value: new THREE.Vector3() },
-    p8:         { value: new THREE.Vector3() },
-    p9:         { value: new THREE.Vector3() },
-    p10:        { value: new THREE.Vector3() },
-    p11:        { value: new THREE.Vector3() },
-    p12:        { value: new THREE.Vector3() },
     phase:      { value: 0 },
-    envMap:     { value: fallbackEnvMap },
-    envMapNext: { value: fallbackEnvMap },
-    envBlend:   { value: 0.0 },
     reflectAll: { value: 0.0 },
+    ...simDefs(),
+    ...envDefs(),
   },
   vertexShader:   mainVert,
   fragmentShader: mainFrag,
@@ -41,7 +30,7 @@ scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
 // ── init ──────────────────────────────────────────────────────────────────────
 
 initEnvMap();
-initCamera(camera);
+initCamera(camera, controls);
 initAudio();
 
 // ── animate ───────────────────────────────────────────────────────────────────
@@ -52,15 +41,9 @@ function animate() {
   const phase = getPhase();
 
   stepSimulation(phase);
-  applyBallUniforms(material.uniforms);
-
-  updateEnvMap(phase, t);
-  const { envMap, envMapNext, envBlend } = getEnvUniforms();
-  material.uniforms.envMap.value     = envMap;
-  material.uniforms.envMapNext.value = envMapNext;
-  material.uniforms.envBlend.value   = envBlend;
-
-  updateCamera(camera, phase, t);
+  applySimState(material);
+  applyEnvState(material, phase, t);
+  updateCamera(camera, controls, phase, t);
   updateAudio(phase, t);
 
   material.uniforms.time.value = t;

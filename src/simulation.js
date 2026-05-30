@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { balls } from './balls.js';
 
 const BOUND_X = 1.8;
@@ -75,6 +76,15 @@ export function stepSimulation(phase) {
   else                     burstPhase();
 }
 
-export function applyBallUniforms(uniforms) {
-  balls.forEach((b, i) => uniforms[`p${i + 1}`].value.set(b.x, b.y, b.z));
+// Returns the uniform definitions this module needs — spread into ShaderMaterial uniforms.
+// When switching to GPU simulation, only this function and applyStateToMaterial change;
+// main.js and the material setup stay untouched.
+export function getUniformDefs() {
+  const defs = {};
+  for (let i = 1; i <= 12; i++) defs[`p${i}`] = { value: new THREE.Vector3() };
+  return defs;
+}
+
+export function applyStateToMaterial(material) {
+  balls.forEach((b, i) => material.uniforms[`p${i + 1}`].value.set(b.x, b.y, b.z));
 }

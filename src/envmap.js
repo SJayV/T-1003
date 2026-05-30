@@ -37,15 +37,25 @@ export function initEnvMap() {
   });
 }
 
-export function updateEnvMap(phase, time) {
-  currentTime = time;
+// Returns uniform definitions for the material setup.
+// Switching to PMREM/synthetic CubeMap only changes initEnvMap and applyStateToMaterial;
+// main.js and the material setup stay untouched.
+export function getUniformDefs() {
+  return {
+    envMap:     { value: fallbackEnvMap },
+    envMapNext: { value: fallbackEnvMap },
+    envBlend:   { value: 0.0 },
+  };
 }
 
-export function getEnvUniforms() {
+export function applyStateToMaterial(material, phase, time) {
+  currentTime = time;
   const interval = 5.0;
   const slot     = Math.floor(currentTime / interval);
   const curr     = slot % textures.length;
   const next     = (slot + 1) % textures.length;
   const blend    = smoothstep(0.3, 1.0, (currentTime % interval) / interval);
-  return { envMap: textures[curr], envMapNext: textures[next], envBlend: blend };
+  material.uniforms.envMap.value     = textures[curr];
+  material.uniforms.envMapNext.value = textures[next];
+  material.uniforms.envBlend.value   = blend;
 }
