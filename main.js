@@ -9,7 +9,6 @@ import { mainVert, mainFrag }                                         from './sh
 
 // ── material ──────────────────────────────────────────────────────────────────
 // Uniforms owned by each module are spread in via getUniformDefs().
-// Switching simulation or envmap implementation requires no changes here.
 
 const material = new THREE.ShaderMaterial({
   uniforms: {
@@ -29,7 +28,7 @@ scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
 
 // ── init ──────────────────────────────────────────────────────────────────────
 
-initEnvMap();
+initEnvMap(renderer);
 initCamera(camera, controls);
 initAudio();
 initSimulation(renderer);

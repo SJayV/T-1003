@@ -24,7 +24,7 @@ vec2 _envUV(vec3 dir) {
 
 vec3 shadeMetal(vec3 n, vec3 rd, vec3 ld, float fresnel, float diffuse, float spec) {
   vec3 r   = reflect(rd, n);
-  vec3 env = mix(texture2D(envMap, _envUV(r)).rgb, texture2D(envMapNext, _envUV(r)).rgb, envBlend);
+  vec3 env = texture2D(envMap, _envUV(r)).rgb;
   env      = env / (env + 1.0);
 
   vec3 color  = SH_BASE * diffuse * 0.4;

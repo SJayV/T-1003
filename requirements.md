@@ -265,7 +265,7 @@ Austausch des Materialmodells erfordert nur Änderungen in `shadingLib.js`.
 | Modul-Interfaces (getUniformDefs, applyStateToMaterial) | ✅ implementiert |
 | GPU-Simulation (1D-Textur, Sim-Shader, Ping-Pong) | ✅ implementiert |
 | Shading-Modul (`shadingLib.js`, `shadeHit`) | ✅ implementiert |
-| PMREM + synthetische CubeMap | ⚠️ geplant (derzeit HDR-Loading) |
+| PMREM + synthetische CubeMap (pmremShader.js) | ✅ implementiert |
 | Statische Kamera + autonomer Schwenk | ⚠️ geplant (derzeit OrbitControls) |
 | Externes Eingabegerät (input.js) | ⚠️ Stub |
 | Audio | ⚠️ Stub |
@@ -280,7 +280,7 @@ Austausch des Materialmodells erfordert nur Änderungen in `shadingLib.js`.
 | # | Thema | Notiz |
 |---|---|---|
 | 1 | GPU-Simulation | ✅ implementiert: RGBA32F 36×1, Ping-Pong, simShader.js |
-| 2 | PMREM / CubeMap | Einzelne dynamische PMREM via pmremShader.js → PMREMGenerator; alle N Frames regeneriert |
+| 2 | PMREM / CubeMap | ✅ implementiert: pmremShader.js → PMREMGenerator, alle 4 Frames regeneriert + bei Phasenübergang |
 | 3 | Kamera | OrbitControls entfernen; statisch + autonomer Schwenk |
 | 4 | input.js | Externes Gerät: Personenerkennung → triggerPhase() |
 | 5 | Audio | Phasenkopplung, Stimmungsdesign |
