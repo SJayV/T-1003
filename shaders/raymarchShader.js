@@ -16,8 +16,6 @@ uniform vec2      resolution;
 uniform vec3      camPos;
 uniform float     phase;
 uniform sampler2D envMap;
-uniform sampler2D envMapNext;
-uniform float     envBlend;
 uniform float     reflectAll;
 uniform sampler2D stateTex;
 

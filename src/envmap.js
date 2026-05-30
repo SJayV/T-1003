@@ -1,61 +1,78 @@
 import * as THREE from 'three';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { onPhaseTransition } from './phase.js';
+import { pmremVert, pmremFrag } from '../shaders/pmremShader.js';
 
-const fallback = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
-fallback.needsUpdate = true;
+const EQUIRECT_W     = 512;
+const EQUIRECT_H     = 256;
+const REGEN_INTERVAL = 4;   // smooth within-phase animation: regenerate every N frames
 
-export const fallbackEnvMap = fallback;
+let rendererRef    = null;
+let pmremGenerator = null;
+let equirectTarget = null;
+let equirectScene  = null;
+let equirectCamera = null;
+let equirectMat    = null;
+let currentPMREM   = null;  // WebGLRenderTarget returned by PMREMGenerator
+let frameCount     = 0;
+let needsRegen     = true;
 
-const HDR_URLS = [
-  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr',
-  'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/textures/equirectangular/venice_sunset_1k.hdr',
-  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/forest_slope_1k.hdr',
-  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/urban_alley_01_1k.hdr',
-  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/christmas_photo_studio_04_1k.hdr',
-  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloofendal_48d_partly_cloudy_puresky_1k.hdr',
-  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/mossy_forest_1k.hdr',
-  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/neon_photostudio_1k.hdr',
-];
+export function initEnvMap(renderer) {
+  rendererRef = renderer;
 
-const textures = new Array(HDR_URLS.length).fill(fallback);
-
-let currentTime = 0;
-
-function smoothstep(e0, e1, x) {
-  const v = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
-  return v * v * (3 - 2 * v);
-}
-
-export function initEnvMap() {
-  const loader = new RGBELoader();
-  HDR_URLS.forEach((url, i) => {
-    loader.load(url,
-      (tex) => { textures[i] = tex; },
-      undefined,
-      (err) => { console.error(`HDR[${i}] load failed:`, err); }
-    );
+  equirectTarget = new THREE.WebGLRenderTarget(EQUIRECT_W, EQUIRECT_H, {
+    type:        THREE.HalfFloatType,
+    format:      THREE.RGBAFormat,
+    minFilter:   THREE.LinearFilter,
+    magFilter:   THREE.LinearFilter,
+    depthBuffer: false,
   });
+  equirectTarget.texture.colorSpace = THREE.LinearSRGBColorSpace;
+
+  pmremGenerator = new THREE.PMREMGenerator(renderer);
+
+  equirectCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  equirectScene  = new THREE.Scene();
+  equirectMat    = new THREE.ShaderMaterial({
+    uniforms: {
+      phase:      { value: 0.0 },
+      time:       { value: 0.0 },
+      resolution: { value: new THREE.Vector2(EQUIRECT_W, EQUIRECT_H) },
+    },
+    vertexShader:   pmremVert,
+    fragmentShader: pmremFrag,
+    depthTest:  false,
+    depthWrite: false,
+  });
+  equirectScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), equirectMat));
+
+  // Any phase-slot crossing (time-driven or input-triggered via triggerPhase /
+  // releasePhase) fires this callback — no duplicate threshold logic needed here.
+  onPhaseTransition(() => { needsRegen = true; });
+  needsRegen = true;
 }
 
-// Returns uniform definitions for the material setup.
-// Switching to PMREM/synthetic CubeMap only changes initEnvMap and applyStateToMaterial;
-// main.js and the material setup stay untouched.
+function _regenerate(phase, time) {
+  equirectMat.uniforms.phase.value = phase;
+  equirectMat.uniforms.time.value  = time;
+
+  rendererRef.setRenderTarget(equirectTarget);
+  rendererRef.render(equirectScene, equirectCamera);
+  rendererRef.setRenderTarget(null);
+
+  const old = currentPMREM;
+  currentPMREM = pmremGenerator.fromEquirectangular(equirectTarget.texture);
+  if (old) old.dispose();
+}
+
 export function getUniformDefs() {
-  return {
-    envMap:     { value: fallbackEnvMap },
-    envMapNext: { value: fallbackEnvMap },
-    envBlend:   { value: 0.0 },
-  };
+  return { envMap: { value: null } };
 }
 
 export function applyStateToMaterial(material, phase, time) {
-  currentTime = time;
-  const interval = 5.0;
-  const slot     = Math.floor(currentTime / interval);
-  const curr     = slot % textures.length;
-  const next     = (slot + 1) % textures.length;
-  const blend    = smoothstep(0.3, 1.0, (currentTime % interval) / interval);
-  material.uniforms.envMap.value     = textures[curr];
-  material.uniforms.envMapNext.value = textures[next];
-  material.uniforms.envBlend.value   = blend;
+  frameCount++;
+  if (needsRegen || frameCount % REGEN_INTERVAL === 0) {
+    _regenerate(phase, time);
+    needsRegen = false;
+  }
+  if (currentPMREM) material.uniforms.envMap.value = currentPMREM.texture;
 }

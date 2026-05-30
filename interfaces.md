@@ -17,8 +17,10 @@ Zeitgesteuerte Phasenverwaltung. Einzige autoritative Quelle für `time` und `ph
 | `getPhase()` | — | — | `float` | [0, 2] — 0: Metaball, (0,1]: Cluster, (1,2]: Burst |
 | `triggerPhase(value)` | `value: float` | [0, 2] — Zielphase | `void` | — |
 | `releasePhase()` | — | — | `void` | — |
+| `onPhaseTransition(fn)` | `fn: (phase: float) → void` | Callback; phase = Wert zum Zeitpunkt des Übergangs | `void` | — |
 
 `tick()` einmal pro Frame aufrufen, bevor `getTime()`/`getPhase()` gelesen werden.
+`onPhaseTransition` feuert bei jedem Wechsel des Slots (Math.ceil(phase): 0↔1↔2) — unabhängig davon, ob der Übergang durch Zeit, `triggerPhase()` oder `releasePhase()` ausgelöst wurde. Einzige authoritative Stelle für Schwellenwert-Erkennung.
 
 ---
 
@@ -41,9 +43,9 @@ Environment-Map-Verwaltung. Derzeit HDR-Loading; geplant: einzelne dynamische PM
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
-| `initEnvMap()` | — | — | `void` | — |
-| `getUniformDefs()` | — | — | `{ envMap[, envMapNext, envBlend] }` | Entfällt auf `{ envMap }` nach PMREM-Implementierung |
-| `applyStateToMaterial(material, phase, time)` | `material: ShaderMaterial`, `phase: float ∈ [0,2]`, `time: float ∈ [0,∞)` | `phase` steuert Umgebungsstimmung; `time` für within-phase-Animation; triggert ggf. PMREM-Regenerierung | `void` | — |
+| `initEnvMap(renderer)` | `renderer: WebGLRenderer` | Three.js-Renderer; wird für Equirectangular-Pass und PMREMGenerator benötigt | `void` | — |
+| `getUniformDefs()` | — | — | `{ envMap: { value } }` | Einzelne Env-Map-Uniform |
+| `applyStateToMaterial(material, phase, time)` | `material: ShaderMaterial`, `phase: float ∈ [0,2]`, `time: float ∈ [0,∞)` | `phase` steuert Umgebungsstimmung (pmremShader); regeneriert PMREM alle 4 Frames + bei Phasenübergang (via `onPhaseTransition`) | `void` | — |
 
 ---
 
