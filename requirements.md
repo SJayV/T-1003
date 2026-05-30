@@ -12,43 +12,53 @@
 
 ## Technische Architektur
 
-- Browserbasierte **WebGL-Applikation** mit **Three.js** als Rendering-Framework
+- Browserbasierte **WebGL-Applikation** mit **Three.js** (r160) als Rendering-Framework
 - Drei-Ebenen-Architektur:
   - **Anwendungsebene (CPU):** Steuerlogik, Phasenwechsel, Nutzerinput, Uniform-Übergabe
   - **Simulationsebene (GPU):** Render-to-Texture, 1D-Zustandstextur, Ping-Pong-Buffering
   - **Shader-Ebene (GPU):** Raymarching, SDF-Auswertung, Normalenberechnung, Beleuchtung
 - Ballzustände verbleiben vollständig auf der GPU (kein CPU-Roundtrip pro Frame)
+- Erfordert lokalen Webserver (ES-Module, kein `file://`)
 
 ### Dateistruktur
 
 ```
 T-1003/
-├── index.html              ← HTML-Grundgerüst + importmap
-├── main.js                 ← animate-Loop, Szenenaufbau
+├── index.html              ← HTML-Grundgerüst + importmap (Three.js CDN)
+├── main.js                 ← Szenenaufbau, Material, animate-Loop
 ├── src/
-│   ├── renderer.js         ← WebGLRenderer, Kamera, OrbitControls
-│   ├── simulation.js       ← Ping-Pong RenderTargets, Sim-Pass
-│   ├── phase.js            ← getPhase(), Phasenzyklus-Logik
-│   ├── balls.js            ← Initialzustand der 12 Bälle
-│   ├── camera.js           ← autonome Bewegung, externes 
-│   ├── audio.js            ← Phasenkopplung, Steuerparameter
-│   └── envmap.js           ← CubeMap-Generierung + PMREM
+│   ├── renderer.js         ← WebGLRenderer, PerspectiveCamera, Resize
+│   ├── simulation.js       ← Ping-Pong RenderTargets, Sim-Pass (→ GPU)
+│   ├── phase.js            ← getPhase(), triggerPhase(), Phasenzyklus
+│   ├── balls.js            ← Initialzustand der 12 Bälle (Startwerte)
+│   ├── camera.js           ← statische Kamera, minimaler autonomer Schwenk
+│   ├── input.js            ← externes Eingabegerät → ruft triggerPhase() etc.
+│   ├── audio.js            ← Phasengekoppelte Klangkulisse (Stub)
+│   └── envmap.js           ← CubeMap-Synthese + PMREM-Generierung
 └── shaders/
-    ├── simShader.js        ← export: simVert, simFrag
-    └── raymarchShader.js   ← export: mainVert, mainFrag
+    ├── simShader.js        ← Physik-GLSL (Sim-Pass, export: simVert, simFrag)
+    └── raymarchShader.js   ← Rendering-GLSL (export: mainVert, mainFrag)
 ```
 
-> Shader als exportierte Template-Literal-Strings.
+### Modul-Interface-Prinzip
 
-Jedes Modul exportiert ein stabiles Interface — `main.js` und der Shader wissen nichts über die Interna. Beispiel `envmap.js`:
+Jedes Modul besitzt seine Uniforms vollständig. `main.js` kennt keine Uniform-Namen:
 
 ```javascript
-export function initEnvMap(renderer)
-export function updateEnvMap(renderer, phase, time)
-export function getEnvUniforms()   // → { envMap, envMapNext, envBlend }
+// Einmalig beim Material-Setup:
+...simulation.getUniformDefs()   // → { p1..p12 } bzw. später { stateTex }
+...envmap.getUniformDefs()       // → { envMap, envMapNext, envBlend }
+
+// Jeden Frame:
+simulation.applyStateToMaterial(material)
+envmap.applyStateToMaterial(material, phase, time)
+
+// Externer Trigger (aus input.js):
+phase.triggerPhase(2.0)   // Burst erzwingen
+phase.releasePhase()      // zurück zum Zeitzyklus
 ```
 
-Gleiches Prinzip gilt für alle Module: nach außen nur das Interface, Implementierung austauschbar durch Umschreiben der Datei.
+Implementierungswechsel (z.B. GPU-Simulation, PMREM) erfordern nur Änderungen im jeweiligen Modul.
 
 ---
 
@@ -56,57 +66,53 @@ Gleiches Prinzip gilt für alle Module: nach außen nur das Interface, Implement
 
 ### Metaballs
 
-- **n = 12 Metaballs** (n experimentell anpassbar)
-- Jeder Ball i definiert durch:
-  - Position **c**_i ∈ ℝ³
-  - Basisradius r_i^0 ∈ ℝ (gespeichert; modulierter Radius r_i(t) wird im Shader berechnet)
-  - Geschwindigkeit **v**_i ∈ ℝ³
-- Komposition der SDFs via **smooth minimum (smin)** zum Gesamt-SDF:
+- **n = 12 Metaballs** (experimentell anpassbar)
+- Jeder Ball i definiert durch Position **c**_i ∈ ℝ³, Basisradius r_i^0 ∈ ℝ, Geschwindigkeit **v**_i ∈ ℝ³
+- Komposition via **smooth minimum (smin)** zum Gesamt-SDF:
 
-$$d(\mathbf{x}, t) = \operatorname{smin}_{i=1}^{n} \left( \|\mathbf{x} - \mathbf{c}_i\| - r_i(t) \right)$$
+$$d(\mathbf{x}, t) = \operatorname{smin}_{i=1}^{n} \bigl(\|\mathbf{x} - \mathbf{c}_i\| - r_i(t)\bigr)$$
 
-- Rendering: **Raymarching** auf fullscreen Quad (keine explizite Geometrie)
-- Normalenberechnung: finite Differenzen auf dem SDF
-- Sensoren / augenähnliche Elemente angedacht (Reaktivität als "Mimik"-Äquivalent) ⚠️ offen
+- Rendering: **Raymarching** auf fullscreen Quad — keine explizite Geometrie
+- Normalenberechnung: zentrale finite Differenzen auf dem SDF
+- Sensoren / augenähnliche Elemente: Reaktivität als Mimik-Äquivalent ⚠️ offen
 
 ### Noise
 
-- **Perlin-Noise** N: ℝ³ × ℝ → [−1, 1], vollständig auf Shader-Ebene berechnet
-- Zwei Modulationsebenen:
+**Perlin-Noise** N: ℝ³ × ℝ → [−1, 1], vollständig auf Shader-Ebene
 
-**Radiusmodulation** — r_i^0 wird pro Frame mit Noise skaliert:
-$$r_i(t) = r_i^0 \cdot \bigl(1 + \alpha \cdot \mathcal{N}(\mathbf{c}_i, t)\bigr)$$
+**Radiusmodulation** (pro Ball, per Shader-Eval):
+$$r_i(t) = r_i^0 \cdot \bigl(1 + \alpha \cdot \mathcal{N}(\mathbf{c}_i,\, t)\bigr)$$
 
-**Oberflächenperturbation** — Distanzwert wird nach smin gestört:
-$$\hat{d}(\mathbf{x}, t) = d(\mathbf{x}, t) + \beta \cdot \mathcal{N}(\mathbf{x}, t)$$
+**Oberflächenperturbation** (auf komponierten SDF):
+$$\hat{d}(\mathbf{x}, t) = d(\mathbf{x}, t) + \beta \cdot \mathcal{N}(\mathbf{x},\, t)$$
 
-- Parameter α, β experimentell zu bestimmen
+Parameter α, β: empirisch zu bestimmen.
 
 ### Phasensystem
 
-- Drei Phasen, zyklisch und deterministisch zeitgesteuert
-- Phasenwert als kontinuierlicher Float im Shader → weiche Shading-Interpolation zwischen Phasen
+- Zyklisch, deterministisch zeitgesteuert; Phasenwert als kontinuierlicher Float
+- Phasenwert steuert Physik-Dynamik (Sim-Shader) und Shading-Interpolation (Fragment-Shader)
+- Externer Trigger via `triggerPhase(value)` / `releasePhase()` jederzeit möglich
 
-| Phase | Dynamik (Sim-Shader) | Shading (Fragment-Shader) |
-|---|---|---|
-| **Metaball** | Zirkulärer Drift, Wandreflexion | Metallisch-reflektierend, PMREM-Sampling |
-| **Cluster** | Zentripetalkraft zum Masseschwerpunkt | Transluzent, lumineszent (Fresnel, Scatter, Dicke) |
-| **Burst** | Zentrifugalkraft vom Masseschwerpunkt | Metallisch-reflektierend (zurückkehrend) |
+| Phase | Wert | Dynamik | Shading |
+|---|---|---|---|
+| **Metaball** | 0.0 | Zirkulärer Drift, Wandreflexion | Metallisch-reflektierend |
+| **Cluster** | 0.0→1.0 | Zentripetalkraft zum Masseschwerpunkt | Transluzent + lumineszent |
+| **Burst** | 1.0→2.0 | Zentrifugalkraft vom Masseschwerpunkt | Metallisch-reflektierend |
 
-**Cluster-Phase** — Masseschwerpunkt und Anziehungskraft:
-$$\hat{\mathbf{c}}(t) = \frac{1}{n} \sum_{i=1}^{n} \mathbf{c}_i(t), \qquad \mathbf{v}_i(t) \propto \hat{\mathbf{c}}(t) - \mathbf{c}_i(t)$$
+**Cluster** — Masseschwerpunkt und Anziehung:
+$$\hat{\mathbf{c}}(t) = \frac{1}{n}\sum_{i=1}^n \mathbf{c}_i(t), \qquad \mathbf{v}_i(t) \propto \hat{\mathbf{c}}(t) - \mathbf{c}_i(t)$$
 
-**Burst-Phase** — Abstoßung vom Masseschwerpunkt:
+**Burst** — Abstoßung:
 $$\mathbf{v}_i(t) \propto \mathbf{c}_i(t) - \hat{\mathbf{c}}(t)$$
 
-- Burst-Stärke skalierbar mit Interaktionsgeschwindigkeit / Personenanzahl
-- Phasenwechsel durch **externe Interaktion** auslösbar (Kernanforderung)
+Burst-Stärke skalierbar mit erfasster Bewegungsgeschwindigkeit / Personenanzahl.
 
 ---
 
 ## Daten & Pipeline
 
-### 1D-Zustandstextur
+### 1D-Zustandstextur ⚠️ geplant, noch nicht implementiert
 
 Format: RGBA32F, Breite 36 (3 Texel × 12 Bälle), Höhe 1
 
@@ -116,45 +122,65 @@ Format: RGBA32F, Breite 36 (3 Texel × 12 Bälle), Höhe 1
 | 3i+1 | vel.x | vel.y | vel.z | noise_seed |
 | 3i+2 | — | — | — | — |
 
-Texel C (3i+2) ist reserviert für spätere Erweiterungen (z.B. Excitation, Color-Tint).
+Texel C reserviert für spätere Erweiterungen (z.B. Excitation, Color-Tint).
+
+**Aktueller Stand:** Ballzustände noch als CPU-Array + p1–p12 Uniforms. Sim-Shader ist Stub.
 
 ### Ping-Pong Render-to-Texture
 
 ```
 Frame N:
-  [Sim-Pass]  simShader liest stateTexA → schreibt in stateTexB
+  [Sim-Pass]  simShader liest stateTexA → schreibt stateTexB
   [Main-Pass] mainShader liest stateTexB → rendert auf Screen
   swap(A, B)
 ```
 
-- Sim-Pass: Fullscreen Quad + OrthographicCamera → WebGLRenderTarget (FloatType)
-- Ballzustände verbleiben vollständig auf der GPU
+Sim-Pass: Fullscreen Quad + OrthographicCamera → WebGLRenderTarget (FloatType).
 
-### Uniforms (CPU → GPU)
+### Uniforms (CPU → Shader, pro Frame)
 
-- Phasenwert, Zeit, Kameraposition
-- Zwei Env-Map-Texturen + Überblendungsfaktor
+| Uniform | Quelle | Beschreibung |
+|---|---|---|
+| `time` | phase.js | Globale Zeit |
+| `phase` | phase.js | Phasenwert [0, 2] |
+| `camPos` | renderer.js | Kameraposition |
+| `resolution` | renderer.js | Viewport-Größe |
+| `p1`–`p12` | simulation.js | Ballpositionen (→ später stateTex) |
+| `envMap`, `envMapNext`, `envBlend` | envmap.js | Environment-Maps + Blend |
+
+---
+
+## Kamera
+
+- **Statische Grundposition** mit minimalem autonomem Schwenk — kein OrbitControls in der finalen Version
+- Kamerabewegung: langsame, algorithmisch gesteuerte Rotation um das Objekt, um einen eigenständigen Beobachtungscharakter zu erzeugen
+- Keine direkte Nutzersteuerung der Kamera
+- Kamera und externes Eingabegerät sind **vollständig getrennte Systeme**
 
 ---
 
 ## Input & Interaktion
 
-- **Zeit:** primärer deterministischer Input, steuert Phasenzyklus
-- **Kamera:**
-  - Primär durch externes **visuelles Eingabegerät** gesteuert (Personenerkennung, Bewegungserfassung)
-  - **Autonome Bewegung** bei ausbleibender Interaktion (eigenständiger Beobachtungscharakter) ⚠️ offen
-- **Externes Eingabegerät:**
-  - Erkennt Anwesenheit und Bewegungsgeschwindigkeit von Personen
-  - Löst Phasenwechsel aus (z.B. Bewegung während Cluster-Phase → Burst)
-  - Beeinflusst Geschwindigkeiten, Farbgebung; Personenanzahl skaliert Burst-Stärke
-  - Anleitungsinteraktion denkbar: "Augen zuhalten", "nicht direkt ansehen" ⚠️ offen
-- **Environment:**
-  - Synthetisierte, **abstrakte dynamische CubeMap** (keine realistischen Umgebungen)
-  - Laufzeit-Konvertierung → **PMREM** via Three.js `PMREMGenerator`
-  - Rauheitsabhängiges Sampling im Fragment-Shader (Mip-Level per roughness)
-  - PMREM wird periodisch oder bei Phasenwechsel neu generiert (~2–5ms), nicht per Frame
-  - Zwei PMREMs (current / next) werden im Shader geblended — identisches Schema wie bisher
-  - Abstrakte Szene: wenige farbige Pointlights + dunkler Hintergrund, gesteuert durch:
+### Zeit
+Primärer deterministischer Input; steuert Phasenzyklus. Pseudozufällige Noise-Komponente sorgt dafür, dass das Objekt nie exakt gleich agiert.
+
+### Externes Eingabegerät (`input.js`)
+- Kamerabasiertes Gerät (z.B. Webcam + Personenerkennung) registriert Anwesenheit und Bewegung
+- Ruft direkt Modul-Interfaces auf — keine Kopplung durch main.js:
+  - `phase.triggerPhase(2.0)` bei erkannter Bewegung während Cluster-Phase → Burst
+  - `phase.releasePhase()` nach Abklingen
+  - Bewegungsgeschwindigkeit skaliert Burst-Stärke
+- Anleitungsinteraktion als Installationskonzept denkbar: "nicht direkt ansehen" ⚠️ offen
+
+### Environment (`envmap.js`)
+- Synthetisierte **abstrakte CubeMap** — keine realistischen Umgebungen
+- Laufzeit-Konvertierung → **PMREM** via Three.js `PMREMGenerator` ⚠️ geplant, noch nicht implementiert
+- Derzeit: HDR-Datei-Loading als Übergangslösung
+- Rauheitsabhängiges Sampling im Fragment-Shader (Mip-Level per roughness)
+- PMREM periodisch oder bei Phasenwechsel neu generiert (~2–5ms), nicht per Frame
+- Zwei PMREMs (current / next) im Shader geblended
+
+Phasengekoppelte Stimmung der CubeMap:
 
 | Parameter | Metaball | Cluster | Burst |
 |---|---|---|---|
@@ -162,37 +188,57 @@ Frame N:
 | Helligkeit | mittel | niedrig, gläsern | hohe Highlights |
 | Direktivität | allseitig | weich, zentral | gerichtet, scharf |
 
-  - Implementation austauschbar über `envmap/index.js` (siehe Dateistruktur)
-- **Audio (geplant):** ⚠️ offen
-  - Phasengekoppelt: niederfrequent (Ruhe) ↔ hochfrequent (Unruhe/Grusel)
-  - Tonart, Lautstärke, rhythmische Impulse als mögliche Steuerparameter
-  - Transitive Kopplung: Audio → Env-Map → Nutzerinteraktion
+### Audio (`audio.js`) ⚠️ offen
+- Phasengekoppelt: niederfrequent (Ruhe/Cluster) ↔ hochfrequent (Burst/Unruhe)
+- Kopplung mit CubeMap-Farbstimmung: hell/offen ↔ Dur; dunkel/gesättigt ↔ Moll/Dissonanz
+- Technische Soundkulisse vs. Musik: offen
 
 ---
 
 ## Design
 
 ### Geometrie
-- Vollständig implizite Flächen; einziges Primitiv: fullscreen Quad
+- Vollständig implizite Flächen; einziges explizites Primitiv: fullscreen Quad
 - Sichtbare Geometrie emergiert als Isofläche des komponierten SDF
 - Topologie ändert sich kontinuierlich ohne Neuberechnung von Mesh-Daten
 
 ### Animation
-- Bewegungsmuster experimentell herauszuarbeiten ⚠️ offen
-- Metaball-Phase: Drift + zeitweiliges Verschwinden/Auftauchen einzelner Segmente
-- Cluster-Phase: kompakte, pulsierende Masse; Übergangsanimation zu klären ⚠️ offen
-- Burst-Phase: schlagartige Auflösung, Zerstreuung
+- Metaball-Phase: zirkulärer Drift, zeitweiliges Verschwinden/Auftauchen einzelner Segmente
+- Cluster-Phase: kompakte, pulsierende Masse durch Noise-Modulation
+- Burst-Phase: schlagartige Auflösung, Zerstreuung in alle Richtungen
+- Shading-Übergänge: kontinuierlich über skalaren Phasenwert interpoliert
+- Konkrete Bewegungsparameter experimentell zu bestimmen ⚠️ offen
 
 ### Grafik
-- **Zwei kontrastierende Erscheinungsbilder:**
-  - Metallisch-reflektierend (Metaball + Burst): PMREM-Sampling, rauheitsabhängig
-  - Transluzent-lumineszent (Cluster): Fresnel, Streuung, angedeutete Materialdicke
-- Schwarzer Hintergrund, ggf. Skybox ⚠️ offen
-- Abstrakte, dynamische CubeMap — keine erkennbaren Räume oder Strukturen
+- **Metallisch-reflektierend** (Metaball + Burst): PMREM-Sampling, rauheitsabhängig; Reflexionen fremd und nicht verortbar
+- **Transluzent-lumineszent** (Cluster): Fresnel, Streuung, angedeutete Materialdicke; inneres Leuchten
+- Schwarzer Hintergrund; Skybox als Alternative ⚠️ offen
+- Abstrakte dynamische CubeMap — keine erkennbaren Strukturen
 
 ### Audio
 - Phasengekoppelte Klangkulisse ⚠️ offen
-- Kopplung mit Env-Map-Farbstimmung (hell/offen ↔ Dur; dunkel/gesättigt ↔ Moll/Dissonanz)
+- Stimmungskopplung mit CubeMap-Parametern
+
+---
+
+## Implementierungsstand
+
+| Komponente | Status |
+|---|---|
+| Raymarching + SDF + smin | ✅ implementiert |
+| Perlin-Noise (Radius + Oberfläche) | ✅ implementiert |
+| Phasensystem (zeitgesteuert) | ✅ implementiert |
+| Phasensystem (externer Trigger) | ✅ `triggerPhase()` / `releasePhase()` |
+| CPU-Simulation (3 Phasen) | ✅ implementiert |
+| Modul-Interfaces (getUniformDefs, applyStateToMaterial) | ✅ implementiert |
+| GPU-Simulation (1D-Textur, Sim-Shader) | ⚠️ geplant |
+| PMREM + synthetische CubeMap | ⚠️ geplant (derzeit HDR-Loading) |
+| Statische Kamera + autonomer Schwenk | ⚠️ geplant (derzeit OrbitControls) |
+| Externes Eingabegerät (input.js) | ⚠️ Stub |
+| Audio | ⚠️ Stub |
+| Sensorik / augenähnliche Elemente | ⚠️ offen |
+| Skybox / Hintergrund | ⚠️ offen |
+| Bewegungsparameter (experimentell) | ⚠️ offen |
 
 ---
 
@@ -200,10 +246,12 @@ Frame N:
 
 | # | Thema | Notiz |
 |---|---|---|
-| 1 | Sensorik / Augen | Augenähnliche Elemente als Reaktivitätsmerkmal (Betreuer-Anforderung) |
-| 2 | Autonome Kamera | Verhalten bei Nichtinteraktion konkretisieren |
-| 3 | Interaktionsanleitung | "Augen zuhalten" etc. als Installationskonzept |
-| 4 | Bewegungsmuster | Experimentell zu bestimmen |
-| 5 | Cluster-Übergang | Animation des Zusammenziehens |
-| 6 | Skybox/Hintergrund | Ggf. separater Ansatz |
-| 7 | Audio | Technische Kulisse vs. Musik; Kopplung mit Interaktion |
+| 1 | GPU-Simulation | 1D-Textur + Sim-Shader; ersetzt CPU-Array + p1–p12 |
+| 2 | PMREM / CubeMap | Synthetisierte abstrakte Umgebung statt HDR-Dateien |
+| 3 | Kamera | OrbitControls entfernen; statisch + autonomer Schwenk |
+| 4 | input.js | Externes Gerät: Personenerkennung → triggerPhase() |
+| 5 | Audio | Phasenkopplung, Stimmungsdesign |
+| 6 | Sensorik / Augen | Augenähnliche Elemente als Reaktivitätsmerkmal |
+| 7 | Skybox / Hintergrund | Separater Ansatz nötig |
+| 8 | Bewegungsparameter | Experimentell: Driftgeschwindigkeit, Cluster-Übergang, Burst-Intensität |
+| 9 | Interaktionsanleitung | "Augen zuhalten" etc. als Installationskonzept |
