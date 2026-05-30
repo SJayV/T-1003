@@ -1,5 +1,5 @@
-import { noiseLib   } from './noiseLib.js';
-import { shadingLib } from './shadingLib.js';
+import { noiseLibrary    } from '../libraries/noiseLibrary.js';
+import { raymarchLibrary } from '../libraries/raymarchLibrary.js';
 
 export const mainVert = `
 void main() {
@@ -48,7 +48,7 @@ void loadBalls() {
 // ── noise (noiseLib) ──────────────────────────────────────────────────────────
 // Provides: perlin2D, worley2D, worley3D
 
-${noiseLib}
+${noiseLibrary}
 
 // ── radius modulation: r_i(t) = r_i^0 * (1 + alpha * N(c_i, t)) ──────────────
 
@@ -113,7 +113,7 @@ float raymarch(vec3 ro, vec3 rd) {
 // Injected after map() so shadeCluster can call map() for the thickness proxy.
 // Public: shadeHit(p, n, rd, phase) → vec3
 
-${shadingLib}
+${raymarchLibrary}
 
 // ── main ──────────────────────────────────────────────────────────────────────
 

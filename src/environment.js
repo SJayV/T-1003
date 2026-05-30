@@ -12,7 +12,7 @@ let equirectTarget = null;
 let equirectScene  = null;
 let equirectCamera = null;
 let equirectMat    = null;
-let currentPMREM   = null;  // WebGLRenderTarget returned by PMREMGenerator
+let currentPMREM   = null;
 let frameCount     = 0;
 let needsRegen     = true;
 

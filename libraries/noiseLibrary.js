@@ -1,7 +1,4 @@
-// GLSL noise library — interpolated into fragment shaders via template literal.
-// Public GLSL functions: perlin2D, worley2D, worley3D  (internal helpers prefixed _)
-
-export const noiseLib = `
+export const noiseLibrary = `
 
 // ── internal helpers ──────────────────────────────────────────────────────────
 

@@ -14,12 +14,13 @@ Zeitgesteuerte Phasenverwaltung und Ereigniskoordination. Einzige autoritative Q
 |---|---|---|---|---|
 | `tick()` | — | — | `void` | — |
 | `getTime()` | — | — | `float` | [0, ∞) monoton wachsend |
-| `getPhase()` | — | — | `float` | [0, 2]: 0=Metaball, (0,1]=Cluster, (1,2]=Burst |
+| `getLogicalPhase()` | — | — | `float` | [0, 2]: 0=Metaball, (0,1]=Cluster, (1,2]=Burst; harte Übergänge; für Physik und Ereignisse |
+| `getVisualPhase()` | — | — | `float` | [0, 2]: exponentieller Lerp zu `getLogicalPhase()`, Rate 0.08/Frame; für Shading-Blend und PMREM |
 | `triggerPhase(value)` | `value: float` | [0, 2] Zielphase | `void` | — |
 | `releasePhase()` | — | — | `void` | — |
-| `onPhaseTransition(fn)` | `fn: (phase: float) → void` | Callback wird aufgerufen, wenn `Math.ceil(phase)` seinen Wert ändert (0↔1↔2); `phase` = Wert zum Übergangszeitpunkt | `void` | — |
+| `onPhaseTransition(fn)` | `fn: (phase: float) → void` | `phase` = logischer Wert zum Übergangszeitpunkt | `void` | — |
 
-`tick()` einmal pro Frame aufrufen, bevor `getTime()`/`getPhase()` gelesen werden. `onPhaseTransition` feuert unabhängig davon, ob der Übergang durch Zeit, `triggerPhase()` oder `releasePhase()` ausgelöst wurde.
+`tick()` einmal pro Frame aufrufen; aktualisiert `getVisualPhase()` und prüft Slot-Übergänge. `onPhaseTransition` feuert bei `Math.ceil(getLogicalPhase())` Änderung (0↔1↔2), unabhängig von der Trigger-Quelle.
 
 ---
 
@@ -109,10 +110,12 @@ Szenen-Setup. Exportiert Objekte direkt; keine Initialisierungsfunktion.
 
 ---
 
-## GLSL-Chunks (interpoliert via Template-Literal)
+## GLSL-Bibliotheken (`libraries/`, interpoliert via Template-Literal)
 
-### `shaders/noiseLib.js`
-Rausch-Bibliothek. Exportiert: `noiseLib: string`. Wird in Shader-Chunks eingebettet, die Rauschen benötigen.
+Alle Bibliotheken exportieren einen GLSL-String, der per `${…}` in den jeweiligen Shader interpoliert wird. Die Bibliotheksfunktionen haben Zugriff auf Uniforms und Hilfsfunktionen des umschließenden Shaders (gleicher Programm-Scope).
+
+### `libraries/noiseLibrary.js`
+Rausch-Bibliothek. Von mehreren Shadern nutzbar. Exportiert: `noiseLibrary: string`.
 
 | GLSL-Funktion | Input | Bereich | Output | Bereich | Charakteristik |
 |---|---|---|---|---|---|
@@ -120,60 +123,69 @@ Rausch-Bibliothek. Exportiert: `noiseLib: string`. Wird in Shader-Chunks eingebe
 | `worley2D(p)` | `p: vec2` | ℝ²; Einheitszellen-Koordinaten | `float` | [0, ~1.0] F1-Distanz | Zelluläres Muster; Minima an Feature-Points |
 | `worley3D(p)` | `p: vec3` | ℝ³ | `float` | [0, ~1.2] F1-Distanz | 3D-Zelluläres Muster; 27-Zellen-Lookup |
 
-Interne Helfer (`_fade`, `_hash1`, `_grad`, `_hash2`, `_hash3`) sind nicht Teil der öffentlichen API.
-
 ```glsl
-float n = perlin2D(p.xy * 4.0 + time * 0.3);   // Freq 4, langsame Animation
-float c = worley2D(p.xz * 2.0);                 // Zelluläres Muster, Freq 2
+float n = perlin2D(p.xy * 4.0 + time * 0.3);
+float c = worley2D(p.xz * 2.0);
 ```
 
 ---
 
-### `shaders/shadingLib.js`
-Shading-Modell (Nachimplementierung von `MeshPhysicalMaterial` für Raymarching).
-Voraussetzung: Uniforms `envMap` (sampler2D), `reflectAll`, `phase` (float) deklariert; `map(vec3)` definiert (wird für Materialdicken-Proxy aufgerufen).
+### `libraries/raymarchLibrary.js`
+Shading-Modell (Nachimplementierung von `MeshPhysicalMaterial` für Raymarching). Nur von `raymarchShader.js` verwendet.
+Voraussetzung: Uniforms `envMap` (sampler2D), `reflectAll`, `phase` (float) deklariert; `map(vec3)` definiert.
 
 | GLSL-Funktion | Input | Bereich / Semantik | Output | Bereich |
 |---|---|---|---|---|
-| `shadeHit(p, n, rd, phase)` | `p: vec3` Oberflächenpunkt, `n: vec3` Normale (normalisiert), `rd: vec3` Strahlenrichtung (normalisiert), `phase: float ∈ [0,2]` | `phase` steuert kontinuierlichen Blend: 0=metallisch, ~0.5=transluzent, 2=metallisch | `vec3` | [0, ∞) HDR-Farbe |
+| `shadeHit(p, n, rd, phase)` | `p: vec3` Oberflächenpunkt, `n: vec3` Normale, `rd: vec3` Strahlenrichtung, `phase: float ∈ [0,2]` | `phase` = `getVisualPhase()`; steuert Blend: 0=metallisch, ~0.5=transluzent, 2=metallisch | `vec3` | [0, ∞) HDR-Farbe |
 
-Interne Funktionen `shadeMetal`, `shadeCluster` sind nicht öffentlich.
+---
+
+### `libraries/simulationLibrary.js`
+Physikfunktionen pro Phasenmodus. Nur von `simulationShader.js` verwendet.
+Voraussetzung: Uniforms `stateTex` (sampler2D), `time` (float) deklariert; `stateUV(int)` definiert.
+
+| GLSL-Funktion | Input / Output | Semantik |
+|---|---|---|
+| `applyMetaball(inout pos, inout vel, seed)` | `pos,vel: vec3`, `seed: float` | Stochastischer Drift + schwache Kreisrotation + Zentrierung |
+| `applyCluster(inout pos, inout vel)` | `pos,vel: vec3` | Zentripetalkraft zu globalem Schwerpunkt |
+| `applyBurst(inout pos, inout vel, seed)` | `pos,vel: vec3`, `seed: float` | Zentrifugalkraft + stochastische Streuung |
+
+---
+
+## Shader-Module (`shaders/`)
+
+### `shaders/simulationShader.js`
+Sim-Pass-Shader. Intern von `simulation.js` verwendet. Interpoliert `simulationLibrary`. Exportiert: `simulationVert`, `simulationFrag`.
+
+| GLSL-Uniform | Typ | Bereich / Semantik |
+|---|---|---|
+| `stateTex` | `sampler2D` | RGBA32F 36×1 Eingangszustand |
+| `phase` | `float` | [0, 2] `getLogicalPhase()` — bestimmt Physik-Zweig |
+| `time` | `float` | [0, ∞) Seed für deterministisches Rauschen |
 
 ---
 
 ### `shaders/environmentShader.js`
-Equirectangular-Umgebungsgenerator. Exportiert: `environmentVert`, `environmentFrag`. Wird von `environment.js` intern verwendet.
+Equirectangular-Umgebungsgenerator. Intern von `environment.js` verwendet. Interpoliert `noiseLibrary`. Exportiert: `environmentVert`, `environmentFrag`.
 
-| GLSL-Uniform | Typ | Bereich / Semantik | Wirkung auf Output |
-|---|---|---|---|
-| `phase` | `float` | [0, 2] | Farbtemperatur, Direktivität, Kontrast (Metaball: kühl/diffus; Cluster: warm/weich; Burst: dunkel+harte Spots) |
-| `time` | `float` | [0, ∞) | Langsame Animation innerhalb einer Phase (Noise-Drift) |
-| `resolution` | `vec2` | Rendertarget-Größe (512×256) | UV → Pixelkoordinate |
+| GLSL-Uniform | Typ | Bereich / Semantik |
+|---|---|---|
+| `phase` | `float` | [0, 2] `getVisualPhase()` — Farbtemperatur, Direktivität, Kontrast |
+| `time` | `float` | [0, ∞) Animation (Noise-Drift, Sphären-Rotation) |
+| `resolution` | `vec2` | Rendertarget-Größe (512×256) |
 
-Output: `gl_FragColor` = HDR RGB-Farbe der Himmelskugel am UV-Punkt (→ Kugelrichtung via Equirectangular-Mapping).
-
----
-
-### `shaders/simulationShader.js`
-Physik-GLSL für den Sim-Pass. Intern von `simulation.js` verwendet. Exportiert: `simulationVert`, `simulationFrag`.
-
-| GLSL-Uniform | Typ | Bereich / Semantik | Wirkung |
-|---|---|---|---|
-| `stateTex` | `sampler2D` | RGBA32F 36×1 | Eingangszustand; jedes Fragment liest seinen Ball |
-| `phase` | `float` | [0, 2] | Bestimmt Physik-Zweig: `ceil(phase)` → 0=Metaball, 1=Cluster, 2=Burst |
-| `time` | `float` | [0, ∞) | Seed für deterministisches Rauschen pro Frame |
-
-Output: `gl_FragColor` = neuer Ball-Zustand für Texel `int(gl_FragCoord.x)`. Texel-Typ (pos/vel/reserved) wird aus `texelIdx % 3` bestimmt.
+Output: HDR RGB-Farbe der Himmelskugel an der UV-Position (Equirectangular-Mapping).
 
 ---
 
 ### `shaders/raymarchShader.js`
-Haupt-Render-Pass. Interpoliert `noiseLib` und `shadingLib`. Exportiert: `mainVert`, `mainFrag`.
+Haupt-Render-Pass. Interpoliert `noiseLibrary` + `raymarchLibrary`. Exportiert: `mainVert`, `mainFrag`.
 
 | GLSL-Uniform | Typ | Bereich / Semantik |
 |---|---|---|
-| `stateTex` | `sampler2D` | Ball-Zustandstextur (von simulation.js) |
-| `envMap` | `sampler2D` | PMREM-Textur (von environment.js) |
-| `time`, `phase`, `camPos`, `resolution`, `reflectAll` | — | Globale Szenenparameter |
+| `stateTex` | `sampler2D` | Ball-Zustandstextur |
+| `envMap` | `sampler2D` | PMREM-Textur |
+| `phase` | `float` | [0, 2] `getVisualPhase()` — Shading-Blend |
+| `time`, `camPos`, `resolution`, `reflectAll` | — | Globale Szenenparameter |
 
-`main()` ruft `loadBalls()` → `raymarch()` → `shadeHit()` auf. Alle Ball-Daten werden einmalig pro Fragment aus `stateTex` geladen; kein Texture-Read in der Raymarch-Schleife.
+`main()`: `loadBalls()` → `raymarch()` → `shadeHit()`. Ball-Daten werden einmalig aus `stateTex` geladen; kein Texture-Read in Raymarch- oder Normal-Schleife.

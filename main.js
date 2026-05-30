@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { scene, camera, renderer, controls }                          from './src/renderer.js';
-import { tick, getTime, getPhase }                                    from './src/phase.js';
+import { tick, getTime, getLogicalPhase, getVisualPhase }             from './src/phase.js';
 import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
 import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState }       from './src/environment.js';
 import { initCamera, updateCamera }                                   from './src/camera.js';
@@ -37,19 +37,20 @@ initSimulation(renderer);
 
 function animate() {
   tick();
-  const t     = getTime();
-  const phase = getPhase();
+  const t            = getTime();
+  const logicalPhase = getLogicalPhase();
+  const visualPhase  = getVisualPhase();
 
-  stepSimulation(phase, t);
+  stepSimulation(logicalPhase, t);
   applySimState(material);
-  applyEnvState(material, phase, t);
-  updateCamera(camera, controls, phase, t);
-  updateAudio(phase, t);
+  applyEnvState(material, visualPhase, t);
+  updateCamera(camera, controls, logicalPhase, t);
+  updateAudio(logicalPhase, t);
 
   material.uniforms.time.value = t;
   material.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
   material.uniforms.camPos.value.copy(camera.position);
-  material.uniforms.phase.value = phase;
+  material.uniforms.phase.value = visualPhase;
 
   controls.update();
   renderer.render(scene, camera);
