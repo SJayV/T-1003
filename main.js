@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { scene, camera, renderer, controls }                          from './src/renderer.js';
 import { tick, getTime, getPhase }                                    from './src/phase.js';
-import { getUniformDefs as simDefs, stepSimulation, applyStateToMaterial as applySimState }   from './src/simulation.js';
+import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
 import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState }       from './src/envmap.js';
 import { initCamera, updateCamera }                                   from './src/camera.js';
 import { initAudio,  updateAudio  }                                   from './src/audio.js';
@@ -32,6 +32,7 @@ scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
 initEnvMap();
 initCamera(camera, controls);
 initAudio();
+initSimulation(renderer);
 
 // ── animate ───────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ function animate() {
   const t     = getTime();
   const phase = getPhase();
 
-  stepSimulation(phase);
+  stepSimulation(phase, t);
   applySimState(material);
   applyEnvState(material, phase, t);
   updateCamera(camera, controls, phase, t);
