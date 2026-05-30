@@ -14,13 +14,16 @@ Zeitgesteuerte Phasenverwaltung und Ereigniskoordination. Einzige autoritative Q
 |---|---|---|---|---|
 | `tick()` | — | — | `void` | — |
 | `getTime()` | — | — | `float` | [0, ∞) monoton wachsend |
-| `getLogicalPhase()` | — | — | `float` | [0, 2]: 0=Metaball, (0,1]=Cluster, (1,2]=Burst; harte Übergänge; für Physik und Ereignisse |
-| `getVisualPhase()` | — | — | `float` | [0, 2]: exponentieller Lerp zu `getLogicalPhase()`, Rate 0.08/Frame; für Shading-Blend und PMREM |
-| `triggerPhase(value)` | `value: float` | [0, 2] Zielphase | `void` | — |
+| `getLogicalPhase()` | — | — | `float` | [0, 2]: 0=Metaball, (0,1]=Cluster, (1,2]=Burst; harte Übergänge; für Physik und Ereigniserkennung |
+| `getVisualPhase()` | — | — | `float` | [0, 2]: exp. Lerp zu `getLogicalPhase()`, Rate 0.08/Frame; für `radiusMod` im Shader |
+| `getMetaballBlend()` | — | — | `float` | [0,1]: 1 bei `visualPhase`=0, fällt bis 0 bei ≈0.6 |
+| `getClusterBlend()` | — | — | `float` | [0,1]: Glocke um `visualPhase` ≈0.35–1.65, multipliziert mit `smoothstep(0,0.15,logicalPhase)` — 0 wenn echter Metaball |
+| `getBurstBlend()` | — | — | `float` | [0,1]: steigt ab `visualPhase`≈1.3, =1 bei 2.0 |
+| `triggerPhase(value)` | `value: float` | [0, 2] | `void` | — |
 | `releasePhase()` | — | — | `void` | — |
-| `onPhaseTransition(fn)` | `fn: (phase: float) → void` | `phase` = logischer Wert zum Übergangszeitpunkt | `void` | — |
+| `onPhaseTransition(fn)` | `fn: (logicalPhase: float) → void` | Callback bei Slot-Wechsel (`Math.ceil(logicalPhase)` ändert sich) | `void` | — |
 
-`tick()` einmal pro Frame aufrufen; aktualisiert `getVisualPhase()` und prüft Slot-Übergänge. `onPhaseTransition` feuert bei `Math.ceil(getLogicalPhase())` Änderung (0↔1↔2), unabhängig von der Trigger-Quelle.
+`tick()` einmal pro Frame; aktualisiert `visualPhase`, alle drei Blendgewichte und prüft Slot-Übergänge. Blend-Gewichte werden als Uniforms an alle Shader weitergegeben — einzige Rechenquelle.
 
 ---
 
@@ -43,9 +46,9 @@ Dynamische PMREM-Generierung aus synthetischem Equirectangular-Shader (`environm
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
-| `initEnvMap(renderer)` | `renderer: WebGLRenderer` | Wird für Equirectangular-Pass und `PMREMGenerator` benötigt | `void` | — |
+| `initEnvMap(renderer)` | `renderer: WebGLRenderer` | Renderer für Equirectangular-Pass und `PMREMGenerator` | `void` | — |
 | `getUniformDefs()` | — | — | `{ envMap: { value } }` | Einzelne Env-Map-Uniform |
-| `applyStateToMaterial(material, phase, time)` | `material: ShaderMaterial`, `phase: float ∈ [0,2]`, `time: float ∈ [0,∞)` | `phase` steuert Umgebungsstimmung im Equirectangular-Shader; `time` treibt within-phase-Animation | `void` | — |
+| `applyStateToMaterial(material, time)` | `material: ShaderMaterial`, `time: float ∈ [0,∞)` | Liest Blend-Gewichte direkt aus `phase.js`; regeneriert PMREM alle 4 Frames + bei `onPhaseTransition` | `void` | — |
 
 ---
 
@@ -130,13 +133,33 @@ float c = worley2D(p.xz * 2.0);
 
 ---
 
+### `libraries/moodLibrary.js`
+Zentraler Stimmungs-Provider: Farbpalette und Phasengewichte. Von `raymarchLibrary` und `environmentShader` gemeinsam genutzt — stellt sicher, dass Shading und Umgebung dieselben Übergänge und Farben verwenden. Später: Audio-Parameter hier eintragen.
+Voraussetzung: `uniform float phase` (= `getVisualPhase()`) deklariert.
+
+| GLSL-Export | Typ | Semantik |
+|---|---|---|
+| `MOOD_METABALL` | `const vec3` | `(0.20, 0.48, 1.00)` — kühl blau |
+| `MOOD_CLUSTER` | `const vec3` | `(0.00, 0.78, 0.95)` — cyan-türkis |
+| `MOOD_BURST` | `const vec3` | `(0.10, 1.00, 0.60)` — helles türkis-grün |
+| `tMeta() → float` | `∈ [0,1]` | Gewicht Metaball-Phase; 1 bei phase=0, 0 ab phase≈0.6 |
+| `tCluster() → float` | `∈ [0,1]` | Gewicht Cluster-Phase; Peak 1 bei phase≈0.7–1.2 |
+| `tBurst() → float` | `∈ [0,1]` | Gewicht Burst-Phase; rampt ab phase=1.3, =1 bei phase=2 |
+| `moodColor() → vec3` | `∈ [0,1]³` | Interpolierte Akzentfarbe: blau→türkis→türkis-grün |
+
+---
+
 ### `libraries/raymarchLibrary.js`
 Shading-Modell (Nachimplementierung von `MeshPhysicalMaterial` für Raymarching). Nur von `raymarchShader.js` verwendet.
-Voraussetzung: Uniforms `envMap` (sampler2D), `reflectAll`, `phase` (float) deklariert; `map(vec3)` definiert.
+Voraussetzung: Uniforms `envMap` (sampler2D), `phase` (float) deklariert; `map(vec3)` + `moodLibrary` definiert.
+
+Benennung nach **Material**: `shadeMetal`/`shadeGlass` sind austauschbare Implementierungen; `shadeHit` enthält die Blending-Logik via `tCluster()` aus `moodLibrary`.
 
 | GLSL-Funktion | Input | Bereich / Semantik | Output | Bereich |
 |---|---|---|---|---|
-| `shadeHit(p, n, rd, phase)` | `p: vec3` Oberflächenpunkt, `n: vec3` Normale, `rd: vec3` Strahlenrichtung, `phase: float ∈ [0,2]` | `phase` = `getVisualPhase()`; steuert Blend: 0=metallisch, ~0.5=transluzent, 2=metallisch | `vec3` | [0, ∞) HDR-Farbe |
+| `shadeHit(p, n, rd)` | `p: vec3`, `n: vec3` (norm.), `rd: vec3` (norm.) | Liest `phase`-Uniform; Blend via `tCluster()`: 0=Metall, ~0.7–1.2=Glas, 2=Metall | `vec3` | [0, ∞) HDR |
+| `shadeMetal(n, rd, NdotV)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]` | PMREM-Spiegelreflexion, 512er Specular, `moodColor()`-Rim-Light | `vec3` | HDR |
+| `shadeGlass(p, n, rd, NdotV)` | `p,n,rd: vec3`, `NdotV: float ∈ [0,1]` | Schlick-Fresnel: envMap-Refraktion (Zentrum, mood-getönt) + -Reflexion (Kanten); subtiles inneres Leuchten | `vec3` | HDR |
 
 ---
 
@@ -186,6 +209,6 @@ Haupt-Render-Pass. Interpoliert `noiseLibrary` + `raymarchLibrary`. Exportiert: 
 | `stateTex` | `sampler2D` | Ball-Zustandstextur |
 | `envMap` | `sampler2D` | PMREM-Textur |
 | `phase` | `float` | [0, 2] `getVisualPhase()` — Shading-Blend |
-| `time`, `camPos`, `resolution`, `reflectAll` | — | Globale Szenenparameter |
+| `time`, `camPos`, `resolution` | — | Globale Szenenparameter |
 
 `main()`: `loadBalls()` → `raymarch()` → `shadeHit()`. Ball-Daten werden einmalig aus `stateTex` geladen; kein Texture-Read in Raymarch- oder Normal-Schleife.

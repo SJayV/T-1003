@@ -1,6 +1,6 @@
 // Preconditions: uniforms stateTex (sampler2D), time (float) declared;
 //                stateUV(int) defined in enclosing shader.
-// Public GLSL: applyMetaball, applyCluster, applyBurst (each take inout pos/vel)
+// Public GLSL: applyMetaball, applyCluster, applyBurst
 
 export const simulationLibrary = `
 

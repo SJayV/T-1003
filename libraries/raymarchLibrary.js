@@ -1,11 +1,8 @@
+// Preconditions: uniforms envMap (sampler2D), metaballBlend/clusterBlend/burstBlend
+//                declared; moodLibrary interpolated before this chunk.
+// Public GLSL: vec3 shadeHit(vec3 p, vec3 n, vec3 rd)
+
 export const raymarchLibrary = `
-
-// ── shading: color palette ────────────────────────────────────────────────────
-
-vec3 SH_BASE      = vec3(0.35, 0.47, 0.5 );
-vec3 SH_INNER     = vec3(0.5,  0.75, 1.2 );
-vec3 SH_OUTERGLOW = vec3(0.35, 0.9,  0.7 );
-vec3 SH_INNERGLOW = vec3(0.2,  0.9,  0.8 );
 
 vec2 _envUV(vec3 dir) {
   const float PI = 3.14159265;
@@ -13,57 +10,47 @@ vec2 _envUV(vec3 dir) {
               asin(clamp(dir.y, -1.0, 1.0)) / PI + 0.5);
 }
 
-// ── shading: metallic / reflective (Metaball + Burst) ─────────────────────────
-// Environment map sampling + Reinhard tonemap.
-// Roughness-dependent mip selection goes here once PMREM is implemented.
+vec3 _envSample(vec3 dir) {
+  vec3 raw = texture2D(envMap, _envUV(dir)).rgb;
+  return raw / (raw + 1.0);
+}
 
-vec3 shadeMetal(vec3 n, vec3 rd, vec3 ld, float fresnel, float diffuse, float spec) {
-  vec3 r   = reflect(rd, n);
-  vec3 env = texture2D(envMap, _envUV(r)).rgb;
-  env      = env / (env + 1.0);
+vec3 _rimLight(float NdotV) {
+  return moodColor() * pow(1.0 - NdotV, 2.5) * 1.5;
+}
 
-  vec3 color  = SH_BASE * diffuse * 0.4;
-  color      += (vec3(0.02) + env) * (1.0 + fresnel);
-  color      += spec * 2.3;
+vec3 shadeMetal(vec3 n, vec3 rd, float NdotV) {
+  vec3  ld      = normalize(vec3(2.0, 2.5, 2.0));
+  float fresnel = pow(1.0 - NdotV, 4.0);
+  float diffuse = max(dot(n, ld), 0.0);
+  float spec    = pow(max(dot(n, normalize(ld - rd)), 0.0), 512.0);
+
+  vec3 env   = _envSample(reflect(rd, n));
+  vec3 color = vec3(0.3, 0.3, 0.35) * diffuse * 0.08;
+  color     += env * (0.5 + fresnel * 0.5);
+  color     += spec * 4.0;
+  color     += _rimLight(NdotV);
   return color;
 }
 
-// ── shading: translucent / luminescent (Cluster) ──────────────────────────────
-// Fresnel inversion, thickness proxy via map(), scatter term.
-// Replace thickness proxy with SSS or volume marching when desired.
+vec3 shadeGlass(vec3 p, vec3 n, vec3 rd, float NdotV) {
+  float F     = 0.04 + 0.96 * pow(1.0 - NdotV, 5.0);
+  float eta   = 0.667;
+  vec3  ref1  = refract(rd, n, eta);
+  vec3  ref2  = refract(ref1, -n, 1.0 / eta);
+  float valid = clamp(dot(ref2, ref2) * 4.0, 0.0, 1.0);
+  vec3  thru  = normalize(mix(ref1, ref2, valid));
 
-vec3 shadeCluster(vec3 p, vec3 n, vec3 rd, vec3 ld, float spec) {
-  float invFresnel = pow(max(dot(n, -rd), 0.0), 2.5);
-  float thickness  = clamp(-map(p - n * 0.08), 0.0, 1.0);
-  float innerGlow  = smoothstep(0.0, 0.15, thickness) * 1.2;
-  float scatter    = pow(max(dot(-ld, n), 0.0), 2.0);
+  vec3  ld         = normalize(vec3(2.0, 2.5, 2.0));
+  vec3  glass      = mix(_envSample(thru), _envSample(reflect(rd, n)), F);
+  float spec       = pow(max(dot(n, normalize(ld - rd)), 0.0), 256.0);
+  float centerGlow = pow(NdotV, 16.0) * 0.05;
 
-  vec3 color  = vec3(0.0);
-  color += SH_INNER     * invFresnel * 3.0;
-  color += SH_INNERGLOW * innerGlow  * 1.4;
-  color += spec         * 1.8;
-  color += SH_OUTERGLOW * scatter;
-
-  float edgeFade = pow(1.0 - invFresnel, 1.5);
-  return mix(vec3(0.0), color, 0.3) * (1.0 - edgeFade * 0.5);
+  return glass + MOOD_CLUSTER * centerGlow + spec * 2.5 + _rimLight(NdotV) * 0.4;
 }
 
-// ── shading: main entry point ─────────────────────────────────────────────────
-// Blends metal/cluster continuously via phase value.
-// Callers need not know which shading model produces the result.
-
-vec3 shadeHit(vec3 p, vec3 n, vec3 rd, float phase) {
-  vec3  ld      = normalize(vec3(2.0, 2.5, 2.0));
-  vec3  h       = normalize(ld - rd);
-  float fresnel = pow(1.0 - max(dot(n, -rd), 0.0), 4.0);
-  float diffuse = max(dot(n, ld), 0.0);
-  float spec    = pow(max(dot(n, h), 0.0), 180.0);
-
-  vec3 metal = shadeMetal(n, rd, ld, fresnel, diffuse, spec);
-  if (reflectAll > 0.5) return metal;
-
-  vec3  cluster = shadeCluster(p, n, rd, ld, spec);
-  float blend   = smoothstep(0.0, 0.4, phase) * (1.0 - smoothstep(1.0, 2.0, phase));
-  return mix(metal, cluster, blend);
+vec3 shadeHit(vec3 p, vec3 n, vec3 rd) {
+  float NdotV = max(dot(n, -rd), 0.0);
+  return mix(shadeMetal(n, rd, NdotV), shadeGlass(p, n, rd, NdotV), clusterBlend);
 }
 `;

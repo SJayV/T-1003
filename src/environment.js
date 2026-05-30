@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { onPhaseTransition } from './phase.js';
+import { onPhaseTransition, getMetaballBlend, getClusterBlend, getBurstBlend } from './phase.js';
 import { environmentVert, environmentFrag } from '../shaders/environmentShader.js';
 
 const EQUIRECT_W     = 512;
@@ -34,9 +34,11 @@ export function initEnvMap(renderer) {
   equirectScene  = new THREE.Scene();
   equirectMat    = new THREE.ShaderMaterial({
     uniforms: {
-      phase:      { value: 0.0 },
-      time:       { value: 0.0 },
-      resolution: { value: new THREE.Vector2(EQUIRECT_W, EQUIRECT_H) },
+      time:         { value: 0.0 },
+      resolution:   { value: new THREE.Vector2(EQUIRECT_W, EQUIRECT_H) },
+      metaballBlend:    { value: 1.0 },
+      clusterBlend: { value: 0.0 },
+      burstBlend:   { value: 0.0 },
     },
     vertexShader:   environmentVert,
     fragmentShader: environmentFrag,
@@ -49,9 +51,11 @@ export function initEnvMap(renderer) {
   needsRegen = true;
 }
 
-function _regenerate(phase, time) {
-  equirectMat.uniforms.phase.value = phase;
-  equirectMat.uniforms.time.value  = time;
+function _regenerate(time) {
+  equirectMat.uniforms.time.value         = time;
+  equirectMat.uniforms.metaballBlend.value    = getMetaballBlend();
+  equirectMat.uniforms.clusterBlend.value = getClusterBlend();
+  equirectMat.uniforms.burstBlend.value   = getBurstBlend();
 
   rendererRef.setRenderTarget(equirectTarget);
   rendererRef.render(equirectScene, equirectCamera);
@@ -66,10 +70,10 @@ export function getUniformDefs() {
   return { envMap: { value: null } };
 }
 
-export function applyStateToMaterial(material, phase, time) {
+export function applyStateToMaterial(material, time) {
   frameCount++;
   if (needsRegen || frameCount % REGEN_INTERVAL === 0) {
-    _regenerate(phase, time);
+    _regenerate(time);
     needsRegen = false;
   }
   if (currentPMREM) material.uniforms.envMap.value = currentPMREM.texture;
