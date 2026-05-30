@@ -37,7 +37,8 @@ T-1003/
 │   └── envmap.js           ← CubeMap-Synthese + PMREM-Generierung
 └── shaders/
     ├── simShader.js        ← Physik-GLSL (Sim-Pass, export: simVert, simFrag)
-    └── raymarchShader.js   ← Rendering-GLSL (export: mainVert, mainFrag)
+    ├── shadingLib.js       ← GLSL-Chunk: shadeMetal, shadeCluster, shadeHit (austauschbar)
+    └── raymarchShader.js   ← Rendering-GLSL; interpoliert shadingLib (export: mainVert, mainFrag)
 ```
 
 ### Modul-Interface-Prinzip
@@ -46,7 +47,7 @@ Jedes Modul besitzt seine Uniforms vollständig. `main.js` kennt keine Uniform-N
 
 ```javascript
 // Einmalig beim Material-Setup:
-...simulation.getUniformDefs()   // → { p1..p12 } bzw. später { stateTex }
+...simulation.getUniformDefs()   // → { stateTex }
 ...envmap.getUniformDefs()       // → { envMap, envMapNext, envBlend }
 
 // Jeden Frame:
@@ -215,6 +216,26 @@ Phasengekoppelte Stimmung der CubeMap:
 - Schwarzer Hintergrund; Skybox als Alternative ⚠️ offen
 - Abstrakte dynamische CubeMap — keine erkennbaren Strukturen
 
+### Shading-Modul (`shadingLib.js`)
+
+Da kein `MeshPhysicalMaterial` mit Raymarching kombinierbar ist (Pipeline-Inkompatibilität), wird das gesamte Shading manuell implementiert. Es ist als austauschbarer GLSL-Chunk (`shadingLib.js`) organisiert, der in `raymarchShader.js` per Template-Literal interpoliert wird:
+
+```javascript
+// raymarchShader.js
+import { shadingLib } from './shadingLib.js';
+export const mainFrag = `
+  // ... SDF, noise, map(), normal(), raymarch() ...
+  ${shadingLib}           // ← shadeMetal, shadeCluster, shadeHit injiziert
+  void main() {
+    loadBalls();
+    // ...
+    color = shadeHit(p, n, rd, phase);   // einziger Aufruf aus main()
+  }
+`;
+```
+
+`shadeHit(p, n, rd, phase)` ist die einzige nach außen sichtbare Funktion. Die interne Implementierung (Sampling-Methode, Materialmodell) ist vollständig gekapselt — Austausch gegen PMREM oder ein anderes Modell erfordert nur Änderungen in `shadingLib.js`. Das Chunk-Muster (Interpolation nach `map()`) ist notwendig, da `shadeCluster` `map()` für einen Materialdicken-Proxy aufruft.
+
 ### Audio
 - Phasengekoppelte Klangkulisse ⚠️ offen
 - Stimmungskopplung mit CubeMap-Parametern
@@ -231,7 +252,8 @@ Phasengekoppelte Stimmung der CubeMap:
 | Phasensystem (externer Trigger) | ✅ `triggerPhase()` / `releasePhase()` |
 | CPU-Simulation (3 Phasen) | ✅ implementiert |
 | Modul-Interfaces (getUniformDefs, applyStateToMaterial) | ✅ implementiert |
-| GPU-Simulation (1D-Textur, Sim-Shader) | ⚠️ geplant |
+| GPU-Simulation (1D-Textur, Sim-Shader, Ping-Pong) | ✅ implementiert |
+| Shading-Modul (`shadingLib.js`, `shadeHit`) | ✅ implementiert |
 | PMREM + synthetische CubeMap | ⚠️ geplant (derzeit HDR-Loading) |
 | Statische Kamera + autonomer Schwenk | ⚠️ geplant (derzeit OrbitControls) |
 | Externes Eingabegerät (input.js) | ⚠️ Stub |
@@ -246,7 +268,7 @@ Phasengekoppelte Stimmung der CubeMap:
 
 | # | Thema | Notiz |
 |---|---|---|
-| 1 | GPU-Simulation | 1D-Textur + Sim-Shader; ersetzt CPU-Array + p1–p12 |
+| 1 | GPU-Simulation | ✅ implementiert: RGBA32F 36×1, Ping-Pong, simShader.js |
 | 2 | PMREM / CubeMap | Synthetisierte abstrakte Umgebung statt HDR-Dateien |
 | 3 | Kamera | OrbitControls entfernen; statisch + autonomer Schwenk |
 | 4 | input.js | Externes Gerät: Personenerkennung → triggerPhase() |
