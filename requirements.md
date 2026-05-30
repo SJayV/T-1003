@@ -37,8 +37,10 @@ T-1003/
 │   └── envmap.js           ← CubeMap-Synthese + PMREM-Generierung
 └── shaders/
     ├── simShader.js        ← Physik-GLSL (Sim-Pass, export: simVert, simFrag)
+    ├── noiseLib.js         ← GLSL-Chunk: perlin2D, worley2D, worley3D
     ├── shadingLib.js       ← GLSL-Chunk: shadeMetal, shadeCluster, shadeHit (austauschbar)
-    └── raymarchShader.js   ← Rendering-GLSL; interpoliert shadingLib (export: mainVert, mainFrag)
+    ├── pmremShader.js      ← Equirectangular-GLSL für synthetische Umgebung (export: pmremVert, pmremFrag)
+    └── raymarchShader.js   ← Rendering-GLSL; interpoliert noiseLib + shadingLib (export: mainVert, mainFrag)
 ```
 
 ### Modul-Interface-Prinzip
@@ -146,8 +148,8 @@ Sim-Pass: Fullscreen Quad + OrthographicCamera → WebGLRenderTarget (FloatType)
 | `phase` | phase.js | Phasenwert [0, 2] |
 | `camPos` | renderer.js | Kameraposition |
 | `resolution` | renderer.js | Viewport-Größe |
-| `p1`–`p12` | simulation.js | Ballpositionen (→ später stateTex) |
-| `envMap`, `envMapNext`, `envBlend` | envmap.js | Environment-Maps + Blend |
+| `stateTex` | simulation.js | Ball-Zustandstextur (RGBA32F, 36×1) |
+| `envMap` | envmap.js | PMREM Environment-Map (einzeln, dynamisch regeneriert; derzeit noch: `envMapNext`, `envBlend` für HDR-Blend) |
 
 ---
 
@@ -173,13 +175,23 @@ Primärer deterministischer Input; steuert Phasenzyklus. Pseudozufällige Noise-
   - Bewegungsgeschwindigkeit skaliert Burst-Stärke
 - Anleitungsinteraktion als Installationskonzept denkbar: "nicht direkt ansehen" ⚠️ offen
 
-### Environment (`envmap.js`)
-- Synthetisierte **abstrakte CubeMap** — keine realistischen Umgebungen
-- Laufzeit-Konvertierung → **PMREM** via Three.js `PMREMGenerator` ⚠️ geplant, noch nicht implementiert
-- Derzeit: HDR-Datei-Loading als Übergangslösung
-- Rauheitsabhängiges Sampling im Fragment-Shader (Mip-Level per roughness)
-- PMREM periodisch oder bei Phasenwechsel neu generiert (~2–5ms), nicht per Frame
-- Zwei PMREMs (current / next) im Shader geblended
+### Environment (`envmap.js`) ⚠️ PMREM geplant
+
+**Geplante Architektur: einzelne dynamische PMREM**
+
+Statt mehrerer geladener HDR-Dateien wird eine einzelne PMREM kontinuierlich aus einem GPU-seitigen Equirectangular-Shader regeneriert:
+
+```
+[pmremShader.js]  →  WebGLRenderTarget (Equirectangular, z.B. 256×128)
+                  →  PMREMGenerator.fromEquirectangular()
+                  →  material.uniforms.envMap  (einzige Env-Uniform)
+```
+
+- **Quelle:** `pmremShader.js` — Fullscreen-Quad-Pass, Shader parameterisiert durch `phase` und `time`; erzeugt abstrakte, nicht-gegenständliche Umgebungen (Gradienten, Noise-basierte Lichtflecken)
+- **Regenerierung:** alle N Frames (z.B. 3–5); weiche Übergänge entstehen durch die stetige Funktion `phase → Umgebungsstimmung`, nicht durch Blending zweier Texturen
+- **Trigger:** Phasenwechsel und — später — externer Input analog zu `triggerPhase()`; Kopplung mit Audio-Stimmung
+- **Rauheitsabhängiges Sampling** im Fragment-Shader via PMREM-Mip-Level (`shadingLib.js`)
+- Derzeit: HDR-Datei-Loading als Übergangslösung (`envMapNext`, `envBlend` entfallen nach PMREM-Implementierung)
 
 Phasengekoppelte Stimmung der CubeMap:
 
@@ -218,23 +230,22 @@ Phasengekoppelte Stimmung der CubeMap:
 
 ### Shading-Modul (`shadingLib.js`)
 
-Da kein `MeshPhysicalMaterial` mit Raymarching kombinierbar ist (Pipeline-Inkompatibilität), wird das gesamte Shading manuell implementiert. Es ist als austauschbarer GLSL-Chunk (`shadingLib.js`) organisiert, der in `raymarchShader.js` per Template-Literal interpoliert wird:
+Da `MeshPhysicalMaterial` mit Raymarching inkompatibel ist (es operiert auf rasterisierter Geometrie, nicht auf SDF-ausgewerteten impliziten Flächen), wird das Shading vollständig manuell nachimplementiert. Ziel-Feature-Set, orientiert an `MeshPhysicalMaterial`:
 
-```javascript
-// raymarchShader.js
-import { shadingLib } from './shadingLib.js';
-export const mainFrag = `
-  // ... SDF, noise, map(), normal(), raymarch() ...
-  ${shadingLib}           // ← shadeMetal, shadeCluster, shadeHit injiziert
-  void main() {
-    loadBalls();
-    // ...
-    color = shadeHit(p, n, rd, phase);   // einziger Aufruf aus main()
-  }
-`;
+| Modus | Ziel-Features |
+|---|---|
+| **Metallisch** | PMREM-Sampling, rauheitsabhängiger Mip-Level, Fresnel (Schlick), GGX-Verteilung, Geometry-Term |
+| **Transluzent** | Transmission, Absorption (Beer'sches Gesetz), Dünnfilm-Fresnel, SSS-Näherung, inneres Leuchten |
+
+Aktuell: vereinfachte Näherung. Erweiterung in `shadingLib.js`, sobald PMREM und synthetische CubeMap verfügbar.
+
+**Modul-Muster:** `shadingLib.js` ist ein GLSL-Chunk, der in `raymarchShader.js` per Template-Literal nach `map()` interpoliert wird (notwendig, da `shadeCluster` `map()` für einen Materialdicken-Proxy aufruft). Einziger öffentlicher Aufruf aus `main()`:
+
+```glsl
+color = shadeHit(p, n, rd, phase);
 ```
 
-`shadeHit(p, n, rd, phase)` ist die einzige nach außen sichtbare Funktion. Die interne Implementierung (Sampling-Methode, Materialmodell) ist vollständig gekapselt — Austausch gegen PMREM oder ein anderes Modell erfordert nur Änderungen in `shadingLib.js`. Das Chunk-Muster (Interpolation nach `map()`) ist notwendig, da `shadeCluster` `map()` für einen Materialdicken-Proxy aufruft.
+Austausch des Materialmodells erfordert nur Änderungen in `shadingLib.js`.
 
 ### Audio
 - Phasengekoppelte Klangkulisse ⚠️ offen
@@ -269,7 +280,7 @@ export const mainFrag = `
 | # | Thema | Notiz |
 |---|---|---|
 | 1 | GPU-Simulation | ✅ implementiert: RGBA32F 36×1, Ping-Pong, simShader.js |
-| 2 | PMREM / CubeMap | Synthetisierte abstrakte Umgebung statt HDR-Dateien |
+| 2 | PMREM / CubeMap | Einzelne dynamische PMREM via pmremShader.js → PMREMGenerator; alle N Frames regeneriert |
 | 3 | Kamera | OrbitControls entfernen; statisch + autonomer Schwenk |
 | 4 | input.js | Externes Gerät: Personenerkennung → triggerPhase() |
 | 5 | Audio | Phasenkopplung, Stimmungsdesign |

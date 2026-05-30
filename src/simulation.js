@@ -81,7 +81,6 @@ export function stepSimulation(phase, time) {
 }
 
 // Uniform interface: main.js spreads this into ShaderMaterial uniforms at setup.
-// Switching from p1–p12 to stateTex required no changes in main.js.
 export function getUniformDefs() {
   return { stateTex: { value: null } };
 }
