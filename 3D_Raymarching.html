@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>T-1003</title>
+<style>
+  body { margin: 0; overflow: hidden; background: black; }
+  canvas { display: block; }
+</style>
+
+<!-- Import Map -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+
+<body>
+
+<button id="modeBtn" style="
+  position: fixed; top: 16px; right: 16px; z-index: 100;
+  padding: 8px 14px; cursor: pointer;
+  background: rgba(255,255,255,0.08); color: #fff;
+  border: 1px solid rgba(255,255,255,0.25); border-radius: 4px;
+  font-family: monospace; font-size: 12px; backdrop-filter: blur(6px);
+">Mode: Phase</button>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+
+const scene = new THREE.Scene();
+
+// ==================== CAMERA & RENDERER ====================
+
+const camera = new THREE.PerspectiveCamera(
+  60,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  100
+);
+camera.position.set(-0.4, -0.2, 3);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+// ==================== ORBIT CONTROLS ====================
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.rotateSpeed = 0.1;
+controls.zoomSpeed = 2.0;
+controls.panSpeed = 0.3;
+
+// ==================== SHADER MATERIAL ====================
+
+const fallbackEnvMap = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+fallbackEnvMap.needsUpdate = true;
+
+const geo = new THREE.PlaneGeometry(2, 2);
+const material = new THREE.ShaderMaterial({
+
+uniforms: {
+  time: { value: 0 },
+  resolution: { value: new THREE.Vector2() },
+  camPos: { value: new THREE.Vector3() },
+  p1: { value: new THREE.Vector3() },
+  p2: { value: new THREE.Vector3() },
+  p3: { value: new THREE.Vector3() },
+  p4: { value: new THREE.Vector3() },
+  p5: { value: new THREE.Vector3() },
+  p6: { value: new THREE.Vector3() },
+  p7: { value: new THREE.Vector3() },
+  p8: { value: new THREE.Vector3() },
+  p9: { value: new THREE.Vector3() },
+  p10: { value: new THREE.Vector3() },
+  p11: { value: new THREE.Vector3() },
+  p12: { value: new THREE.Vector3() },
+  phase:      { value: 0 },
+  envMap:     { value: fallbackEnvMap },
+  envMapNext: { value: fallbackEnvMap },
+  envBlend:   { value: 0.0 },
+  reflectAll: { value: 0.0 }
+},
+
+vertexShader: `
+void main() {
+  gl_Position = vec4(position, 1.0);
+}
+`,
+
+fragmentShader: `
+precision highp float;
+
+uniform float time;
+uniform vec2 resolution;
+uniform vec3 camPos;
+uniform float phase;
+uniform sampler2D envMap;
+uniform sampler2D envMapNext;
+uniform float envBlend;
+uniform float reflectAll;
+
+vec2 envUV(vec3 dir) {
+  const float PI = 3.14159265;
+  float phi = atan(dir.z, dir.x);
+  float theta = asin(clamp(dir.y, -1.0, 1.0));
+  return vec2(phi / (2.0 * PI) + 0.5, theta / PI + 0.5);
+}
+
+// ====================== CONSTANTS ====================
+
+// lighting settings
+vec3 backgroundColor = vec3(0.0);
+vec3 lightDirection = normalize(vec3(2.0, 2.5, 2.0));
+
+// metaball phase colors
+vec3 base = vec3(0.35, 0.47, 0.5);
+vec3 mainColor = vec3(1.0, 0.95, 0.9);
+vec3 rimLightColor = vec3(0.0, 0.5, 0.4);
+
+// cluster phase colors
+vec3 innerColor = vec3(0.5, 0.75, 1.2);
+vec3 outerGlowColor = vec3(0.35, 0.9, 0.7);
+vec3 innerGlowColor = vec3(0.2, 0.9, 0.8);
+
+// ==================== PERLIN NOISE ====================
+
+vec2 fade(vec2 t) {
+  return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+vec2 grad(vec2 p) {
+  float h = hash(p) * 6.2831853;
+  return vec2(cos(h), sin(h));
+}
+
+float perlin2D(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = fade(f);
+
+  float a = dot(grad(i + vec2(0.0)), f - vec2(0.0));
+  float b = dot(grad(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
+  float c = dot(grad(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
+  float d = dot(grad(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
+
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// ==================== RADIUS MODULATION ====================
+
+float radiusMod(vec3 p, float base, float seed) {
+  float n = perlin2D(p.xy * 2.0 + seed + time * 0.6)
+          + perlin2D(p.yz * 2.0 + seed * 1.3 + time * 0.5);
+
+  // normalization
+  n = n * 0.5 + 0.5;
+
+  // Perlin noise modulation for radius
+  return base + (n - 0.5) * (0.3 + (phase * 0.2));
+}
+
+// ==================== SIGNED DISTANCE FIELD ====================
+
+float sphere(vec3 p, vec3 c, float r){
+  return length(p - c) - r;
+}
+
+float smin(float a, float b, float k){
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+uniform vec3 p1;
+uniform vec3 p2;
+uniform vec3 p3;
+uniform vec3 p4;
+uniform vec3 p5;
+uniform vec3 p6;
+uniform vec3 p7;
+uniform vec3 p8;
+uniform vec3 p9;
+uniform vec3 p10;
+uniform vec3 p11;
+uniform vec3 p12;
+
+float map(vec3 p){
+
+  float d1 = sphere(p, p1, radiusMod(p1, 0.2, 1.0));
+  float d2 = sphere(p, p2, radiusMod(p2, 0.17, 2.0));
+  float d3 = sphere(p, p3, radiusMod(p3, 0.13, 3.0));
+  float d4 = sphere(p, p4, radiusMod(p4, 0.15, 4.0));
+  float d5 = sphere(p, p5, radiusMod(p5, 0.18, 5.0));
+  float d6 = sphere(p, p6, radiusMod(p6, 0.14, 6.0));
+  float d7 = sphere(p, p7, radiusMod(p7, 0.16, 7.0));
+  float d8 = sphere(p, p8, radiusMod(p8, 0.19, 8.0));
+  float d9 = sphere(p, p9, radiusMod(p9, 0.12, 9.0));
+  float d10 = sphere(p, p10, radiusMod(p10, 0.21, 10.0));
+  float d11 = sphere(p, p11, radiusMod(p11, 0.15, 11.0));
+  float d12 = sphere(p, p12, radiusMod(p12, 0.17, 12.0));
+
+  float d = smin(d1, d2, 0.35);
+  d = smin(d, d3, 0.35);
+  d = smin(d, d4, 0.35);
+  d = smin(d, d5, 0.35);
+  d = smin(d, d6, 0.35);
+  d = smin(d, d7, 0.35);
+  d = smin(d, d8, 0.35);
+  d = smin(d, d9, 0.35);
+  d = smin(d, d10, 0.35);
+  d = smin(d, d11, 0.35);
+  d = smin(d, d12, 0.35);
+
+  // Perlin noise distortion for surface
+  float noise = perlin2D(p.xy * 4.0 + time * 0.3) +
+                perlin2D(p.yz * 4.0 + time * 0.25);
+  d += noise * 0.15;
+
+  return d;
+}
+
+// ==================== NORMAL ====================
+
+vec3 normal(vec3 p){
+  vec2 e = vec2(0.001, 0.0);
+
+  return normalize(vec3(
+    map(p + e.xyy) - map(p - e.xyy),
+    map(p + e.yxy) - map(p - e.yxy),
+    map(p + e.yyx) - map(p - e.yyx)
+  ));
+}
+
+// ==================== RAYMARCH ====================
+
+float raymarch(vec3 ro, vec3 rd){
+  float t = 0.0;
+
+  for(int i = 0; i < 90; i++){
+    vec3 p = ro + rd * t;
+    float d = map(p);
+
+    if(d < 0.001) return t;
+    t += d;
+
+    if(t > 10.0) break;
+  }
+
+  return -1.0;
+}
+
+// ==================== MAIN ====================
+
+void main(){
+
+  vec2 uv = (gl_FragCoord.xy - 0.5 * resolution.xy) / resolution.y;
+
+  vec3 ro = camPos;
+  vec3 rd = normalize(vec3(uv, -1.5));
+
+  float t = raymarch(ro, rd);
+
+  vec3 color = backgroundColor;
+
+  if(t > 0.0){
+
+    vec3 p = ro + rd * t;
+    vec3 n = normal(p);
+
+    // ==================== BASE LIGHTING ====================
+
+    // initial lighting calculations
+    vec3 r = reflect(rd, n);
+    vec3 h = normalize(lightDirection - rd);
+    float fresnel = pow(1.0 - max(dot(n, -rd), 0.0), 4.0);
+    float diffuse = max(dot(n, lightDirection), 0.0);
+    float specular = pow(max(dot(n, h), 0.0), 180.0);
+
+    // ====================  METABALL COLOR ====================
+
+    vec3 envA = texture2D(envMap,     envUV(r)).rgb;
+    vec3 envB = texture2D(envMapNext, envUV(r)).rgb;
+    vec3 envSample = mix(envA, envB, envBlend);
+    envSample = envSample / (envSample + 1.0);
+    vec3 environment = vec3(0.02) + envSample;
+
+    vec3 metalColor = base * diffuse * 0.4;
+    metalColor += environment * (1.0 + fresnel);
+    metalColor += specular * 2.3;
+
+    if (reflectAll > 0.5) {
+
+      color = metalColor;
+
+    } else {
+
+    // ==================== CLUSTER COLOR ====================
+
+    float invertedFresnel = pow(max(dot(n, -rd), 0.0), 2.5);
+    float thickness = clamp(-map(p - n * 0.08), 0.0, 1.0);
+    float innerGlow = smoothstep(0.0, 0.15, thickness) * 1.2;
+    float scatter = pow(max(dot(-lightDirection, n), 0.0), 2.0);
+
+    vec3 clusterColor = backgroundColor;
+    clusterColor += innerColor * invertedFresnel * 3.0;
+    clusterColor += innerGlowColor * innerGlow * 1.4;
+    clusterColor += specular * 1.8;
+    clusterColor += outerGlowColor * scatter;
+
+    // ==================== BACKGROUND BLEND ====================
+
+    float visibility = 0.3;
+    float edgeFade = pow(1.0 - invertedFresnel, 1.5);
+
+    clusterColor = mix(backgroundColor, clusterColor, visibility);
+    clusterColor *= (1.0 - edgeFade * 0.5);
+
+    // ==================== PHASE BLEND ====================
+
+    float blend = smoothstep(0.0, 0.4, phase) * (1.0 - smoothstep(1.0, 2.0, phase));
+
+    color = mix(metalColor, clusterColor, blend);
+
+    }
+
+  } else {
+
+    color = backgroundColor;
+
+  }
+
+  gl_FragColor = vec4(color, 1.0);
+}
+`
+});
+
+const mesh = new THREE.Mesh(geo, material);
+scene.add(mesh);
+
+// ==================== ENV MAP LOADING ====================
+
+const HDR_URLS = [
+  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr',                             // dark studio
+  'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/textures/equirectangular/venice_sunset_1k.hdr',  // sky (confirmed)
+  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/forest_slope_1k.hdr',                               // forest 1
+  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/urban_alley_01_1k.hdr',                             // city
+  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/christmas_photo_studio_04_1k.hdr',                  // coloured / abstract
+  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloofendal_48d_partly_cloudy_puresky_1k.hdr',       // beach / bright daytime
+  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/mossy_forest_1k.hdr',                               // forest 2 (dense/mossy)
+  'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/neon_photostudio_1k.hdr',                           // night / neon downtown
+];
+
+const envTextures = new Array(HDR_URLS.length).fill(fallbackEnvMap);
+
+const hdrLoader = new RGBELoader();
+HDR_URLS.forEach((url, i) => {
+  hdrLoader.load(url,
+    (tex) => { envTextures[i] = tex; },
+    undefined,
+    (err) => { console.error(`HDR[${i}] load failed:`, err); }
+  );
+});
+
+// resize
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ================== PHASE LOGIC WITH PHYSICS ==================
+
+const balls = [
+  { x: 0.6, y: 0.2, z: 0.0, vx: 0, vy: 0, vz: 0 },
+  { x: -0.5, y: 0.3, z: 0.3, vx: 0, vy: 0, vz: 0 },
+  { x: 0.0, y: -0.4, z: 0.0, vx: 0, vy: 0, vz: 0 },
+  { x: 0.8, y: -0.2, z: -0.2, vx: 0, vy: 0, vz: 0 },
+  { x: -0.3, y: 0.6, z: 0.1, vx: 0, vy: 0, vz: 0 },
+  { x: 0.4, y: -0.6, z: 0.3, vx: 0, vy: 0, vz: 0 },
+  { x: -0.7, y: -0.1, z: -0.1, vx: 0, vy: 0, vz: 0 },
+  { x: 0.2, y: 0.5, z: -0.3, vx: 0, vy: 0, vz: 0 },
+  { x: -0.1, y: -0.3, z: 0.4, vx: 0, vy: 0, vz: 0 },
+  { x: 0.9, y: 0.1, z: 0.2, vx: 0, vy: 0, vz: 0 },
+  { x: -0.6, y: 0.4, z: -0.4, vx: 0, vy: 0, vz: 0 },
+  { x: 0.3, y: -0.5, z: 0.1, vx: 0, vy: 0, vz: 0 }
+];
+
+let t = 0;
+let lastPhase = -1;
+
+function getPhase() {
+  const period = 10.0;
+
+  const c = t % period;
+
+  // phase proportions
+  const metaballRatio = 0.15;
+  const clusterRatio  = 0.83;
+  const burstRatio    = 0.02;
+
+  const metaballEnd = period * metaballRatio;
+  const clusterEnd  = metaballEnd + period * clusterRatio;
+
+  if (c < metaballEnd) {
+    return 0.0;
+  } else if (c < clusterEnd) {
+    // 0 → 1 (cluster phase)
+    return (c - metaballEnd) / (clusterEnd - metaballEnd);
+  } else {
+    // 1 → 2 (burst phase)
+    return 1.0 + (c - clusterEnd) / (period - clusterEnd);
+  }
+}
+
+// ==================== ENV MAP SWITCHING ====================
+
+function smoothstep(e0, e1, x) {
+  const v = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return v * v * (3 - 2 * v);
+}
+
+function getEnvState() {
+  const switchInterval = 5.0;
+  const slot     = Math.floor(t / switchInterval);
+  const currIdx  = slot % envTextures.length;
+  const nextIdx  = (slot + 1) % envTextures.length;
+  const progress = (t % switchInterval) / switchInterval;
+  const blend    = smoothstep(0.3, 1.0, progress);
+  return { currIdx, nextIdx, blend };
+}
+
+function metaballPhase() {
+  const cx = 0, cy = 0, cz = 0;
+  const boundX = 1.8, boundY = 1.0;
+  
+  for (let b of balls) {
+    // Small random perturbations
+    b.vx += (Math.random() - 0.5) * 0.003;
+    b.vy += (Math.random() - 0.5) * 0.003;
+    b.vz += (Math.random() - 0.5) * 0.003;
+
+    // Circular drift in XY plane
+    const dx = b.x - cx;
+    const dy = b.y - cy;
+    b.vx += -dy * 0.00003;
+    b.vy += dx * 0.00003;
+
+    // Minimal centering
+    b.vx += (cx - b.x) * 0.00003;
+    b.vy += (cy - b.y) * 0.00003;
+    b.vz += (cz - b.z) * 0.00003;
+
+    // Apply velocity
+    b.x += b.vx;
+    b.y += b.vy;
+    b.z += b.vz;
+
+    // Boundary reflection
+    if (b.x > boundX) { b.x = boundX; b.vx *= -0.9; }
+    if (b.x < -boundX) { b.x = -boundX; b.vx *= -0.9; }
+    if (b.y > boundY) { b.y = boundY; b.vy *= -0.9; }
+    if (b.y < -boundY) { b.y = -boundY; b.vy *= -0.9; }
+    if (b.z > 0.5) { b.z = 0.5; b.vz *= -0.9; }
+    if (b.z < -0.5) { b.z = -0.5; b.vz *= -0.9; }
+
+    // High damping
+    b.vx *= 0.998;
+    b.vy *= 0.998;
+    b.vz *= 0.998;
+  }
+}
+
+function clusterPhase() {
+  // Calculate cluster center
+  let cx = 0, cy = 0, cz = 0;
+  for (let b of balls) {
+    cx += b.x;
+    cy += b.y;
+    cz += b.z;
+  }
+  cx /= balls.length;
+  cy /= balls.length;
+  cz /= balls.length;
+
+  const boundX = 1.8, boundY = 1.0;
+  const centerPull = 0.00008;
+  const worldCenterPull = 0.00003;  // Pull toward screen center
+
+  for (let b of balls) {
+    // Gentle pull toward cluster center
+    b.vx += (cx - b.x) * centerPull;
+    b.vy += (cy - b.y) * centerPull;
+    b.vz += (cz - b.z) * centerPull;
+
+    // Slow drift toward world center (0, 0, 0)
+    b.vx += (0 - b.x) * worldCenterPull;
+    b.vy += (0 - b.y) * worldCenterPull;
+    b.vz += (0 - b.z) * worldCenterPull;
+
+    // Apply velocity
+    b.x += b.vx;
+    b.y += b.vy;
+    b.z += b.vz;
+
+    // Boundary reflection
+    if (b.x > boundX) { b.x = boundX; b.vx *= -0.9; }
+    if (b.x < -boundX) { b.x = -boundX; b.vx *= -0.9; }
+    if (b.y > boundY) { b.y = boundY; b.vy *= -0.9; }
+    if (b.y < -boundY) { b.y = -boundY; b.vy *= -0.9; }
+    if (b.z > 0.5) { b.z = 0.5; b.vz *= -0.9; }
+    if (b.z < -0.5) { b.z = -0.5; b.vz *= -0.9; }
+
+    // High damping to maintain uniform speed
+    b.vx *= 0.995;
+    b.vy *= 0.995;
+    b.vz *= 0.995;
+  }
+}
+
+function burstPhase() {
+  // Calculate cluster center
+  let cx = 0, cy = 0, cz = 0;
+  for (let b of balls) {
+    cx += b.x;
+    cy += b.y;
+    cz += b.z;
+  }
+  cx /= balls.length;
+  cy /= balls.length;
+  cz /= balls.length;
+
+  const boundX = 1.8, boundY = 1.0;
+
+  for (let b of balls) {
+    // Explosion outward
+    b.vx += (b.x - cx) * 0.006;
+    b.vy += (b.y - cy) * 0.006;
+    b.vz += (b.z - cz) * 0.006;
+
+    // Random noise
+    b.vx += (Math.random() - 0.5) * 0.05;
+    b.vy += (Math.random() - 0.5) * 0.05;
+    b.vz += (Math.random() - 0.5) * 0.05;
+
+    // Apply velocity
+    b.x += b.vx;
+    b.y += b.vy;
+    b.z += b.vz;
+
+    // Boundary reflection
+    if (b.x > boundX) { b.x = boundX; b.vx *= -0.9; }
+    if (b.x < -boundX) { b.x = -boundX; b.vx *= -0.9; }
+    if (b.y > boundY) { b.y = boundY; b.vy *= -0.9; }
+    if (b.y < -boundY) { b.y = -boundY; b.vy *= -0.9; }
+    if (b.z > 0.5) { b.z = 0.5; b.vz *= -0.9; }
+    if (b.z < -0.5) { b.z = -0.5; b.vz *= -0.9; }
+
+    // High damping
+    b.vx *= 0.90;
+    b.vy *= 0.90;
+    b.vz *= 0.90;
+  }
+}
+
+function update() {
+  t += 0.004;
+
+  const phase = Math.ceil(getPhase());
+  const phaseNames = ["metaball", "cluster", "burst"];
+  
+  if (phase !== lastPhase) {
+    console.log(`Phase: ${phaseNames[phase]}`);
+    lastPhase = phase;
+  }
+  
+  if (phase === 0) metaballPhase();
+  else if (phase === 1) clusterPhase();
+  else burstPhase();
+}
+
+// animate
+function animate(time){
+  const phase = getPhase();
+  material.uniforms.phase.value = phase;
+
+  const { currIdx, nextIdx, blend } = getEnvState();
+  material.uniforms.envMap.value     = envTextures[currIdx];
+  material.uniforms.envMapNext.value = envTextures[nextIdx];
+  material.uniforms.envBlend.value   = blend;
+
+  controls.update();
+
+  update();
+
+  material.uniforms.time.value = t;
+  material.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+  material.uniforms.camPos.value.copy(camera.position);
+  material.uniforms.p1.value.set(balls[0].x, balls[0].y, balls[0].z);
+  material.uniforms.p2.value.set(balls[1].x, balls[1].y, balls[1].z);
+  material.uniforms.p3.value.set(balls[2].x, balls[2].y, balls[2].z);
+  material.uniforms.p4.value.set(balls[3].x, balls[3].y, balls[3].z);
+  material.uniforms.p5.value.set(balls[4].x, balls[4].y, balls[4].z);
+  material.uniforms.p6.value.set(balls[5].x, balls[5].y, balls[5].z);
+  material.uniforms.p7.value.set(balls[6].x, balls[6].y, balls[6].z);
+  material.uniforms.p8.value.set(balls[7].x, balls[7].y, balls[7].z);
+  material.uniforms.p9.value.set(balls[8].x, balls[8].y, balls[8].z);
+  material.uniforms.p10.value.set(balls[9].x, balls[9].y, balls[9].z);
+  material.uniforms.p11.value.set(balls[10].x, balls[10].y, balls[10].z);
+  material.uniforms.p12.value.set(balls[11].x, balls[11].y, balls[11].z);
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+
+animate();
+
+// ==================== MODE TOGGLE ====================
+
+const modeBtn = document.getElementById('modeBtn');
+modeBtn.addEventListener('click', () => {
+  const next = material.uniforms.reflectAll.value < 0.5;
+  material.uniforms.reflectAll.value = next ? 1.0 : 0.0;
+  modeBtn.textContent = next ? 'Mode: Reflect All' : 'Mode: Phase';
+});
+</script>
+
+</body>
+</html>
