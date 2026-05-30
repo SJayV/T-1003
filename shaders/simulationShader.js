@@ -12,7 +12,7 @@ precision highp sampler2D;
 
 uniform sampler2D stateTex;
 uniform float     time;
-uniform float     phase;
+uniform float     logicalPhase;
 
 const float TEX_W = 36.0;
 
@@ -37,7 +37,7 @@ void main() {
   float r0   = readR0(ballIdx);
   float seed = readSeed(ballIdx);
 
-  int phaseIdx = int(ceil(phase));
+  int phaseIdx = int(ceil(logicalPhase));
   if      (phaseIdx == 0) applyMetaball(pos, vel, seed);
   else if (phaseIdx == 1) applyCluster(pos, vel);
   else                    applyBurst(pos, vel, seed);

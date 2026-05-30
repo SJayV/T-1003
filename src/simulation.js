@@ -52,9 +52,9 @@ export function initSimulation(renderer) {
   simScene    = new THREE.Scene();
   simMaterial = new THREE.ShaderMaterial({
     uniforms: {
-      stateTex: { value: initTex },
-      time:     { value: 0.0 },
-      phase:    { value: 0.0 },
+      stateTex:     { value: initTex },
+      time:         { value: 0.0 },
+      logicalPhase: { value: 0.0 },
     },
     vertexShader:   simulationVert,
     fragmentShader: simulationFrag,
@@ -65,10 +65,10 @@ export function initSimulation(renderer) {
   isFirstFrame = true;
 }
 
-export function stepSimulation(phase, time) {
-  simMaterial.uniforms.stateTex.value = isFirstFrame ? initTex : readTarget.texture;
-  simMaterial.uniforms.phase.value    = phase;
-  simMaterial.uniforms.time.value     = time;
+export function stepSimulation(logicalPhase, time) {
+  simMaterial.uniforms.stateTex.value     = isFirstFrame ? initTex : readTarget.texture;
+  simMaterial.uniforms.logicalPhase.value = logicalPhase;
+  simMaterial.uniforms.time.value         = time;
 
   rendererRef.setRenderTarget(writeTarget);
   rendererRef.render(simScene, simCamera);

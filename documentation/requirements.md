@@ -37,11 +37,12 @@ T-1003/
 │   └── environment.js          ← dynamische PMREM-Generierung
 ├── shaders/
 │   ├── simulationShader.js     ← Physik-GLSL (Sim-Pass); interpoliert simulationLibrary
-│   ├── environmentShader.js    ← Equirectangular-GLSL für synthetische Umgebung
-│   └── raymarchShader.js       ← Rendering-GLSL; interpoliert noiseLibrary + raymarchLibrary
+│   ├── environmentShader.js    ← Equirectangular-GLSL; interpoliert noiseLibrary + moodLibrary
+│   └── raymarchShader.js       ← Rendering-GLSL; interpoliert noiseLibrary + moodLibrary + raymarchLibrary
 └── libraries/
     ├── noiseLibrary.js         ← GLSL-Chunk: perlin2D, worley2D, worley3D
-    ├── raymarchLibrary.js      ← GLSL-Chunk: shadeMetal, shadeCluster, shadeHit
+    ├── moodLibrary.js          ← GLSL-Chunk: Farbpalette (MOOD_*), Phasengewichte (tMeta/Cluster/Burst), moodColor()
+    ├── raymarchLibrary.js      ← GLSL-Chunk: shadeMetal, shadeGlass, shadeHit
     └── simulationLibrary.js    ← GLSL-Chunk: applyMetaball, applyCluster, applyBurst
 ```
 

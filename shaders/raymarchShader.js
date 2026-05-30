@@ -1,4 +1,5 @@
 import { noiseLibrary    } from '../libraries/noiseLibrary.js';
+import { moodLibrary     } from '../libraries/moodLibrary.js';
 import { raymarchLibrary } from '../libraries/raymarchLibrary.js';
 
 export const mainVert = `
@@ -14,9 +15,8 @@ precision highp sampler2D;
 uniform float     time;
 uniform vec2      resolution;
 uniform vec3      camPos;
-uniform float     phase;
+uniform float     visualPhase;
 uniform sampler2D envMap;
-uniform float     reflectAll;
 uniform sampler2D stateTex;
 
 // ── ball data cache (populated once per fragment) ─────────────────────────────
@@ -49,13 +49,14 @@ void loadBalls() {
 // Provides: perlin2D, worley2D, worley3D
 
 ${noiseLibrary}
+${moodLibrary}
 
 // ── radius modulation: r_i(t) = r_i^0 * (1 + alpha * N(c_i, t)) ──────────────
 
 float radiusMod(vec3 c, float r0, float seed) {
   float n = perlin2D(c.xy * 2.0 + seed       + time * 0.6)
           + perlin2D(c.yz * 2.0 + seed * 1.3 + time * 0.5);
-  return r0 + (n * 0.5 + 0.5 - 0.5) * (0.3 + phase * 0.2);
+  return r0 + (n * 0.5 + 0.5 - 0.5) * (0.3 + visualPhase * 0.2);
 }
 
 // ── SDF ───────────────────────────────────────────────────────────────────────
@@ -109,9 +110,8 @@ float raymarch(vec3 ro, vec3 rd) {
   return -1.0;
 }
 
-// ── shading (shadingLib) ──────────────────────────────────────────────────────
-// Injected after map() so shadeCluster can call map() for the thickness proxy.
-// Public: shadeHit(p, n, rd, phase) → vec3
+// ── shading ───────────────────────────────────────────────────────────────────
+// Injected after map() so shadeGlass can call map() for the thickness proxy.
 
 ${raymarchLibrary}
 
@@ -128,7 +128,7 @@ void main() {
   vec3 color = vec3(0.0);
   if (hit > 0.0) {
     vec3 p = ro + rd * hit;
-    color  = shadeHit(p, normal(p), rd, phase);
+    color  = shadeHit(p, normal(p), rd);
   }
 
   gl_FragColor = vec4(color, 1.0);
