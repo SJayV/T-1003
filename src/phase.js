@@ -5,12 +5,6 @@ const CLUSTER_END  = METABALL_END + PERIOD * 0.83;
 let t             = 0;
 let phaseOverride = null;
 
-// ── transition events ─────────────────────────────────────────────────────────
-// Slot = Math.ceil(phase): 0=Metaball, 1=Cluster, 2=Burst.
-// Subscribers (envmap, audio, …) register here; they are called whenever the
-// slot changes — whether driven by time or by triggerPhase() / releasePhase().
-// This is the single place for threshold detection; no duplication in subscribers.
-
 const _listeners = [];
 let   _prevSlot  = 0;
 

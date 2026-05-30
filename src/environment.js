@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { onPhaseTransition } from './phase.js';
-import { pmremVert, pmremFrag } from '../shaders/pmremShader.js';
+import { environmentVert, environmentFrag } from '../shaders/environmentShader.js';
 
 const EQUIRECT_W     = 512;
 const EQUIRECT_H     = 256;
-const REGEN_INTERVAL = 4;   // smooth within-phase animation: regenerate every N frames
+const REGEN_INTERVAL = 4;
 
 let rendererRef    = null;
 let pmremGenerator = null;
@@ -38,15 +38,13 @@ export function initEnvMap(renderer) {
       time:       { value: 0.0 },
       resolution: { value: new THREE.Vector2(EQUIRECT_W, EQUIRECT_H) },
     },
-    vertexShader:   pmremVert,
-    fragmentShader: pmremFrag,
+    vertexShader:   environmentVert,
+    fragmentShader: environmentFrag,
     depthTest:  false,
     depthWrite: false,
   });
   equirectScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), equirectMat));
 
-  // Any phase-slot crossing (time-driven or input-triggered via triggerPhase /
-  // releasePhase) fires this callback — no duplicate threshold logic needed here.
   onPhaseTransition(() => { needsRegen = true; });
   needsRegen = true;
 }

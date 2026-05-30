@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { scene, camera, renderer, controls }                          from './src/renderer.js';
 import { tick, getTime, getPhase }                                    from './src/phase.js';
 import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
-import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState }       from './src/envmap.js';
+import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState }       from './src/environment.js';
 import { initCamera, updateCamera }                                   from './src/camera.js';
 import { initAudio,  updateAudio  }                                   from './src/audio.js';
 import { mainVert, mainFrag }                                         from './shaders/raymarchShader.js';
