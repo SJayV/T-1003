@@ -1,9 +1,4 @@
-// GLSL shading chunk — interpolated into mainFrag after map() by raymarchShader.js.
-// Preconditions: uniforms envMap, envMapNext, envBlend, reflectAll, phase declared;
-//                map(vec3) defined (used for thickness proxy in shadeCluster).
-// Public GLSL interface: vec3 shadeHit(vec3 p, vec3 n, vec3 rd, float phase)
-
-export const shadingLib = `
+export const raymarchLibrary = `
 
 // ── shading: color palette ────────────────────────────────────────────────────
 

@@ -29,18 +29,20 @@ T-1003/
 ├── src/
 │   ├── renderer.js             ← WebGLRenderer, PerspectiveCamera, Resize
 │   ├── simulation.js           ← Ping-Pong RenderTargets, Sim-Pass (GPU)
-│   ├── phase.js                ← getPhase(), triggerPhase(), onPhaseTransition()
+│   ├── phase.js                ← getLogicalPhase(), getVisualPhase(), triggerPhase(), onPhaseTransition()
 │   ├── balls.js                ← Initialzustand der 12 Bälle (Startwerte für GPU-Textur)
 │   ├── camera.js               ← statische Kamera, minimaler autonomer Schwenk
 │   ├── input.js                ← externes Eingabegerät → ruft triggerPhase() etc.
 │   ├── audio.js                ← Phasengekoppelte Klangkulisse (Stub)
 │   └── environment.js          ← dynamische PMREM-Generierung
-└── shaders/
-    ├── simulationShader.js     ← Physik-GLSL (Sim-Pass): Ballbewegung, Phasendynamik
-    ├── noiseLib.js             ← GLSL-Chunk: perlin2D, worley2D, worley3D
-    ├── shadingLib.js           ← GLSL-Chunk: shadeMetal, shadeCluster, shadeHit
-    ├── environmentShader.js    ← Equirectangular-GLSL für synthetische Umgebung
-    └── raymarchShader.js       ← Rendering-GLSL; interpoliert noiseLib + shadingLib
+├── shaders/
+│   ├── simulationShader.js     ← Physik-GLSL (Sim-Pass); interpoliert simulationLibrary
+│   ├── environmentShader.js    ← Equirectangular-GLSL für synthetische Umgebung
+│   └── raymarchShader.js       ← Rendering-GLSL; interpoliert noiseLibrary + raymarchLibrary
+└── libraries/
+    ├── noiseLibrary.js         ← GLSL-Chunk: perlin2D, worley2D, worley3D
+    ├── raymarchLibrary.js      ← GLSL-Chunk: shadeMetal, shadeCluster, shadeHit
+    └── simulationLibrary.js    ← GLSL-Chunk: applyMetaball, applyCluster, applyBurst
 ```
 
 ### Modul-Interface-Prinzip
@@ -106,7 +108,8 @@ Parameter α, β: empirisch zu bestimmen.
 ### Phasensystem
 
 - Zyklisch, deterministisch zeitgesteuert; Phasenwert als kontinuierlicher Float
-- Phasenwert steuert Physik-Dynamik (`simulationShader.js`) und Shading-Interpolation (`shadingLib.js`)
+- **Logischer Phasenwert** (`getLogicalPhase()`): steuert Physik-Dynamik (`simulationLibrary.js`) und Ereigniserkennung (`onPhaseTransition`)
+- **Visueller Phasenwert** (`getVisualPhase()`): exponentieller Lerp zum logischen Wert (Rate 0.08/Frame, Halbwertszeit ~8 Frames); glättet den harten 2→0-Zyklusreset zu einer ~25-Frame-Überblende; steuert Shading-Interpolation und PMREM
 - Externer Trigger via `triggerPhase(value)` / `releasePhase()` jederzeit möglich
 
 | Phase | Wert | Dynamik | Shading |

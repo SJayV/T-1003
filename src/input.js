@@ -1,7 +1,7 @@
 // External input device (webcam / motion sensor).
 // Calls triggerPhase() / releasePhase() and camera.onInput() directly — no coupling through main.js.
 
-import { triggerPhase, releasePhase, getPhase } from './phase.js';
+import { triggerPhase, releasePhase, getLogicalPhase } from './phase.js';
 import { onInput as cameraInput }               from './camera.js';
 
 // ── stub ──────────────────────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ export function updateInput() {
 
 // speed: normalised motion magnitude [0, 1] — scales burst centrifugal force
 function _onPresence(speed) {
-  const phase = getPhase();
+  const phase = getLogicalPhase();
   if (phase >= 0.5 && phase < 1.0) {
     // Cluster phase: motion triggers Burst; speed scales intensity (1.0–2.0)
     triggerPhase(1.0 + Math.max(0.1, speed));
