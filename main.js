@@ -1,25 +1,22 @@
 import * as THREE from 'three';
 import { scene, camera, renderer, controls }                          from './src/renderer.js';
 import { tick, getTime, getLogicalPhase, getVisualPhase,
-         getMetaballBlend, getClusterBlend, getBurstBlend }               from './src/phase.js';
+         getMetaballBlend, getClusterBlend, getBurstBlend }           from './src/phase.js';
 import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
 import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState }       from './src/environment.js';
 import { initCamera, updateCamera }                                   from './src/camera.js';
 import { initAudio,  updateAudio  }                                   from './src/audio.js';
 import { mainVert, mainFrag }                                         from './shaders/raymarchShader.js';
 
-// ── material ──────────────────────────────────────────────────────────────────
-// Uniforms owned by each module are spread in via getUniformDefs().
-
 const material = new THREE.ShaderMaterial({
   uniforms: {
-    time:       { value: 0 },
-    resolution: { value: new THREE.Vector2() },
-    camPos:     { value: new THREE.Vector3() },
+    time:         { value: 0 },
+    resolution:   { value: new THREE.Vector2() },
+    camPos:       { value: new THREE.Vector3() },
     visualPhase:  { value: 0 },
-    metaballBlend:    { value: 1 },
-    clusterBlend: { value: 0 },
-    burstBlend:   { value: 0 },
+    metaballBlend: { value: 1 },
+    clusterBlend:  { value: 0 },
+    burstBlend:    { value: 0 },
     ...simDefs(),
     ...envDefs(),
   },
@@ -54,9 +51,9 @@ function animate() {
   material.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
   material.uniforms.camPos.value.copy(camera.position);
   material.uniforms.visualPhase.value  = visualPhase;
-  material.uniforms.metaballBlend.value    = getMetaballBlend();
-  material.uniforms.clusterBlend.value = getClusterBlend();
-  material.uniforms.burstBlend.value   = getBurstBlend();
+  material.uniforms.metaballBlend.value  = getMetaballBlend();
+  material.uniforms.clusterBlend.value   = getClusterBlend();
+  material.uniforms.burstBlend.value     = getBurstBlend();
 
   controls.update();
   renderer.render(scene, camera);
@@ -64,4 +61,3 @@ function animate() {
 }
 
 animate();
-

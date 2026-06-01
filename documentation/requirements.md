@@ -278,7 +278,7 @@ color = shadeHit(p, n, rd, phase);
 | GPU-Simulation (1D-Textur RGBA32F, Ping-Pong, simulationShader.js) | ✅ |
 | Shading-Modul (shadingLib.js, shadeHit) | ✅ |
 | Environment (dynamische PMREM, environmentShader.js) | ✅ |
-| Statische Kamera + autonomer Schwenk | ⚠️ |
+| Autonome Kamera (elliptische Umlaufbahn + Bob, kein OrbitControls) | ✅ |
 | Externes Eingabegerät (input.js) | ⚠️ Stub |
 | Audio | ⚠️ Stub |
 | Sensorik / augenähnliche Elemente | ⚠️ |
@@ -291,7 +291,7 @@ color = shadeHit(p, n, rd, phase);
 
 | # | Thema | Notiz |
 |---|---|---|
-| 1 | Kamera | OrbitControls entfernen; statisch + autonomer Schwenk |
+| 1 | Kamera | ✅ implementiert: elliptische Umlaufbahn + Lissajous-Bob, OrbitControls entfernt |
 | 2 | input.js | Externes Gerät: Personenerkennung → triggerPhase() |
 | 3 | Audio | Phasenkopplung via onPhaseTransition, Stimmungsdesign |
 | 4 | Sensorik / Augen | Augenähnliche Elemente als Reaktivitätsmerkmal |

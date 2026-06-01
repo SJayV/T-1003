@@ -1,5 +1,5 @@
 // Preconditions: uniforms envMap (sampler2D), metaballBlend/clusterBlend/burstBlend
-//                declared; moodLibrary interpolated before this chunk.
+//                declared; moodLibrary + noiseLibrary interpolated before this chunk.
 // Public GLSL: vec3 shadeHit(vec3 p, vec3 n, vec3 rd)
 
 export const raymarchLibrary = `
@@ -15,23 +15,41 @@ vec3 _envSample(vec3 dir) {
   return raw / (raw + 1.0);
 }
 
+// Cone-sampling approximation of roughness-blurred reflection.
+// Builds an orthonormal basis around dir and takes 5 samples spread by roughness.
+vec3 _envSampleLod(vec3 dir, float roughness) {
+  vec3  right  = normalize(cross(dir, vec3(0.0, 1.0, 0.001)));
+  vec3  up     = cross(right, dir);
+  float spread = roughness * 0.6;
+  vec3 sum  = _envSample(dir);
+  sum += _envSample(normalize(dir + right * spread));
+  sum += _envSample(normalize(dir - right * spread));
+  sum += _envSample(normalize(dir + up    * spread));
+  sum += _envSample(normalize(dir - up    * spread));
+  return sum * 0.2;
+}
+
 vec3 _rimLight(float NdotV) {
   return moodColor() * pow(1.0 - NdotV, 2.5) * 1.5;
 }
 
-vec3 shadeMetal(vec3 n, vec3 rd, float NdotV) {
+// ── metallic ──────────────────────────────────────────────────────────────────
+// roughness ∈ [0, 1] controls PMREM mip level (0 = mirror, 1 = fully diffuse).
+
+vec3 shadeMetal(vec3 n, vec3 rd, float NdotV, float roughness) {
   vec3  ld      = normalize(vec3(2.0, 2.5, 2.0));
   float fresnel = pow(1.0 - NdotV, 4.0);
   float diffuse = max(dot(n, ld), 0.0);
   float spec    = pow(max(dot(n, normalize(ld - rd)), 0.0), 512.0);
-
-  vec3 env   = _envSample(reflect(rd, n));
+  vec3 env   = _envSampleLod(reflect(rd, n), roughness);
   vec3 color = vec3(0.3, 0.3, 0.35) * diffuse * 0.08;
   color     += env * (0.5 + fresnel * 0.5);
-  color     += spec * 4.0;
+  color     += spec * 4.0 * (1.0 - roughness * 3.0);
   color     += _rimLight(NdotV);
   return color;
 }
+
+// ── glass ─────────────────────────────────────────────────────────────────────
 
 vec3 shadeGlass(vec3 p, vec3 n, vec3 rd, float NdotV) {
   float F     = 0.04 + 0.96 * pow(1.0 - NdotV, 5.0);
@@ -49,8 +67,12 @@ vec3 shadeGlass(vec3 p, vec3 n, vec3 rd, float NdotV) {
   return glass + MOOD_CLUSTER * centerGlow + spec * 2.5 + _rimLight(NdotV) * 0.4;
 }
 
+// ── entry point ───────────────────────────────────────────────────────────────
+// Roughness from Perlin noise on the surface position — organic micro-variation.
+
 vec3 shadeHit(vec3 p, vec3 n, vec3 rd) {
-  float NdotV = max(dot(n, -rd), 0.0);
-  return mix(shadeMetal(n, rd, NdotV), shadeGlass(p, n, rd, NdotV), clusterBlend);
+  float NdotV   = max(dot(n, -rd), 0.0);
+  float roughness = clamp(0.05 + perlin2D(p.xz * 0.8 + time * 0.04) * 0.28, 0.0, 1.0);
+  return mix(shadeMetal(n, rd, NdotV, roughness), shadeGlass(p, n, rd, NdotV), clusterBlend);
 }
 `;
