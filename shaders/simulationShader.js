@@ -1,3 +1,4 @@
+import { noiseLibrary }       from '../libraries/noiseLibrary.js';
 import { simulationLibrary } from '../libraries/simulationLibrary.js';
 
 export const simulationVert = `
@@ -22,7 +23,9 @@ vec3  readPos (int b) { return texture2D(stateTex, stateUV(b * 3    )).xyz; }
 float readR0  (int b) { return texture2D(stateTex, stateUV(b * 3    )).w;   }
 vec3  readVel (int b) { return texture2D(stateTex, stateUV(b * 3 + 1)).xyz; }
 float readSeed(int b) { return texture2D(stateTex, stateUV(b * 3 + 1)).w;   }
+vec4  readOrb (int b) { return texture2D(stateTex, stateUV(b * 3 + 2));     }
 
+${noiseLibrary}
 ${simulationLibrary}
 
 void main() {
@@ -36,11 +39,12 @@ void main() {
   vec3  vel  = readVel(ballIdx);
   float r0   = readR0(ballIdx);
   float seed = readSeed(ballIdx);
+  vec4  orb  = readOrb(ballIdx);
 
   int phaseIdx = int(ceil(logicalPhase));
-  if      (phaseIdx == 0) applyMetaball(pos, vel, seed);
+  if      (phaseIdx == 0) applyMetaball(pos, vel, seed, orb);
   else if (phaseIdx == 1) applyCluster(pos, vel);
-  else                    applyBurst(pos, vel, seed);
+  else                    applyBurst(pos, vel, seed, logicalPhase);
 
   if (subIdx == 0) { gl_FragColor = vec4(pos, r0);   }
   else             { gl_FragColor = vec4(vel, seed);  }

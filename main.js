@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { scene, camera, renderer, controls }                          from './src/renderer.js';
+import { scene, camera, renderer }                                    from './src/renderer.js';
 import { tick, getTime, getLogicalPhase, getVisualPhase,
          getMetaballBlend, getClusterBlend, getBurstBlend }           from './src/phase.js';
 import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
@@ -10,10 +10,10 @@ import { mainVert, mainFrag }                                         from './sh
 
 const material = new THREE.ShaderMaterial({
   uniforms: {
-    time:         { value: 0 },
-    resolution:   { value: new THREE.Vector2() },
-    camPos:       { value: new THREE.Vector3() },
-    visualPhase:  { value: 0 },
+    time:          { value: 0 },
+    resolution:    { value: new THREE.Vector2() },
+    camPos:        { value: new THREE.Vector3() },
+    visualPhase:   { value: 0 },
     metaballBlend: { value: 1 },
     clusterBlend:  { value: 0 },
     burstBlend:    { value: 0 },
@@ -29,7 +29,7 @@ scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
 // ── init ──────────────────────────────────────────────────────────────────────
 
 initEnvMap(renderer);
-initCamera(camera, controls);
+initCamera(camera);
 initAudio();
 initSimulation(renderer);
 
@@ -44,18 +44,17 @@ function animate() {
   stepSimulation(logicalPhase, t);
   applySimState(material);
   applyEnvState(material, t);
-  updateCamera(camera, controls, logicalPhase, t);
+  updateCamera(camera, logicalPhase, t);
   updateAudio(logicalPhase, t);
 
-  material.uniforms.time.value         = t;
+  material.uniforms.time.value          = t;
   material.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
   material.uniforms.camPos.value.copy(camera.position);
-  material.uniforms.visualPhase.value  = visualPhase;
-  material.uniforms.metaballBlend.value  = getMetaballBlend();
-  material.uniforms.clusterBlend.value   = getClusterBlend();
-  material.uniforms.burstBlend.value     = getBurstBlend();
+  material.uniforms.visualPhase.value   = visualPhase;
+  material.uniforms.metaballBlend.value = getMetaballBlend();
+  material.uniforms.clusterBlend.value  = getClusterBlend();
+  material.uniforms.burstBlend.value    = getBurstBlend();
 
-  controls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
