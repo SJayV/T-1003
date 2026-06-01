@@ -53,13 +53,13 @@ Dynamische PMREM-Generierung aus synthetischem Equirectangular-Shader (`environm
 ---
 
 ### `src/camera.js`
-Statische Kamera mit autonomem Schwenk. ⚠️ Stub.
+Stationäre Beobachter-Kamera. Sakkaden-Verhalten: Kamera hält einen Punkt im Blick, wechselt dann per Smoothstep zu einem neuen Zufallspunkt. Phase bestimmt Hold-Dauer und Übergangsgeschwindigkeit.
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
-| `initCamera(camera, controls)` | `camera: PerspectiveCamera`, `controls: OrbitControls` | — | `void` | — |
-| `updateCamera(camera, controls, phase, time)` | `phase: float ∈ [0,2]`, `time: float ∈ [0,∞)` | `time` treibt autonomen Schwenk; `phase` kann Kamerabewegung beeinflussen | `void` | — |
-| `onInput(type, data)` | `type: string ∈ {'presence','absence'}`, `data: { speed?: float ∈ [0,1] }` | Aufgerufen von `input.js`; `speed` skaliert optionale Kamerareaktion | `void` | — |
+| `initCamera(camera)` | `camera: PerspectiveCamera` | Setzt Startposition | `void` | — |
+| `updateCamera(camera, logicalPhase, time)` | `logicalPhase: float ∈ [0,2]`, `time: float ∈ [0,∞)` | Setzt Look-at auf `(0.8·sin(t·0.4) + 0.35·sin(t·1.1), 0, 0)`; Position bleibt fest | `void` | — |
+| `onInput(type, data)` | `type: string ∈ {'presence','absence'}`, `data: { speed?: float ∈ [0,1] }` | Aufgerufen von `input.js` | `void` | — |
 
 ---
 
@@ -139,13 +139,11 @@ Voraussetzung: `uniform float phase` (= `getVisualPhase()`) deklariert.
 
 | GLSL-Export | Typ | Semantik |
 |---|---|---|
-| `MOOD_METABALL` | `const vec3` | `(0.20, 0.48, 1.00)` — kühl blau |
+| `MOOD_METABALL` | `const vec3` | `(0.78, 0.83, 0.90)` — kaltes Silbergrau |
 | `MOOD_CLUSTER` | `const vec3` | `(0.00, 0.78, 0.95)` — cyan-türkis |
 | `MOOD_BURST` | `const vec3` | `(0.10, 1.00, 0.60)` — helles türkis-grün |
-| `tMeta() → float` | `∈ [0,1]` | Gewicht Metaball-Phase; 1 bei phase=0, 0 ab phase≈0.6 |
-| `tCluster() → float` | `∈ [0,1]` | Gewicht Cluster-Phase; Peak 1 bei phase≈0.7–1.2 |
-| `tBurst() → float` | `∈ [0,1]` | Gewicht Burst-Phase; rampt ab phase=1.3, =1 bei phase=2 |
-| `moodColor() → vec3` | `∈ [0,1]³` | Interpolierte Akzentfarbe: blau→türkis→türkis-grün |
+| `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`; immer Summe = 1 |
+| `moodColor() → vec3` | `∈ [0,1]³` | Gewichteter Mix der drei Phasenfarben |
 
 ---
 
@@ -157,9 +155,9 @@ Benennung nach **Material**: `shadeMetal`/`shadeGlass` sind austauschbare Implem
 
 | GLSL-Funktion | Input | Bereich / Semantik | Output | Bereich |
 |---|---|---|---|---|
-| `shadeHit(p, n, rd)` | `p: vec3`, `n: vec3` (norm.), `rd: vec3` (norm.) | Liest `phase`-Uniform; Blend via `tCluster()`: 0=Metall, ~0.7–1.2=Glas, 2=Metall | `vec3` | [0, ∞) HDR |
-| `shadeMetal(n, rd, NdotV)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]` | PMREM-Spiegelreflexion, 512er Specular, `moodColor()`-Rim-Light | `vec3` | HDR |
-| `shadeGlass(p, n, rd, NdotV)` | `p,n,rd: vec3`, `NdotV: float ∈ [0,1]` | Schlick-Fresnel: envMap-Refraktion (Zentrum, mood-getönt) + -Reflexion (Kanten); subtiles inneres Leuchten | `vec3` | HDR |
+| `shadeHit(p, n, rd)` | `p: vec3`, `n: vec3` (norm.), `rd: vec3` (norm.) | Berechnet Perlin-Roughness aus `p`; Blend via `clusterBlend`: Metall↔Glas | `vec3` | [0, ∞) HDR |
+| `shadeMetal(n, rd, NdotV, roughness)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]`, `roughness: float ∈ [0,1]` | PMREM via `textureLod` (Mip = roughness×7); Specular skaliert mit roughness; Rim-Light | `vec3` | HDR |
+| `shadeGlass(p, n, rd, NdotV)` | `p,n,rd: vec3`, `NdotV: float ∈ [0,1]` | Doppelte Refraktion (IOR 1.5), Schlick-Fresnel, Rim × 0.4, Specular 256er | `vec3` | HDR |
 
 ---
 

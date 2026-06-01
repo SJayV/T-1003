@@ -25,6 +25,29 @@ vec3 uvToDir(vec2 uv) {
   return vec3(cosT * cos(phi), sin(theta), cosT * sin(phi));
 }
 
+vec3 envMetaball(vec3 dir, vec3 rDir) {
+  float wM1 = worley2D(rDir.xy * 1.0 + time * 0.06);
+  float wM2 = worley2D(rDir.xz * 1.6 + time * 0.04);
+  float bM  = pow(clamp(1.0 - min(wM1, wM2) * 1.1, 0.0, 1.0), 3.5);
+  return MOOD_METABALL * bM * 2.2;
+}
+
+vec3 envCluster(vec3 dir) {
+  vec3  spot1Dir = normalize(vec3( 0.3, 0.85,  0.2));
+  vec3  spot2Dir = normalize(vec3(-0.5, 0.60, -0.3));
+  float spot1    = pow(max(dot(dir, spot1Dir), 0.0), 6.0);
+  float spot2    = pow(max(dot(dir, spot2Dir), 0.0), 4.0);
+  return MOOD_CLUSTER * (spot1 * 2.5 + spot2 * 1.2);
+}
+
+vec3 envBurst(vec3 dir, vec3 rDir, float cosR, float sinR) {
+  float wB     = worley2D(rDir.xz * 3.5 + time * 0.11);
+  float bB     = pow(clamp(1.0 - wB * 1.6, 0.0, 1.0), 8.0);
+  vec3  keyDir = normalize(vec3(cosR * 1.2 - sinR * 0.8, 1.8, sinR * 1.2 + cosR * 0.8));
+  float key    = pow(max(dot(dir, keyDir), 0.0), 28.0);
+  return MOOD_BURST * (bB * 6.0 + key * 8.0);
+}
+
 void main() {
   vec2 uv  = gl_FragCoord.xy / resolution;
   vec3 dir = uvToDir(uv);
@@ -33,39 +56,16 @@ void main() {
   float cosR = cos(rot); float sinR = sin(rot);
   vec3  rDir = vec3(dir.x * cosR - dir.z * sinR, dir.y, dir.x * sinR + dir.z * cosR);
 
-  // Per-phase ambient: metaball gets silver-grey base; cluster and burst near-black.
-  // Cluster PMREM is intentionally almost black — so glass refraction shows the dark
-  // background (transparent) with only a few concentrated teal point sources visible.
-  float ambientScale = metaballBlend * 0.28 + clusterBlend * 0.012 + burstBlend * 0.005;
-  vec3 base = moodColor() * ambientScale;
+  float ambientScale = metaballBlend * 0.14 + clusterBlend * 0.012 + burstBlend * 0.005;
+  vec3  base = moodColor() * ambientScale;
 
-  // Noise-modulate the metaball ambient for chromatic variation
   float amb = (perlin2D(rDir.xz * 2.0 + time * 0.12) * 0.65
              + perlin2D(rDir.yz * 3.5  + time * 0.28) * 0.35) * 0.5 + 0.5;
-  base *= 0.40 + 0.60 * amb;
+  base *= 0.08 + 0.92 * amb;
 
-  // Cluster: two concentrated teal point sources — visible as bright spots
-  // through the refracting glass. No top glow (would make glass look filled).
-  vec3  spot1Dir = normalize(vec3( 0.3, 0.85,  0.2));
-  vec3  spot2Dir = normalize(vec3(-0.5, 0.60, -0.3));
-  float spot1    = pow(max(dot(dir, spot1Dir), 0.0), 6.0);
-  float spot2    = pow(max(dot(dir, spot2Dir), 0.0), 4.0);
-  base += MOOD_CLUSTER * (spot1 * 2.5 + spot2 * 1.2) * clusterBlend;
-
-  // Metaball: drifting Worley blobs (two layers for variation)
-  float wM1 = worley2D(rDir.xy * 1.8 + time * 0.06);
-  float wM2 = worley2D(rDir.xz * 2.8 + time * 0.04);
-  float bM  = pow(clamp(1.0 - min(wM1, wM2) * 1.2, 0.0, 1.0), 4.0);
-  base += MOOD_METABALL * bM * metaballBlend * 1.2;
-
-  // Burst: fast hard Worley spots + rotating key light (HDR)
-  float wB  = worley2D(rDir.xz * 3.5 + time * 0.11);
-  float bB  = pow(clamp(1.0 - wB * 1.6, 0.0, 1.0), 8.0);
-  base += MOOD_BURST * bB * 6.0 * burstBlend;
-
-  vec3 keyDir = normalize(vec3(cosR * 1.2 - sinR * 0.8, 1.8, sinR * 1.2 + cosR * 0.8));
-  float key   = pow(max(dot(dir, keyDir), 0.0), 28.0);
-  base += MOOD_BURST * key * 8.0 * burstBlend;
+  base += envMetaball(dir, rDir) * metaballBlend;
+  base += envCluster(dir)        * clusterBlend;
+  base += envBurst(dir, rDir, cosR, sinR) * burstBlend;
 
   gl_FragColor = vec4(base, 1.0);
 }

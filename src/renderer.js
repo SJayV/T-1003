@@ -19,9 +19,6 @@ document.body.appendChild(renderer.domElement);
 export const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
-controls.rotateSpeed = 0.1;
-controls.zoomSpeed = 2.0;
-controls.panSpeed = 0.3;
 
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;

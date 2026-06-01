@@ -1,3 +1,5 @@
+import { GLSL_BOUNDS_X, GLSL_BOUNDS_Y, GLSL_BOUNDS_Z } from '../src/constants.js';
+
 // Preconditions: uniforms stateTex (sampler2D), time (float) declared;
 //                stateUV(int) defined in enclosing shader.
 // Public GLSL: applyMetaball, applyCluster, applyBurst
@@ -9,12 +11,12 @@ float rand(float seed) {
 }
 
 void reflectBounds(inout vec3 pos, inout vec3 vel) {
-  if (pos.x >  1.8) { pos.x =  1.8; vel.x *= -0.9; }
-  if (pos.x < -1.8) { pos.x = -1.8; vel.x *= -0.9; }
-  if (pos.y >  1.0) { pos.y =  1.0; vel.y *= -0.9; }
-  if (pos.y < -1.0) { pos.y = -1.0; vel.y *= -0.9; }
-  if (pos.z >  0.5) { pos.z =  0.5; vel.z *= -0.9; }
-  if (pos.z < -0.5) { pos.z = -0.5; vel.z *= -0.9; }
+  if (pos.x >  ${GLSL_BOUNDS_X}) { pos.x =  ${GLSL_BOUNDS_X}; vel.x *= -0.9; }
+  if (pos.x < -${GLSL_BOUNDS_X}) { pos.x = -${GLSL_BOUNDS_X}; vel.x *= -0.9; }
+  if (pos.y >  ${GLSL_BOUNDS_Y}) { pos.y =  ${GLSL_BOUNDS_Y}; vel.y *= -0.9; }
+  if (pos.y < -${GLSL_BOUNDS_Y}) { pos.y = -${GLSL_BOUNDS_Y}; vel.y *= -0.9; }
+  if (pos.z >  ${GLSL_BOUNDS_Z}) { pos.z =  ${GLSL_BOUNDS_Z}; vel.z *= -0.9; }
+  if (pos.z < -${GLSL_BOUNDS_Z}) { pos.z = -${GLSL_BOUNDS_Z}; vel.z *= -0.9; }
 }
 
 vec3 computeCentroid() {
