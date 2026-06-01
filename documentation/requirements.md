@@ -115,17 +115,24 @@ Parameter α, β: empirisch zu bestimmen.
 
 | Phase | Wert | Dynamik | Shading |
 |---|---|---|---|
-| **Metaball** | 0.0 | Zirkulärer Drift, stochastische Perturbation, Wandreflexion | Metallisch-reflektierend |
-| **Cluster** | 0.0→1.0 | Zentripetalkraft zum Masseschwerpunkt | Transluzent + lumineszent |
-| **Burst** | 1.0→2.0 | Zentrifugalkraft vom Masseschwerpunkt | Metallisch-reflektierend |
+| **Metaball** | 0.0 | Analytische Einzelorbits + Perlin-Noise-Störung | Metallisch-reflektierend |
+| **Cluster** | 0.0→1.0 | Zentripetalkraft zum Masseschwerpunkt | Transluzent + glasartig |
+| **Burst** | 1.0→2.0 | Exponentiell abklingende Zentrifugalabstoßung | Metallisch-reflektierend |
+
+**Metaball** — analytische Einzelorbits, Bounds by Construction:
+
+Jeder Ball i bewegt sich auf einer geneigten Ellipse mit individuellen Parametern $(r_i, \omega_i, \phi_i^0, \sin\theta_i)$:
+$$\mathbf{c}_i(t) = \begin{pmatrix} r_i \cos\phi_i(t) \\ r_i \sin\phi_i(t)\,\sin\theta_i \\ r_i \sin\phi_i(t)\,\cos\theta_i \cdot 0.28 \end{pmatrix} + \epsilon_\text{Perlin}(\phi_i, \text{seed}_i)$$
+
+mit $\phi_i(t) = \phi_i^0 + \omega_i \cdot t$. Grenzen eingehalten by design: $r_i \leq 1.72 < 1.8$, $r_i \sin\theta_i \leq 1.0$, $r_i \cdot 0.28 \leq 0.48 < 0.5$. Keine Randreflexion nötig.
 
 **Cluster** — Masseschwerpunkt und Anziehung:
-$$\hat{\mathbf{c}}(t) = \frac{1}{n}\sum_{i=1}^n \mathbf{c}_i(t), \qquad \mathbf{v}_i(t) \propto \hat{\mathbf{c}}(t) - \mathbf{c}_i(t)$$
+$$\hat{\mathbf{c}}(t) = \frac{1}{n}\sum_{i=1}^n \mathbf{c}_i(t), \qquad \mathbf{v}_i(t) \mathrel{+}= k_1(\hat{\mathbf{c}} - \mathbf{c}_i) + k_2(0 - \mathbf{c}_i)$$
 
-**Burst** — Abstoßung:
-$$\mathbf{v}_i(t) \propto \mathbf{c}_i(t) - \hat{\mathbf{c}}(t)$$
+**Burst** — exponentiell abklingende Abstoßung (stark lokal, asymptotisch 0):
+$$\mathbf{v}_i(t) \mathrel{+}= \hat{\mathbf{d}}_i \cdot F_0 \cdot e^{-\|\mathbf{d}_i\| \cdot 1.5}, \qquad \mathbf{d}_i = \mathbf{c}_i - \hat{\mathbf{c}}$$
 
-Burst-Stärke skalierbar mit erfasster Bewegungsgeschwindigkeit / Personenanzahl.
+$F_0 = 0.3 + s \cdot 1.5$ skaliert mit Eingabe-Geschwindigkeit $s \in [0,1]$ (kodiert in `logicalPhase - 1.0`).
 
 ---
 
@@ -139,9 +146,9 @@ Format: RGBA32F, Breite 36 (3 Texel × 12 Bälle), Höhe 1
 |---|---|---|---|---|
 | 3i   | pos.x | pos.y | pos.z | r_i^0 |
 | 3i+1 | vel.x | vel.y | vel.z | noise_seed |
-| 3i+2 | — | — | — | — |
+| 3i+2 | orbitRadius | orbitSpeed | orbitPhase | orbitInclination |
 
-Texel 3i+2 reserviert für spätere Erweiterungen (z.B. Excitation, Color-Tint).
+Texel 3i+2 enthält statische Orbit-Parameter für die Metaball-Phase (Initialisierung aus `balls.js`, wird nie überschrieben — Passthrough im Sim-Shader).
 
 ### Render-Passes pro Frame
 
@@ -153,22 +160,21 @@ Texel 3i+2 reserviert für spätere Erweiterungen (z.B. Excitation, Color-Tint).
 
 Alle Passes: Fullscreen Quad + OrthographicCamera → WebGLRenderTarget (außer Main-Pass → Screen).
 
-### Physik- und Phasendynamik (GPU, `simulationShader.js`)
+### Physik- und Phasendynamik (GPU, `simulationLibrary.js`)
 
-Pro Fragment (= ein Texel) liest der Shader die aktuelle Ball-Position und -Geschwindigkeit, bestimmt anhand von `phase` den Physik-Zweig und schreibt den neuen Zustand:
+Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie Orbit-Parameter (Texel 3i+2), bestimmt anhand von `logicalPhase` den Physik-Zweig und schreibt den neuen Zustand:
 
-- **Metaball** (`ceil(phase) == 0`): stochastisches Rauschen + schwache Kreisrotation + Zentrierung
-- **Cluster** (`ceil(phase) == 1`): Zentripetalkraft zu globalem Schwerpunkt (alle 12 Positionen gelesen)
-- **Burst** (`ceil(phase) == 2`): Zentrifugalkraft + stochastische Perturbation
-
-Zufallskomponente: `rand(seed, time)` — deterministisch pro Ball (seed aus Zustandstextur), variiert pro Frame (time-Uniform).
+- **Metaball** (`ceil(logicalPhase) == 0`): Analytische Einzelorbits aus Texel 3i+2 (Radius, Geschwindigkeit, Phase, Inklination); Position direkt gesetzt, keine Integration. Perlin-Noise-Störung für organische Variation. Grenzen by construction eingehalten.
+- **Cluster** (`ceil(logicalPhase) == 1`): Velocity-Integration; Zentripetalkraft + schwache Zentrierung
+- **Burst** (`ceil(logicalPhase) == 2`): Velocity-Integration; exponentiell abklingende Abstoßung $F_0 \cdot e^{-1.5d}$; $F_0$ skaliert mit `logicalPhase - 1.0` (Input-Geschwindigkeit)
 
 ### Uniforms (CPU → Shader, pro Frame)
 
 | Uniform | Quelle | Beschreibung |
 |---|---|---|
 | `time` | phase.js | Globale Zeit |
-| `phase` | phase.js | Phasenwert [0, 2] |
+| `visualPhase` | phase.js | Visueller Phasenwert [0, 2] (geglättet) |
+| `metaballBlend`, `clusterBlend`, `burstBlend` | phase.js | Vorberechnete Blend-Gewichte (Summe = 1) |
 | `camPos` | renderer.js | Kameraposition |
 | `resolution` | renderer.js | Viewport-Größe |
 | `stateTex` | simulation.js | Ball-Zustandstextur (RGBA32F, 36×1) |
@@ -178,7 +184,7 @@ Zufallskomponente: `rand(seed, time)` — deterministisch pro Ball (seed aus Zus
 
 ## Kamera
 
-- **Statische Grundposition** mit minimalem autonomem Schwenk — kein OrbitControls in der finalen Version ⚠️
+- **Statische Grundposition**, kein OrbitControls
 - Kamerabewegung: langsame, algorithmisch gesteuerte Rotation um das Objekt
 - Keine direkte Nutzersteuerung der Kamera
 - Kamera und externes Eingabegerät sind **vollständig getrennte Systeme**
