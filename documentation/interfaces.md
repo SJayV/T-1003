@@ -162,14 +162,14 @@ Benennung nach **Material**: `shadeMetal`/`shadeGlass` sind austauschbare Implem
 ---
 
 ### `libraries/simulationLibrary.js`
-Physikfunktionen pro Phasenmodus. Nur von `simulationShader.js` verwendet.
-Voraussetzung: Uniforms `stateTex` (sampler2D), `time` (float) deklariert; `stateUV(int)` definiert.
+Physikfunktionen pro Phasenmodus. Kein Seed, kein Bounds-Handling — alle Übergänge velocity-only.
+Voraussetzung: Uniforms `stateTex` (sampler2D), `time` (float), `logicalPhase` (float) deklariert; `stateUV(int)`, `readOrb(int)` definiert.
 
 | GLSL-Funktion | Input / Output | Semantik |
 |---|---|---|
-| `applyMetaball(inout pos, inout vel, seed)` | `pos,vel: vec3`, `seed: float` | Stochastischer Drift + schwache Kreisrotation + Zentrierung |
+| `applyMetaball(inout pos, inout vel, orb)` | `pos,vel: vec3`, `orb: vec4` (orbit params) | Sanfte Anziehung zur analytischen Orbitposition; Position nie direkt gesetzt |
 | `applyCluster(inout pos, inout vel)` | `pos,vel: vec3` | Zentripetalkraft zu globalem Schwerpunkt |
-| `applyBurst(inout pos, inout vel, seed)` | `pos,vel: vec3`, `seed: float` | Zentrifugalkraft + stochastische Streuung |
+| `applyBurst(inout pos, inout vel, lPhase)` | `pos,vel: vec3`, `lPhase: float ∈ [1,2]` | Exponentiell abklingende Abstoßung; `lPhase−1.0` = Input-Intensität |
 
 ---
 
@@ -181,8 +181,8 @@ Sim-Pass-Shader. Intern von `simulation.js` verwendet. Interpoliert `simulationL
 | GLSL-Uniform | Typ | Bereich / Semantik |
 |---|---|---|
 | `stateTex` | `sampler2D` | RGBA32F 36×1 Eingangszustand |
-| `phase` | `float` | [0, 2] `getLogicalPhase()` — bestimmt Physik-Zweig |
-| `time` | `float` | [0, ∞) Seed für deterministisches Rauschen |
+| `logicalPhase` | `float` | [0, 2] `getLogicalPhase()` — bestimmt Physik-Zweig |
+| `time` | `float` | [0, ∞) für Orbit-Berechnung (phi = phi0 + time × omega) |
 
 ---
 

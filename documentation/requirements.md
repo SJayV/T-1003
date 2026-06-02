@@ -96,15 +96,13 @@ $$d(\mathbf{x}, t) = \operatorname{smin}_{i=1}^{n} \bigl(\|\mathbf{x} - \mathbf{
 
 ### Noise
 
-**Noise-Bibliothek** (`noiseLib.js`): Perlin-Noise N: ℝ² × ℝ → [−1, 1] und Worley-Noise W: ℝⁿ → [0, ~1], vollständig auf Shader-Ebene.
+**Noise-Bibliothek** (`noiseLibrary.js`): Perlin-Noise N: ℝ² × ℝ → [−1, 1] und Worley-Noise W: ℝⁿ → [0, ~1], vollständig auf Shader-Ebene.
 
-**Radiusmodulation** (pro Ball, per Shader-Eval):
-$$r_i(t) = r_i^0 \cdot \bigl(1 + \alpha \cdot \mathcal{N}(\mathbf{c}_i,\, t)\bigr)$$
+**Radiusmodulation** (pro Ball, per Shader-Eval) — kein Seed, Ball-Position differenziert:
+$$r_i(t) = r_i^0 + \alpha \cdot \bigl(\mathcal{N}(\mathbf{c}_i^{xy}, t) + \mathcal{N}(\mathbf{c}_i^{yz}, t)\bigr)$$
 
 **Oberflächenperturbation** (auf komponierten SDF):
 $$\hat{d}(\mathbf{x}, t) = d(\mathbf{x}, t) + \beta \cdot \mathcal{N}(\mathbf{x},\, t)$$
-
-Parameter α, β: empirisch zu bestimmen.
 
 ### Phasensystem
 
@@ -115,24 +113,25 @@ Parameter α, β: empirisch zu bestimmen.
 
 | Phase | Wert | Dynamik | Shading |
 |---|---|---|---|
-| **Metaball** | 0.0 | Analytische Einzelorbits + Perlin-Noise-Störung | Metallisch-reflektierend |
+| **Metaball** | 0.0 | Analytische Einzelorbits; sanfte Anziehung zur Orbitposition | Metallisch-reflektierend |
 | **Cluster** | 0.0→1.0 | Zentripetalkraft zum Masseschwerpunkt | Transluzent + glasartig |
 | **Burst** | 1.0→2.0 | Exponentiell abklingende Zentrifugalabstoßung | Metallisch-reflektierend |
 
 **Metaball** — analytische Einzelorbits, Bounds by Construction:
 
-Jeder Ball i bewegt sich auf einer geneigten Ellipse mit individuellen Parametern $(r_i, \omega_i, \phi_i^0, \sin\theta_i)$:
-$$\mathbf{c}_i(t) = \begin{pmatrix} r_i \cos\phi_i(t) \\ r_i \sin\phi_i(t)\,\sin\theta_i \\ r_i \sin\phi_i(t)\,\cos\theta_i \cdot 0.28 \end{pmatrix} + \epsilon_\text{Perlin}(\phi_i, \text{seed}_i)$$
+Jeder Ball i wird sanft zu einem analytischen Orbit-Ziel angezogen, das durch individuelle Parameter $(r_i, \omega_i, \phi_i^0 + \phi_\text{rand}, \sin\theta_i)$ bestimmt wird:
 
-mit $\phi_i(t) = \phi_i^0 + \omega_i \cdot t$. Grenzen eingehalten by design: $r_i \leq 1.72 < 1.8$, $r_i \sin\theta_i \leq 1.0$, $r_i \cdot 0.28 \leq 0.48 < 0.5$. Keine Randreflexion nötig.
+$$\mathbf{c}_i^\text{orbit}(t) = \begin{pmatrix} r_i \cos\phi_i(t) \\ r_i \sin\phi_i(t)\,\sin\theta_i \\ r_i \sin\phi_i(t)\,\cos\theta_i \cdot 0.28 \end{pmatrix} + \epsilon_\text{Perlin}(\mathbf{c}_i^\text{orbit}, t)$$
+
+mit $\phi_i(t) = (\phi_i^0 + \phi_\text{rand}) + \omega_i \cdot t$. $\phi_\text{rand} \sim \mathcal{U}[0, 2\pi)$ wird bei Programmstart gezogen — jeder Run sieht anders aus. Noise-Input ist die Orbit-Position selbst (keine Seed); Balls differenzieren durch unterschiedliche Orbitpositionen. Bounds by design mit 10% Marge: $r_i \leq 1.58$, $r_i \sin\theta_i \leq 0.90$. Keine Bounds-Reflexion.
 
 **Cluster** — Masseschwerpunkt und Anziehung:
 $$\hat{\mathbf{c}}(t) = \frac{1}{n}\sum_{i=1}^n \mathbf{c}_i(t), \qquad \mathbf{v}_i(t) \mathrel{+}= k_1(\hat{\mathbf{c}} - \mathbf{c}_i) + k_2(0 - \mathbf{c}_i)$$
 
 **Burst** — exponentiell abklingende Abstoßung (stark lokal, asymptotisch 0):
-$$\mathbf{v}_i(t) \mathrel{+}= \hat{\mathbf{d}}_i \cdot F_0 \cdot e^{-\|\mathbf{d}_i\| \cdot 1.5}, \qquad \mathbf{d}_i = \mathbf{c}_i - \hat{\mathbf{c}}$$
+$$\mathbf{v}_i(t) \mathrel{+}= \hat{\mathbf{d}}_i \cdot F_0 \cdot e^{-\|\mathbf{d}_i\| \cdot 2.0}, \qquad \mathbf{d}_i = \mathbf{c}_i - \hat{\mathbf{c}}$$
 
-$F_0 = 0.3 + s \cdot 1.5$ skaliert mit Eingabe-Geschwindigkeit $s \in [0,1]$ (kodiert in `logicalPhase - 1.0`).
+$F_0 = 0.010 + s \cdot 0.035$ skaliert mit Eingabe-Geschwindigkeit $s \in [0,1]$ (kodiert in `logicalPhase - 1.0`). Kraft ≈ 0 bei $\|\mathbf{d}_i\| \approx 2.1$ (halbe Raumdiagonale).
 
 ---
 
@@ -145,10 +144,10 @@ Format: RGBA32F, Breite 36 (3 Texel × 12 Bälle), Höhe 1
 | Texel | r | g | b | a |
 |---|---|---|---|---|
 | 3i   | pos.x | pos.y | pos.z | r_i^0 |
-| 3i+1 | vel.x | vel.y | vel.z | noise_seed |
-| 3i+2 | orbitRadius | orbitSpeed | orbitPhase | orbitInclination |
+| 3i+1 | vel.x | vel.y | vel.z | 0 (unused) |
+| 3i+2 | orbitRadius | orbitSpeed | orbitPhase + φ_rand | orbitInclination |
 
-Texel 3i+2 enthält statische Orbit-Parameter für die Metaball-Phase (Initialisierung aus `balls.js`, wird nie überschrieben — Passthrough im Sim-Shader).
+Texel 3i+2: statische Orbit-Parameter; `orbitPhase` wird bei Init mit einem zufälligen Offset $\phi_\text{rand} \sim \mathcal{U}[0, 2\pi)$ addiert, sodass jeder Run anders aussieht. Passthrough im Sim-Shader — nie überschrieben.
 
 ### Render-Passes pro Frame
 
@@ -194,7 +193,7 @@ Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie 
 ## Input & Interaktion
 
 ### Zeit
-Primärer deterministischer Input; steuert Phasenzyklus. Stochastische Noise-Komponente im `simulationShader.js` sorgt dafür, dass das Objekt nie exakt gleich agiert.
+Primärer deterministischer Input; steuert Phasenzyklus. Variation entsteht durch inkommensurable Orbit-Frequenzen — keine zwei Phasen sehen gleich aus.
 
 ### Externes Eingabegerät (`input.js`)
 - Kamerabasiertes Gerät (z.B. Webcam + Personenerkennung) registriert Anwesenheit und Bewegung
@@ -214,7 +213,7 @@ environmentShader.js  →  WebGLRenderTarget (512×256, HalfFloat)
                       →  material.uniforms.envMap
 ```
 
-`environmentShader.js` erzeugt abstrakte, nicht-gegenständliche Umgebungen parameterisiert durch `phase` und `time` (Worley-Blobs, Perlin-Ambient, gerichtetes Licht). Regenerierung alle 4 Frames + bei Phasenübergängen (via `onPhaseTransition`).
+`environmentShader.js` erzeugt abstrakte, nicht-gegenständliche Umgebungen parameterisiert durch `metaballBlend/clusterBlend/burstBlend` und `time` (Worley-Blobs, Perlin-Ambient, gerichtetes Licht). Regenerierung alle 4 Frames + bei Phasenübergängen (via `onPhaseTransition`). Anisotropes Filtering auf der PMREM-Textur (`renderer.capabilities.getMaxAnisotropy()`) reduziert Aliasing bei schrägen Sampling-Winkeln.
 
 Phasengekoppelte Stimmung der Umgebung:
 

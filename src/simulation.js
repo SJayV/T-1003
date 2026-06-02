@@ -31,26 +31,26 @@ function buildInitData() {
   const data = new Float32Array(W * 4);
   balls.forEach((b, i) => {
     const t = i * 12;
-    const phi      = b.orbitPhase;
+    const phi0     = b.orbitPhase + Math.random() * Math.PI * 2; // random offset per run
     const r        = b.orbitRadius;
     const iSin     = b.orbitInclination;
     const iCos     = Math.sqrt(Math.max(0, 1 - iSin * iSin));
-    const dPhi     = b.orbitSpeed * 3.0 * 0.004; // Δphi per frame at t=0
+    const dPhi     = b.orbitSpeed * 3.0 * 0.004;
 
     // texel 3i: initial pos on orbit, r0
-    data[t + 0] = r * Math.cos(phi);
-    data[t + 1] = r * Math.sin(phi) * iSin;
-    data[t + 2] = r * Math.sin(phi) * iCos * 0.28;
+    data[t + 0] = r * Math.cos(phi0);
+    data[t + 1] = r * Math.sin(phi0) * iSin;
+    data[t + 2] = r * Math.sin(phi0) * iCos * 0.28;
     data[t + 3] = b.r0;
-    // texel 3i+1: initial vel = analytic orbit derivative, noise_seed
-    data[t + 4] = -r * Math.sin(phi)          * dPhi;
-    data[t + 5] =  r * Math.cos(phi) * iSin   * dPhi;
-    data[t + 6] =  r * Math.cos(phi) * iCos   * 0.28 * dPhi;
-    data[t + 7] = i + 1.0;
-    // texel 3i+2: orbit params (metaball analytic orbit)
+    // texel 3i+1: initial vel = analytic orbit derivative
+    data[t + 4] = -r * Math.sin(phi0)          * dPhi;
+    data[t + 5] =  r * Math.cos(phi0) * iSin   * dPhi;
+    data[t + 6] =  r * Math.cos(phi0) * iCos   * 0.28 * dPhi;
+    data[t + 7] = 0.0;
+    // texel 3i+2: orbit params; phi0 randomised so orbit target matches initial pos
     data[t + 8]  = b.orbitRadius;
     data[t + 9]  = b.orbitSpeed;
-    data[t + 10] = b.orbitPhase;
+    data[t + 10] = phi0;
     data[t + 11] = b.orbitInclination;
   });
   return data;

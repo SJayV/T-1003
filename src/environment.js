@@ -63,6 +63,7 @@ function _regenerate(time) {
 
   const old = currentPMREM;
   currentPMREM = pmremGenerator.fromEquirectangular(equirectTarget.texture);
+  currentPMREM.texture.anisotropy = rendererRef.capabilities.getMaxAnisotropy();
   if (old) old.dispose();
 }
 
