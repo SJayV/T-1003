@@ -165,7 +165,7 @@ Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie 
 
 - **Metaball** (`ceil(logicalPhase) == 0`): Analytische Einzelorbits aus Texel 3i+2 (Radius, Geschwindigkeit, Phase, Inklination); Position direkt gesetzt, keine Integration. Perlin-Noise-Störung für organische Variation. Grenzen by construction eingehalten.
 - **Cluster** (`ceil(logicalPhase) == 1`): Velocity-Integration; Zentripetalkraft + schwache Zentrierung
-- **Burst** (`ceil(logicalPhase) == 2`): Velocity-Integration; exponentiell abklingende Abstoßung $F_0 \cdot e^{-1.5d}$; $F_0$ skaliert mit `logicalPhase - 1.0` (Input-Geschwindigkeit)
+- **Burst** (`ceil(logicalPhase) == 2`): Velocity-Integration; exponentiell abklingende Abstoßung $F_0 \cdot e^{-3.5d}$; $F_0$ skaliert mit `logicalPhase - 1.0` (Input-Geschwindigkeit)
 
 ### Uniforms (CPU → Shader, pro Frame)
 
