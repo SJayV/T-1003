@@ -71,6 +71,7 @@ export function initSimulation(renderer) {
       stateTex:     { value: initTex },
       time:         { value: 0.0 },
       logicalPhase: { value: 0.0 },
+      motionSpeed:  { value: 0.0 },
     },
     vertexShader:   simulationVert,
     fragmentShader: simulationFrag,
@@ -81,10 +82,11 @@ export function initSimulation(renderer) {
   isFirstFrame = true;
 }
 
-export function stepSimulation(logicalPhase, time) {
+export function stepSimulation(logicalPhase, time, motionSpeed) {
   simMaterial.uniforms.stateTex.value     = isFirstFrame ? initTex : readTarget.texture;
   simMaterial.uniforms.logicalPhase.value = logicalPhase;
   simMaterial.uniforms.time.value         = time;
+  simMaterial.uniforms.motionSpeed.value  = motionSpeed;
 
   rendererRef.setRenderTarget(writeTarget);
   rendererRef.render(simScene, simCamera);

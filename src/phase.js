@@ -31,8 +31,9 @@ function _enterState(s) {
 // In Metaball: resets the no-motion timer, extending stay.
 export function reportMotion(speed) {
   _motionThisFrame = true;
+  _motionSpeed     = Math.max(0, Math.min(1, speed));
   if (_state === S_CLUSTER && _cooldownFrames <= 0) {
-    _burstIntensity = Math.max(0, Math.min(1, speed));
+    _burstIntensity = _motionSpeed;
     _burstDuration  = BURST_MIN_FRAMES
       + Math.floor(Math.random() * (BURST_MAX_FRAMES - BURST_MIN_FRAMES + 1));
     _enterState(S_BURST);
@@ -49,15 +50,16 @@ export function getTime() { return _t; }
 export function getLogicalPhase() {
   if (_state === S_METABALL) return 0.0;
   if (_state === S_BURST)    return 1.0 + _burstIntensity;
-  return 0.5;  // S_CLUSTER
+  return 1.0;  // S_CLUSTER — full clusterBlend at convergence
 }
 
 // ── visual phase & blend weights ──────────────────────────────────────────────
 
-let _visualPhase   = 0.5;
+let _visualPhase   = 1.0;   // start in cluster visual state
 let _metaballBlend = 0;
 let _clusterBlend  = 1;
 let _burstBlend    = 0;
+let _motionSpeed   = 0;    // current detected motion speed, decays when no motion
 
 function _ss(e0, e1, x) {
   const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
@@ -71,13 +73,17 @@ function _updateVisualPhase() {
 function _updateBlends() {
   const v = _visualPhase;
   const l = getLogicalPhase();
-  _clusterBlend  = _ss(0.35, 0.7, v) * (1 - _ss(1.1, 1.65, v)) * _ss(0.0, 0.15, l);
-  _burstBlend    = _ss(1.3, 2.0, v);
+  // Redesigned for FSM: logicalPhase ∈ {0.0, 1.0, 1.0+s}.
+  // clusterBlend peaks at v=1.0, both edges smooth.
+  // burstBlend rises quickly once v crosses 1.05.
+  _clusterBlend  = _ss(0.4, 0.8, v) * (1 - _ss(1.05, 1.4, v)) * _ss(0.0, 0.15, l);
+  _burstBlend    = _ss(1.05, 1.4, v);
   _metaballBlend = Math.max(0, 1 - _clusterBlend - _burstBlend);
 }
 
 export function getVisualPhase()   { return _visualPhase; }
 export function getMetaballBlend() { return _metaballBlend; }
+export function getMotionSpeed()   { return _motionSpeed; }
 export function getClusterBlend()  { return _clusterBlend; }
 export function getBurstBlend()    { return _burstBlend; }
 
@@ -121,6 +127,7 @@ export function tick() {
     }
   }
 
+  if (!_motionThisFrame) _motionSpeed *= 0.97;  // exponential decay when silent
   _motionThisFrame = false;
   _updateVisualPhase();
   _updateBlends();
