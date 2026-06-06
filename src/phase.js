@@ -1,43 +1,62 @@
-const PERIOD       = 10.0;
-const METABALL_END = PERIOD * 0.15;
-const CLUSTER_END  = METABALL_END + PERIOD * 0.83;
+// ── FSM constants ─────────────────────────────────────────────────────────────
 
-let t             = 0;
-let phaseOverride = null;
+const BURST_MIN_FRAMES          = 18;   // 0.3 s  — minimum burst duration
+const BURST_MAX_FRAMES          = 60;   // 1.0 s  — maximum burst duration (random)
+const METABALL_MIN_FRAMES       = 300;  // 5.0 s  — stays in Metaball regardless of input
+const METABALL_NO_MOTION_FRAMES = 360;  // 6.0 s  — silence → return to Cluster
+const CLUSTER_COOLDOWN_FRAMES   = 180;  // 3.0 s  — after Burst before next allowed
+
+// ── state machine ─────────────────────────────────────────────────────────────
+
+const S_CLUSTER  = 0;
+const S_BURST    = 1;
+const S_METABALL = 2;
+
+let _state          = S_CLUSTER;
+let _stateFrames    = 0;
+let _noMotionFrames = 0;
+let _cooldownFrames = 0;
+let _burstDuration  = BURST_MIN_FRAMES;
+let _burstIntensity = 0;
+let _motionThisFrame = false;
+
+function _enterState(s) {
+  _state       = s;
+  _stateFrames = 0;
+  if (s === S_METABALL) _noMotionFrames = 0;
+}
+
+// Called by input.js when motion is detected.
+// In Cluster (+ cooldown elapsed): triggers Burst → Metaball.
+// In Metaball: resets the no-motion timer, extending stay.
+export function reportMotion(speed) {
+  _motionThisFrame = true;
+  if (_state === S_CLUSTER && _cooldownFrames <= 0) {
+    _burstIntensity = Math.max(0, Math.min(1, speed));
+    _burstDuration  = BURST_MIN_FRAMES
+      + Math.floor(Math.random() * (BURST_MAX_FRAMES - BURST_MIN_FRAMES + 1));
+    _enterState(S_BURST);
+  }
+}
+
+// ── time ──────────────────────────────────────────────────────────────────────
+
+let _t = 0;
+export function getTime() { return _t; }
 
 // ── logical phase ─────────────────────────────────────────────────────────────
-// Hard phase value for physics and event detection.
-// Jumps from 2→0 at cycle reset; 0.0 exactly during Metaball.
 
 export function getLogicalPhase() {
-  if (phaseOverride !== null) return phaseOverride;
-  const c = t % PERIOD;
-  if (c < METABALL_END) return 0.0;
-  if (c < CLUSTER_END)  return (c - METABALL_END) / (CLUSTER_END - METABALL_END);
-  return 1.0 + (c - CLUSTER_END) / (PERIOD - CLUSTER_END);
+  if (_state === S_METABALL) return 0.0;
+  if (_state === S_BURST)    return 1.0 + _burstIntensity;
+  return 0.5;  // S_CLUSTER
 }
 
-// ── visual phase ──────────────────────────────────────────────────────────────
-// Exponential lerp toward logical phase (rate 0.08/frame, half-life ~8 frames).
-// The hard 2→0 reset becomes a ~25-frame gradual cross-fade.
+// ── visual phase & blend weights ──────────────────────────────────────────────
 
-let _visualPhase = 0;
-
-function _updateVisualPhase() {
-  _visualPhase += (getLogicalPhase() - _visualPhase) * 0.08;
-}
-
-export function getVisualPhase() {
-  return _visualPhase;
-}
-
-// ── blend weights ─────────────────────────────────────────────────────────────
-// Precomputed per frame; passed as uniforms so all shaders share one source of truth.
-// clusterBlend is gated by smoothstep(0, 0.15, logicalPhase) — 0 when logicalPhase=0.
-// metaballBlend = max(0, 1 - cluster - burst): fills any gap, ensures no black frames.
-
-let _metaballBlend = 1;
-let _clusterBlend  = 0;
+let _visualPhase   = 0.5;
+let _metaballBlend = 0;
+let _clusterBlend  = 1;
 let _burstBlend    = 0;
 
 function _ss(e0, e1, x) {
@@ -45,19 +64,24 @@ function _ss(e0, e1, x) {
   return t * t * (3 - 2 * t);
 }
 
+function _updateVisualPhase() {
+  _visualPhase += (getLogicalPhase() - _visualPhase) * 0.08;
+}
+
 function _updateBlends() {
   const v = _visualPhase;
   const l = getLogicalPhase();
-  _clusterBlend  = _ss(0.2, 0.5, v) * (1 - _ss(1.1, 1.65, v)) * _ss(0.0, 0.15, l);
+  _clusterBlend  = _ss(0.35, 0.7, v) * (1 - _ss(1.1, 1.65, v)) * _ss(0.0, 0.15, l);
   _burstBlend    = _ss(1.3, 2.0, v);
   _metaballBlend = Math.max(0, 1 - _clusterBlend - _burstBlend);
 }
 
-export function getMetaballBlend()    { return _metaballBlend; }
-export function getClusterBlend() { return _clusterBlend; }
-export function getBurstBlend()   { return _burstBlend; }
+export function getVisualPhase()   { return _visualPhase; }
+export function getMetaballBlend() { return _metaballBlend; }
+export function getClusterBlend()  { return _clusterBlend; }
+export function getBurstBlend()    { return _burstBlend; }
 
-// ── phase transitions ─────────────────────────────────────────────────────────
+// ── phase transition events ───────────────────────────────────────────────────
 
 const _listeners = [];
 let   _prevSlot  = 0;
@@ -74,23 +98,31 @@ export function onPhaseTransition(fn) {
   _listeners.push(fn);
 }
 
-// ── time & controls ───────────────────────────────────────────────────────────
+// ── tick ──────────────────────────────────────────────────────────────────────
 
 export function tick() {
-  t += 0.004;
+  _t += 0.004;
+  _stateFrames++;
+  if (_cooldownFrames > 0) _cooldownFrames--;
+
+  if (_state === S_BURST) {
+    if (_stateFrames >= _burstDuration) {
+      _cooldownFrames = CLUSTER_COOLDOWN_FRAMES;
+      _enterState(S_METABALL);
+    }
+  } else if (_state === S_METABALL) {
+    if (_motionThisFrame) {
+      _noMotionFrames = 0;
+    } else {
+      _noMotionFrames++;
+    }
+    if (_stateFrames >= METABALL_MIN_FRAMES && _noMotionFrames >= METABALL_NO_MOTION_FRAMES) {
+      _enterState(S_CLUSTER);
+    }
+  }
+
+  _motionThisFrame = false;
   _updateVisualPhase();
   _updateBlends();
-  _checkSlot(getLogicalPhase());
-}
-
-export function getTime() { return t; }
-
-export function triggerPhase(value) {
-  phaseOverride = value;
-  _checkSlot(value);
-}
-
-export function releasePhase() {
-  phaseOverride = null;
   _checkSlot(getLogicalPhase());
 }

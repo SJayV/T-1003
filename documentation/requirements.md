@@ -106,16 +106,52 @@ $$\hat{d}(\mathbf{x}, t) = d(\mathbf{x}, t) + \beta \cdot \mathcal{N}(\mathbf{x}
 
 ### Phasensystem
 
-- Zyklisch, deterministisch zeitgesteuert; Phasenwert als kontinuierlicher Float
-- **Logischer Phasenwert** (`getLogicalPhase()`): steuert Physik-Dynamik (`simulationLibrary.js`) und Ereigniserkennung (`onPhaseTransition`)
-- **Visueller Phasenwert** (`getVisualPhase()`): exponentieller Lerp zum logischen Wert (Rate 0.08/Frame, Halbwertszeit ~8 Frames); glättet den harten 2→0-Zyklusreset zu einer ~25-Frame-Überblende; steuert Shading-Interpolation und PMREM
-- Externer Trigger via `triggerPhase(value)` / `releasePhase()` jederzeit möglich
+**Input-gesteuerter Finite State Machine** — kein Zeitzyklus; Übergänge durch registrierte Bewegung aus `input.js`.
 
-| Phase | Wert | Dynamik | Shading |
+| Phase | `logicalPhase` | Physik | Shading |
 |---|---|---|---|
-| **Metaball** | 0.0 | Analytische Einzelorbits; sanfte Anziehung zur Orbitposition | Metallisch-reflektierend |
-| **Cluster** | 0.0→1.0 | Zentripetalkraft zum Masseschwerpunkt | Transluzent + glasartig |
-| **Burst** | 1.0→2.0 | Exponentiell abklingende Zentrifugalabstoßung | Metallisch-reflektierend |
+| **Cluster** | 0.5 (fix) | Zentripetalkraft + Ursprungsanziehung | Transluzent + glasartig |
+| **Burst** | 1.0 + s ∈ (1, 2] | Exponentiell abklingende Abstoßung | Metallisch-reflektierend |
+| **Metaball** | 0.0 (fix) | Analyt. Einzelorbits, nearest-phi-Attraktor | Metallisch-reflektierend |
+
+**FSM-Ablauf:**
+
+```
+                      reportMotion(speed)
+                      + CLUSTER_COOLDOWN abgelaufen
+  ┌──────────┐  ─────────────────────────────────→  ┌───────────┐
+  │ CLUSTER  │                                       │   BURST   │
+  │ (default)│  ←─────────────────────────────────  │(zufällige │
+  └──────────┘         zurück nach                  │  Dauer)   │
+       ↑               METABALL_MIN_FRAMES           └───────────┘
+       │               + METABALL_NO_MOTION_FRAMES        │
+       │               Stille                             │ Burst-Ende
+       │                                                  ↓
+       └──────────────────────────────────────  ┌──────────────────┐
+                                                │    METABALL      │
+                                                │ reportMotion →   │
+                                                │ noMotion = 0     │
+                                                └──────────────────┘
+```
+
+**Parameter (alle in `phase.js`):**
+
+| Konstante | Wert | Semantik |
+|---|---|---|
+| `BURST_MIN_FRAMES` | 18 (0.3 s) | Mindest-Burst-Dauer |
+| `BURST_MAX_FRAMES` | 60 (1.0 s) | Max-Burst-Dauer (zufällig dazwischen) |
+| `METABALL_MIN_FRAMES` | 300 (5 s) | Verbleibt in Metaball unabhängig von Input |
+| `METABALL_NO_MOTION_FRAMES` | 360 (6 s) | Stille-Schwelle → Rückkehr zu Cluster |
+| `CLUSTER_COOLDOWN_FRAMES` | 180 (3 s) | Sperrzeit nach Burst vor nächstem |
+
+**Parameter (in `input.js`):**
+
+| Konstante | Wert | Semantik |
+|---|---|---|
+| `INPUT_SPEED_THRESHOLD` | 0.10 | Minimale normierte Geschwindigkeit |
+| `INPUT_PERSIST_FRAMES` | 3 | Konsekutive Frames mit Bewegung vor `reportMotion` |
+
+**Burst-Intensität:** `s = clamp(speed, 0, 1)` aus `input.js` → `logicalPhase = 1.0 + s` → Abstoßungskraft $F_0 = 0.010 + s \cdot 0.035$.
 
 **Metaball** — analytische Einzelorbits, Bounds by Construction:
 
