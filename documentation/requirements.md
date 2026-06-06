@@ -29,10 +29,10 @@ T-1003/
 ├── src/
 │   ├── renderer.js             ← WebGLRenderer, PerspectiveCamera, Resize
 │   ├── simulation.js           ← Ping-Pong RenderTargets, Sim-Pass (GPU)
-│   ├── phase.js                ← getLogicalPhase(), getVisualPhase(), triggerPhase(), onPhaseTransition()
+│   ├── phase.js                ← FSM, getLogicalPhase/VisualPhase/MotionSpeed, reportMotion(), onPhaseTransition()
 │   ├── balls.js                ← Initialzustand der 12 Bälle (Startwerte für GPU-Textur)
-│   ├── camera.js               ← statische Kamera, minimaler autonomer Schwenk
-│   ├── input.js                ← externes Eingabegerät → ruft triggerPhase() etc.
+│   ├── camera.js               ← statische Kamera, Sakkaden-Blick
+│   ├── input.js                ← Webcam Frame-Differencing → reportMotion() → phase.js FSM
 │   ├── audio.js                ← Phasengekoppelte Klangkulisse (Stub)
 │   └── environment.js          ← dynamische PMREM-Generierung
 ├── shaders/
@@ -54,14 +54,14 @@ Jedes Modul besitzt seine Uniforms vollständig. `main.js` kennt keine Uniform-N
 // Einmalig beim Material-Setup:
 ...simulation.getUniformDefs()    // → { stateTex }
 ...environment.getUniformDefs()   // → { envMap }
+input.initInput()                                    // Webcam-Stream + Detektor-Setup
 
 // Jeden Frame:
-simulation.applyStateToMaterial(material)
-environment.applyStateToMaterial(material, phase, time)
-
-// Externer Trigger (aus input.js):
-phase.triggerPhase(2.0)   // Burst erzwingen
-phase.releasePhase()      // zurück zum Zeitzyklus
+input.updateInput()                                  // Bewegungsanalyse → reportMotion()
+stepSimulation(logicalPhase, time, getMotionSpeed()) // motionSpeed skaliert Orbit
+applyStateToMaterial(material)
+applyEnvState(material, time)
+material.uniforms.motionSpeed.value = getMotionSpeed()
 ```
 
 ### Event-Koordination: Zeit / Input → Phase → Ausgaben
@@ -110,9 +110,9 @@ $$\hat{d}(\mathbf{x}, t) = d(\mathbf{x}, t) + \beta \cdot \mathcal{N}(\mathbf{x}
 
 | Phase | `logicalPhase` | Physik | Shading |
 |---|---|---|---|
-| **Cluster** | 0.5 (fix) | Zentripetalkraft + Ursprungsanziehung | Transluzent + glasartig |
-| **Burst** | 1.0 + s ∈ (1, 2] | Exponentiell abklingende Abstoßung | Metallisch-reflektierend |
 | **Metaball** | 0.0 (fix) | Analyt. Einzelorbits, nearest-phi-Attraktor | Metallisch-reflektierend |
+| **Cluster** | 1.0 (fix) | Zentripetalkraft + Ursprungsanziehung | Transluzent + glasartig |
+| **Burst** | 1.0 + s ∈ (1, 2] | Exponentiell abklingende Abstoßung | Metallisch-reflektierend |
 
 **FSM-Ablauf:**
 
@@ -153,6 +153,11 @@ $$\hat{d}(\mathbf{x}, t) = d(\mathbf{x}, t) + \beta \cdot \mathcal{N}(\mathbf{x}
 
 **Burst-Intensität:** `s = clamp(speed, 0, 1)` aus `input.js` → `logicalPhase = 1.0 + s` → Abstoßungskraft $F_0 = 0.010 + s \cdot 0.035$.
 
+**Blend-Gewichte** (berechnet in `phase.js` aus `logicalPhase` = v, mit `_ss` = smoothstep):
+- `clusterBlend = _ss(0.4, 0.8, v) * (1 - _ss(1.05, 1.4, v)) * guard` — Peak bei v = 1.0
+- `burstBlend = _ss(1.05, 1.4, v)` — aktiviert schnell sobald v > 1.05
+- `metaballBlend = 1 - clusterBlend - burstBlend`
+
 **Metaball** — analytische Einzelorbits, Bounds by Construction:
 
 Jeder Ball i wird sanft zu einem analytischen Orbit-Ziel angezogen, das durch individuelle Parameter $(r_i, \omega_i, \phi_i^0 + \phi_\text{rand}, \sin\theta_i)$ bestimmt wird:
@@ -160,6 +165,8 @@ Jeder Ball i wird sanft zu einem analytischen Orbit-Ziel angezogen, das durch in
 $$\mathbf{c}_i^\text{orbit}(t) = \begin{pmatrix} r_i \cos\phi_i(t) \\ r_i \sin\phi_i(t)\,\sin\theta_i \\ r_i \sin\phi_i(t)\,\cos\theta_i \cdot 0.28 \end{pmatrix} + \epsilon_\text{Perlin}(\mathbf{c}_i^\text{orbit}, t)$$
 
 mit $\phi_i(t) = (\phi_i^0 + \phi_\text{rand}) + \omega_i \cdot t$. $\phi_\text{rand} \sim \mathcal{U}[0, 2\pi)$ wird bei Programmstart gezogen — jeder Run sieht anders aus. Noise-Input ist die Orbit-Position selbst (keine Seed); Balls differenzieren durch unterschiedliche Orbitpositionen. Bounds by design mit 10% Marge: $r_i \leq 1.58$, $r_i \sin\theta_i \leq 0.90$. Keine Bounds-Reflexion.
+
+**Orbit-Geschwindigkeit:** In `applyMetaball` skaliert die effektive Winkelgeschwindigkeit mit `motionSpeed`: $\omega_\text{eff} = \omega_i \cdot 3.0 \cdot (1 + \text{motionSpeed} \cdot 0.8)$ — stärkere erkannte Bewegung → schnellere Orbits in der Metaball-Phase.
 
 **Cluster** — Masseschwerpunkt und Anziehung:
 $$\hat{\mathbf{c}}(t) = \frac{1}{n}\sum_{i=1}^n \mathbf{c}_i(t), \qquad \mathbf{v}_i(t) \mathrel{+}= k_1(\hat{\mathbf{c}} - \mathbf{c}_i) + k_2(0 - \mathbf{c}_i)$$
@@ -199,7 +206,7 @@ Alle Passes: Fullscreen Quad + OrthographicCamera → WebGLRenderTarget (außer 
 
 Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie Orbit-Parameter (Texel 3i+2), bestimmt anhand von `logicalPhase` den Physik-Zweig und schreibt den neuen Zustand:
 
-- **Metaball** (`ceil(logicalPhase) == 0`): Analytische Einzelorbits aus Texel 3i+2 (Radius, Geschwindigkeit, Phase, Inklination); Position direkt gesetzt, keine Integration. Perlin-Noise-Störung für organische Variation. Grenzen by construction eingehalten.
+- **Metaball** (`ceil(logicalPhase) == 0`): Analytische Einzelorbits aus Texel 3i+2 (Radius, Geschwindigkeit, Phase, Inklination); Position direkt gesetzt, keine Integration. Perlin-Noise-Störung für organische Variation. Grenzen by construction eingehalten. Orbit-Geschwindigkeit skaliert mit `motionSpeed` (Uniform aus `getMotionSpeed()`).
 - **Cluster** (`ceil(logicalPhase) == 1`): Velocity-Integration; Zentripetalkraft + schwache Zentrierung
 - **Burst** (`ceil(logicalPhase) == 2`): Velocity-Integration; exponentiell abklingende Abstoßung $F_0 \cdot e^{-3.5d}$; $F_0$ skaliert mit `logicalPhase - 1.0` (Input-Geschwindigkeit)
 
@@ -210,6 +217,7 @@ Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie 
 | `time` | phase.js | Globale Zeit |
 | `visualPhase` | phase.js | Visueller Phasenwert [0, 2] (geglättet) |
 | `metaballBlend`, `clusterBlend`, `burstBlend` | phase.js | Vorberechnete Blend-Gewichte (Summe = 1) |
+| `motionSpeed` | phase.js (`getMotionSpeed()`) | Erkannte Bewegungsgeschwindigkeit ∈ [0,1]; exponentiell abklingend (×0.97/Frame) ohne Bewegung |
 | `camPos` | renderer.js | Kameraposition |
 | `resolution` | renderer.js | Viewport-Größe |
 | `stateTex` | simulation.js | Ball-Zustandstextur (RGBA32F, 36×1) |

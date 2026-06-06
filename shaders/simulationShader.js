@@ -14,6 +14,7 @@ precision highp sampler2D;
 uniform sampler2D stateTex;
 uniform float     time;
 uniform float     logicalPhase;
+uniform float     motionSpeed;
 
 const float TEX_W = 36.0;
 

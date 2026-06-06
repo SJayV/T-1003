@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { scene, camera, renderer }                                    from './src/renderer.js';
 import { tick, getTime, getLogicalPhase, getVisualPhase,
-         getMetaballBlend, getClusterBlend, getBurstBlend }           from './src/phase.js';
+         getMetaballBlend, getClusterBlend, getBurstBlend,
+         getMotionSpeed }                                              from './src/phase.js';
 import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
 import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState }       from './src/environment.js';
 import { initCamera, updateCamera }                                   from './src/camera.js';
+import { initInput,  updateInput  }                                   from './src/input.js';
 import { initAudio,  updateAudio  }                                   from './src/audio.js';
 import { mainVert, mainFrag }                                         from './shaders/raymarchShader.js';
 
@@ -17,6 +19,7 @@ const material = new THREE.ShaderMaterial({
     metaballBlend: { value: 1 },
     clusterBlend:  { value: 0 },
     burstBlend:    { value: 0 },
+    motionSpeed:   { value: 0 },
     ...simDefs(),
     ...envDefs(),
   },
@@ -30,6 +33,7 @@ scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
 
 initEnvMap(renderer);
 initCamera(camera);
+initInput();
 initAudio();
 initSimulation(renderer);
 
@@ -41,9 +45,10 @@ function animate() {
   const logicalPhase = getLogicalPhase();
   const visualPhase  = getVisualPhase();
 
-  stepSimulation(logicalPhase, t);
+  stepSimulation(logicalPhase, t, getMotionSpeed());
   applySimState(material);
   applyEnvState(material, t);
+  updateInput();
   updateCamera(camera, logicalPhase, t);
   updateAudio(logicalPhase, t);
 
@@ -54,6 +59,7 @@ function animate() {
   material.uniforms.metaballBlend.value = getMetaballBlend();
   material.uniforms.clusterBlend.value  = getClusterBlend();
   material.uniforms.burstBlend.value    = getBurstBlend();
+  material.uniforms.motionSpeed.value   = getMotionSpeed();
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);

@@ -24,7 +24,7 @@ float nearestOrbitPhi(vec3 pos, vec3 e2norm) {
 
 void applyMetaball(inout vec3 pos, inout vec3 vel, vec4 orb) {
   float r        = orb.r;
-  float omega    = orb.g * 3.0;
+  float omega    = orb.g * 3.0 * (1.0 + motionSpeed * 0.8);
   float incl_sin = orb.a;
   float incl_cos = sqrt(max(0.0, 1.0 - incl_sin * incl_sin));
 

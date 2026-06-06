@@ -14,16 +14,17 @@ Input-gesteuerter FSM (Cluster → Burst → Metaball → Cluster). Einzige auto
 |---|---|---|---|---|
 | `tick()` | — | — | `void` | — |
 | `getTime()` | — | — | `float` | [0, ∞) monoton — für Shader-Animationen |
-| `getLogicalPhase()` | — | — | `float` | 0.0=Metaball, 0.5=Cluster, 1.0+s=Burst |
+| `getLogicalPhase()` | — | — | `float` | 0.0=Metaball, 1.0=Cluster, 1.0+s=Burst |
 | `getVisualPhase()` | — | — | `float` | exp. Lerp zu `getLogicalPhase()`, Rate 0.08/Frame |
 | `getMetaballBlend()` | — | — | `float` | [0,1] Blend-Gewicht Metaball |
 | `getClusterBlend()` | — | — | `float` | [0,1] Blend-Gewicht Cluster |
 | `getBurstBlend()` | — | — | `float` | [0,1] Blend-Gewicht Burst |
-| `reportMotion(speed)` | `speed: float ∈ [0,1]` | Von `input.js`: löst Cluster→Burst aus (wenn Cooldown ≤ 0); in Metaball: setzt no-motion-Timer zurück | `void` | — |
+| `getMotionSpeed()` | — | — | `float` | [0,1] Aktuell erkannte Bewegungsgeschwindigkeit; ×0.97/Frame Decay ohne Bewegung |
+| `reportMotion(speed)` | `speed: float ∈ [0,1]` | Von `input.js`: löst Cluster→Burst aus (wenn Cooldown ≤ 0); in Metaball: setzt no-motion-Timer zurück; setzt intern `_motionSpeed = speed` | `void` | — |
 | `onPhaseTransition(fn)` | `fn: (logicalPhase: float) → void` | Feuert bei `Math.ceil(logicalPhase)` Wechsel | `void` | — |
 
-`tick()` einmal pro Frame: zählt State-Timer, führt FSM-Übergänge aus, aktualisiert `visualPhase` und Blend-Gewichte.
-`reportMotion` setzt intern `_motionThisFrame = true` — wird von `tick()` ausgelesen und zurückgesetzt.
+`tick()` einmal pro Frame: zählt State-Timer, führt FSM-Übergänge aus, aktualisiert `visualPhase`, Blend-Gewichte und multipliziert `_motionSpeed` mit 0.97 (exponentieller Decay).
+`reportMotion` setzt intern `_motionThisFrame = true` und `_motionSpeed = speed` — wird von `tick()` ausgelesen und zurückgesetzt.
 
 ---
 
@@ -33,7 +34,7 @@ GPU-Physiksimulation. Verwaltet 1D-Zustandstextur (RGBA32F, 36×1) und Ping-Pong
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
 | `initSimulation(renderer)` | `renderer: WebGLRenderer` | Wird intern für Sim-Pass-Render-Calls gespeichert | `void` | — |
-| `stepSimulation(phase, time)` | `phase: float ∈ [0,2]`, `time: float ∈ [0,∞)` | `phase` steuert Physik-Zweig im Shader; `time` als Seed für deterministisches Rauschen | `void` | — |
+| `stepSimulation(logicalPhase, time, motionSpeed)` | `logicalPhase: float ∈ [0,2]`, `time: float ∈ [0,∞)`, `motionSpeed: float ∈ [0,1]` | `logicalPhase` steuert Physik-Zweig im Shader; `time` als Seed für deterministisches Rauschen; `motionSpeed` skaliert Orbit-Geschwindigkeit in Metaball-Phase | `void` | — |
 | `getUniformDefs()` | — | — | `{ stateTex: { value } }` | Uniform-Objekt für ShaderMaterial |
 | `applyStateToMaterial(material)` | `material: ShaderMaterial` | Setzt `stateTex` auf aktuelle Lesertextur | `void` | — |
 
@@ -71,18 +72,15 @@ Systemkamera → Bewegungserkennung → FSM + Kamera. ⚠️ Stub (Webcam-Integr
 | `initInput()` | — | Webcam-Stream + Detektor-Setup | `void` | — |
 | `updateInput()` | — | Pro-Frame: Bewegungsanalyse → `reportMotion` / `cameraInput` | `void` | — |
 
-Interne Logik (nicht öffentlich):
-```
-speed = detectMotion()           // optical flow / MediaPipe → [0,1]
-if speed > INPUT_SPEED_THRESHOLD:
-  persistCount++
-  if persistCount ≥ INPUT_PERSIST_FRAMES:
-    reportMotion(speed)          // → phase.js FSM
-    cameraInput('presence', {speed})
-else:
-  persistCount = 0
-  cameraInput('absence', {})
-```
+Bewegungserkennung: Frame-Differencing auf 80×60 Offscreen-Canvas (`willReadFrequently`).
+`speed = min(1, meanAbsDiff(R+G+B) / (n×765) × INPUT_SENSITIVITY)`
+
+| Konstante | Wert | Semantik |
+|---|---|---|
+| `INPUT_SPEED_THRESHOLD` | 0.20 | Minimale normierte Geschwindigkeit |
+| `INPUT_PERSIST_FRAMES` | 4 | Konsekutive Motion-Frames vor `reportMotion` |
+| `INPUT_SENSITIVITY` | 20 | Skalierungsfaktor thresholded-diff → speed ∈ [0,1] |
+| `INPUT_PIXEL_THRESHOLD` | 10 | Per-Pixel-Kanal-Diff darunter = Rauschen, ignoriert |
 
 ---
 
@@ -115,7 +113,7 @@ Szenen-Setup. Exportiert Objekte direkt; keine Initialisierungsfunktion.
 | `scene` | `THREE.Scene` | Hauptszene |
 | `camera` | `THREE.PerspectiveCamera` | fov 60, pos (−0.4, −0.2, 3) |
 | `renderer` | `THREE.WebGLRenderer` | antialias, Reinhard tone-mapping |
-| `controls` | `OrbitControls` | Wird durch autonome Kamerabewegung in `camera.js` abgelöst |
+| ~~`controls`~~ | — | Entfernt — kein OrbitControls |
 
 ---
 
@@ -148,7 +146,7 @@ Voraussetzung: `uniform float phase` (= `getVisualPhase()`) deklariert.
 | `MOOD_METABALL` | `const vec3` | `(0.78, 0.83, 0.90)` — kaltes Silbergrau |
 | `MOOD_CLUSTER` | `const vec3` | `(0.00, 0.78, 0.95)` — cyan-türkis |
 | `MOOD_BURST` | `const vec3` | `(0.10, 1.00, 0.60)` — helles türkis-grün |
-| `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`; immer Summe = 1 |
+| `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`, berechnet aus `logicalPhase` (v) via `_ss` (smoothstep); immer Summe = 1. Formeln: `clusterBlend = _ss(0.4,0.8,v) * (1 - _ss(1.05,1.4,v)) * guard`; `burstBlend = _ss(1.05,1.4,v)`; `metaballBlend = 1 - clusterBlend - burstBlend` |
 | `moodColor() → vec3` | `∈ [0,1]³` | Gewichteter Mix der drei Phasenfarben |
 
 ---
@@ -169,11 +167,11 @@ Benennung nach **Material**: `shadeMetal`/`shadeGlass` sind austauschbare Implem
 
 ### `libraries/simulationLibrary.js`
 Physikfunktionen pro Phasenmodus. Kein Seed, kein Bounds-Handling — alle Übergänge velocity-only.
-Voraussetzung: Uniforms `stateTex` (sampler2D), `time` (float), `logicalPhase` (float) deklariert; `stateUV(int)`, `readOrb(int)` definiert.
+Voraussetzung: Uniforms `stateTex` (sampler2D), `time` (float), `logicalPhase` (float), `motionSpeed` (float) deklariert; `stateUV(int)`, `readOrb(int)` definiert.
 
 | GLSL-Funktion | Input / Output | Semantik |
 |---|---|---|
-| `applyMetaball(inout pos, inout vel, orb)` | `pos,vel: vec3`, `orb: vec4` (orbit params) | Sanfte Anziehung zur analytischen Orbitposition; Position nie direkt gesetzt |
+| `applyMetaball(inout pos, inout vel, orb)` | `pos,vel: vec3`, `orb: vec4` (orbit params) | Sanfte Anziehung zur analytischen Orbitposition; effektive Winkelgeschwindigkeit `omega = orb.g * 3.0 * (1.0 + motionSpeed * 0.8)`; Position nie direkt gesetzt |
 | `applyCluster(inout pos, inout vel)` | `pos,vel: vec3` | Zentripetalkraft zu globalem Schwerpunkt |
 | `applyBurst(inout pos, inout vel, lPhase)` | `pos,vel: vec3`, `lPhase: float ∈ [1,2]` | Exponentiell abklingende Abstoßung; `lPhase−1.0` = Input-Intensität |
 
@@ -189,6 +187,7 @@ Sim-Pass-Shader. Intern von `simulation.js` verwendet. Interpoliert `simulationL
 | `stateTex` | `sampler2D` | RGBA32F 36×1 Eingangszustand |
 | `logicalPhase` | `float` | [0, 2] `getLogicalPhase()` — bestimmt Physik-Zweig |
 | `time` | `float` | [0, ∞) für Orbit-Berechnung (phi = phi0 + time × omega) |
+| `motionSpeed` | `float` | [0, 1] `getMotionSpeed()` — skaliert Orbit-Geschwindigkeit in `applyMetaball` |
 
 ---
 
