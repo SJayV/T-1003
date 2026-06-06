@@ -8,22 +8,22 @@ GLSL-Module sind Chunks (Template-Literal-Interpolation in JS), keine eigenstän
 ## JavaScript-Module
 
 ### `src/phase.js`
-Zeitgesteuerte Phasenverwaltung und Ereigniskoordination. Einzige autoritative Quelle für `time` und `phase`.
+Input-gesteuerter FSM (Cluster → Burst → Metaball → Cluster). Einzige autoritative Quelle für Phasenwerte und Blend-Gewichte.
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
 | `tick()` | — | — | `void` | — |
-| `getTime()` | — | — | `float` | [0, ∞) monoton wachsend |
-| `getLogicalPhase()` | — | — | `float` | [0, 2]: 0=Metaball, (0,1]=Cluster, (1,2]=Burst; harte Übergänge; für Physik und Ereigniserkennung |
-| `getVisualPhase()` | — | — | `float` | [0, 2]: exp. Lerp zu `getLogicalPhase()`, Rate 0.08/Frame; für `radiusMod` im Shader |
-| `getMetaballBlend()` | — | — | `float` | [0,1]: 1 bei `visualPhase`=0, fällt bis 0 bei ≈0.6 |
-| `getClusterBlend()` | — | — | `float` | [0,1]: Glocke um `visualPhase` ≈0.35–1.65, multipliziert mit `smoothstep(0,0.15,logicalPhase)` — 0 wenn echter Metaball |
-| `getBurstBlend()` | — | — | `float` | [0,1]: steigt ab `visualPhase`≈1.3, =1 bei 2.0 |
-| `triggerPhase(value)` | `value: float` | [0, 2] | `void` | — |
-| `releasePhase()` | — | — | `void` | — |
-| `onPhaseTransition(fn)` | `fn: (logicalPhase: float) → void` | Callback bei Slot-Wechsel (`Math.ceil(logicalPhase)` ändert sich) | `void` | — |
+| `getTime()` | — | — | `float` | [0, ∞) monoton — für Shader-Animationen |
+| `getLogicalPhase()` | — | — | `float` | 0.0=Metaball, 0.5=Cluster, 1.0+s=Burst |
+| `getVisualPhase()` | — | — | `float` | exp. Lerp zu `getLogicalPhase()`, Rate 0.08/Frame |
+| `getMetaballBlend()` | — | — | `float` | [0,1] Blend-Gewicht Metaball |
+| `getClusterBlend()` | — | — | `float` | [0,1] Blend-Gewicht Cluster |
+| `getBurstBlend()` | — | — | `float` | [0,1] Blend-Gewicht Burst |
+| `reportMotion(speed)` | `speed: float ∈ [0,1]` | Von `input.js`: löst Cluster→Burst aus (wenn Cooldown ≤ 0); in Metaball: setzt no-motion-Timer zurück | `void` | — |
+| `onPhaseTransition(fn)` | `fn: (logicalPhase: float) → void` | Feuert bei `Math.ceil(logicalPhase)` Wechsel | `void` | — |
 
-`tick()` einmal pro Frame; aktualisiert `visualPhase`, alle drei Blendgewichte und prüft Slot-Übergänge. Blend-Gewichte werden als Uniforms an alle Shader weitergegeben — einzige Rechenquelle.
+`tick()` einmal pro Frame: zählt State-Timer, führt FSM-Übergänge aus, aktualisiert `visualPhase` und Blend-Gewichte.
+`reportMotion` setzt intern `_motionThisFrame = true` — wird von `tick()` ausgelesen und zurückgesetzt.
 
 ---
 
@@ -64,19 +64,25 @@ Stationäre Beobachter-Kamera. Sakkaden-Verhalten: Kamera hält einen Punkt im B
 ---
 
 ### `src/input.js`
-Externes Eingabegerät (Webcam / Bewegungssensor). ⚠️ Stub. Ruft `phase.js` und `camera.js` direkt auf.
+Systemkamera → Bewegungserkennung → FSM + Kamera. ⚠️ Stub (Webcam-Integration ausstehend).
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
-| `initInput()` | — | — | `void` | — |
-| `updateInput()` | — | — | `void` | Poll-basiert; optional bei event-driven Modell |
+| `initInput()` | — | Webcam-Stream + Detektor-Setup | `void` | — |
+| `updateInput()` | — | Pro-Frame: Bewegungsanalyse → `reportMotion` / `cameraInput` | `void` | — |
 
-Interne Callbacks (nicht öffentlich):
-
-| Callback | Parameter | Bereich / Semantik | Aktion |
-|---|---|---|---|
-| `_onPresence(speed)` | `speed: float ∈ [0,1]` | Normierte Bewegungsgeschwindigkeit | `triggerPhase(1.0 + max(0.1, speed))` + `cameraInput('presence', {speed})` |
-| `_onAbsence()` | — | — | `releasePhase()` + `cameraInput('absence', {})` |
+Interne Logik (nicht öffentlich):
+```
+speed = detectMotion()           // optical flow / MediaPipe → [0,1]
+if speed > INPUT_SPEED_THRESHOLD:
+  persistCount++
+  if persistCount ≥ INPUT_PERSIST_FRAMES:
+    reportMotion(speed)          // → phase.js FSM
+    cameraInput('presence', {speed})
+else:
+  persistCount = 0
+  cameraInput('absence', {})
+```
 
 ---
 
