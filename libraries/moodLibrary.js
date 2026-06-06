@@ -7,9 +7,9 @@ uniform float metaballBlend;
 uniform float clusterBlend;
 uniform float burstBlend;
 
-const vec3 MOOD_METABALL = vec3(0.78, 0.83, 0.90);  // cold silver-grey
-const vec3 MOOD_CLUSTER  = vec3(0.00, 0.78, 0.95);  // cyan-teal
-const vec3 MOOD_BURST    = vec3(0.90, 0.10, 0.20);  // bright red
+const vec3 MOOD_METABALL = vec3(0.68, 0.63, 0.95);  // cold silver-grey
+const vec3 MOOD_CLUSTER  = vec3(0.20, 0.58, 0.95);  // cyan-teal
+const vec3 MOOD_BURST    = vec3(0.70, 0.10, 0.20);  // bright red
 
 vec3 moodColor() {
   return MOOD_METABALL * metaballBlend

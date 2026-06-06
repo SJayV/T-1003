@@ -24,7 +24,7 @@ float nearestOrbitPhi(vec3 pos, vec3 e2norm) {
 
 void applyMetaball(inout vec3 pos, inout vec3 vel, vec4 orb) {
   float r        = orb.r;
-  float omega    = orb.g * 3.0 * (1.0 + motionSpeed * 0.8);
+  float omega    = orb.g * 52.0 + motionSpeed * 15.0;
   float incl_sin = orb.a;
   float incl_cos = sqrt(max(0.0, 1.0 - incl_sin * incl_sin));
 
@@ -39,11 +39,6 @@ void applyMetaball(inout vec3 pos, inout vec3 vel, vec4 orb) {
   // Target point on ring
   vec3 target = r * cos(phi_target) * vec3(1.0, 0.0, 0.0)
               + r * sin(phi_target) * e2;
-
-  // Noise — incl_sin differentiates balls (no seed needed)
-  float np = perlin2D(vec2(phi_near * 1.5 + time * 0.12, incl_sin * 5.1 + time * 0.09));
-  float nq = perlin2D(vec2(phi_near * 1.0 + time * 0.09, incl_sin * 7.3 + time * 0.07));
-  target += vec3(np * 0.06, nq * 0.04, np * nq * 0.03);
 
   vel += (target - pos) * 0.00018;
   pos += vel;
