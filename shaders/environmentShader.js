@@ -33,11 +33,10 @@ vec3 envMetaball(vec3 dir, vec3 rDir) {
 }
 
 vec3 envCluster(vec3 dir) {
-  vec3  spot1Dir = normalize(vec3( 0.3, 0.85,  0.2));
-  vec3  spot2Dir = normalize(vec3(-0.5, 0.60, -0.3));
-  float spot1    = pow(max(dot(dir, spot1Dir), 0.0), 6.0);
-  float spot2    = pow(max(dot(dir, spot2Dir), 0.0), 4.0);
-  return MOOD_CLUSTER * (spot1 * 2.5 + spot2 * 1.2);
+  // Soft gradient: black at bottom/sides, MOOD_CLUSTER fading in toward top.
+  // Gives calm, dark atmosphere for the glass phase.
+  float grad = smoothstep(-0.4, 1.0, dir.y * 0.75 + dir.z * 0.25);
+  return MOOD_CLUSTER * grad * 0.55;
 }
 
 vec3 envBurst(vec3 dir, vec3 rDir, float cosR, float sinR) {

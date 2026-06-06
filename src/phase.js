@@ -2,7 +2,7 @@
 
 const BURST_MIN_FRAMES          = 18;   // 0.3 s  — minimum burst duration
 const BURST_MAX_FRAMES          = 60;   // 1.0 s  — maximum burst duration (random)
-const METABALL_MIN_FRAMES       = 300;  // 5.0 s  — stays in Metaball regardless of input
+const METABALL_MIN_FRAMES       = 800;  // 12.0 s  — stays in Metaball regardless of input
 const METABALL_NO_MOTION_FRAMES = 360;  // 6.0 s  — silence → return to Cluster
 const CLUSTER_COOLDOWN_FRAMES   = 180;  // 3.0 s  — after Burst before next allowed
 
@@ -32,7 +32,7 @@ function _enterState(s) {
 export function reportMotion(speed) {
   _motionThisFrame = true;
   _motionSpeed     = Math.max(0, Math.min(1, speed));
-  if (_state === S_CLUSTER && _cooldownFrames <= 0) {
+  if (_state === S_CLUSTER && _cooldownFrames <= 0 && _visualPhase > 0.65) {
     _burstIntensity = _motionSpeed;
     _burstDuration  = BURST_MIN_FRAMES
       + Math.floor(Math.random() * (BURST_MAX_FRAMES - BURST_MIN_FRAMES + 1));
@@ -67,17 +67,17 @@ function _ss(e0, e1, x) {
 }
 
 function _updateVisualPhase() {
-  _visualPhase += (getLogicalPhase() - _visualPhase) * 0.08;
+  const target = getLogicalPhase();
+  // Burst arrives faster (energetic); Metaball and Cluster transitions are slow.
+  const rate = target > 1.05 ? 0.025 : 0.012;
+  _visualPhase += (target - _visualPhase) * rate;
 }
 
 function _updateBlends() {
   const v = _visualPhase;
   const l = getLogicalPhase();
-  // Redesigned for FSM: logicalPhase ∈ {0.0, 1.0, 1.0+s}.
-  // clusterBlend peaks at v=1.0, both edges smooth.
-  // burstBlend rises quickly once v crosses 1.05.
-  _clusterBlend  = _ss(0.4, 0.8, v) * (1 - _ss(1.05, 1.4, v)) * _ss(0.0, 0.15, l);
-  _burstBlend    = _ss(1.05, 1.4, v);
+  _clusterBlend  = _ss(0.25, 0.75, v) * (1 - _ss(1.0, 1.5, v)) * _ss(0.0, 0.15, l);
+  _burstBlend    = _ss(1.0, 1.5, v);
   _metaballBlend = Math.max(0, 1 - _clusterBlend - _burstBlend);
 }
 
