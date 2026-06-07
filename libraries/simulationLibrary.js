@@ -1,6 +1,6 @@
-// Preconditions: uniforms stateTex (sampler2D), time (float), logicalPhase (float) declared;
-//                stateUV(int), readOrb(int), perlin2D defined.
-// Public GLSL: applyMetaball, applyCluster, applyBurst
+// Preconditions: uniforms stateTex, time, logicalPhase, visualPhase, motionSpeed declared;
+//                stateUV() and perlin2D defined.
+// Public GLSL: orbitPoint, reflectBounds, applySimulation
 
 export const simulationLibrary = `
 
@@ -10,64 +10,90 @@ vec3 computeCentroid() {
   return c / 12.0;
 }
 
-// Returns the phi (angle) of the nearest point on the orbit ring to pos.
-// Orbit basis: e1 = (1,0,0), e2 = (0, incl_sin, incl_cos*0.28).
-// Projects pos onto the orbit plane and reads off the angle.
+// Angle of the nearest point on the orbit ring to pos.
+// Orbit basis: e1=(1,0,0), e2=(0,incl_sin,incl_cos*0.28).
 float nearestOrbitPhi(vec3 pos, vec3 e2norm) {
   return atan(dot(pos, e2norm), pos.x);
 }
 
-// ── metaball ─────────────────────────────────────────────────────────────────
-// Finds the nearest point on the ball's orbit ring, advances N frames ahead
-// (creating orbital motion), adds Perlin noise, attracts ball toward target.
-// No direct position assignment; smooth return from any phase.
+// 3D position on the orbit ellipse at angle phi.
+vec3 orbitPoint(vec4 orb, float phi) {
+  float iSin = orb.a;
+  float iCos = sqrt(max(0.0, 1.0 - iSin * iSin));
+  vec3 e2 = vec3(0.0, iSin, iCos * 0.28);
+  return orb.r * (cos(phi) * vec3(1.0, 0.0, 0.0) + sin(phi) * e2);
+}
 
-void applyMetaball(inout vec3 pos, inout vec3 vel, vec4 orb) {
-  float r        = orb.r;
-  float omega    = orb.g * 52.0 + motionSpeed * 15.0;
+// Reflects pos/vel at the visible scene boundary so balls never leave the screen.
+// Bounds are set slightly beyond the natural orbit extents to allow burst drama
+// while keeping all balls recoverable.
+void reflectBounds(inout vec3 pos, inout vec3 vel) {
+  const float BX = 2.3;
+  const float BY = 1.0;
+  const float BZ = 0.6;
+  if (pos.x >  BX) { pos.x =  BX; vel.x = -abs(vel.x); }
+  if (pos.x < -BX) { pos.x = -BX; vel.x =  abs(vel.x); }
+  if (pos.y >  BY) { pos.y =  BY; vel.y = -abs(vel.y); }
+  if (pos.y < -BY) { pos.y = -BY; vel.y =  abs(vel.y); }
+  if (pos.z >  BZ) { pos.z =  BZ; vel.z = -abs(vel.z); }
+  if (pos.z < -BZ) { pos.z = -BZ; vel.z =  abs(vel.z); }
+}
+
+// ── unified physics ───────────────────────────────────────────────────────────
+// Blends metaball / cluster / burst physics using visualPhase so all transitions
+// are continuous. No hard switch: orbit contribution fades out while vel-based
+// cluster motion fades in, preventing any speed discontinuity.
+//
+//   metaT    = weight of direct orbit update (pos += orbitDelta)
+//   clusterT = weight of vel-based cluster pull (pos += vel)
+//   burstT   = weight of outward burst force   (pos += vel)
+
+void applySimulation(inout vec3 pos, inout vec3 vel, vec4 orb) {
+  float clusterT = smoothstep(0.25, 0.75, visualPhase) * (1.0 - smoothstep(1.0, 1.5, visualPhase));
+  float burstT   = smoothstep(1.0, 1.5, visualPhase);
+  float metaT    = 1.0 - clusterT - burstT;
+
+  // ── orbit delta (metaball) ──────────────────────────────────────────────
   float incl_sin = orb.a;
   float incl_cos = sqrt(max(0.0, 1.0 - incl_sin * incl_sin));
-
   vec3 e2     = vec3(0.0, incl_sin, incl_cos * 0.28);
   vec3 e2norm = normalize(e2);
+  float omega    = orb.g * 18.0 + motionSpeed * 9.0;
+  float phi_near = nearestOrbitPhi(pos, e2norm);
+  vec3 nearPt    = orbitPoint(orb, phi_near);
+  vec3 nextPt    = orbitPoint(orb, phi_near + omega * 0.004);
+  vec3 orbitDelta = (nearPt - pos) * 0.002 + (nextPt - nearPt);
 
-  // Nearest phi on ring from current position
-  float phi_near   = nearestOrbitPhi(pos, e2norm);
-  // Advance N frames ahead along the ring to keep ball orbiting
-  float phi_target = phi_near + omega * 0.004 * 12.0;
-
-  // Target point on ring
-  vec3 target = r * cos(phi_target) * vec3(1.0, 0.0, 0.0)
-              + r * sin(phi_target) * e2;
-
-  vel += (target - pos) * 0.00018;
-  pos += vel;
-  vel *= 0.998;
-}
-
-// ── cluster ───────────────────────────────────────────────────────────────────
-// Pull toward centroid (mass center) + pull toward origin (0,0,0).
-
-void applyCluster(inout vec3 pos, inout vec3 vel) {
+  // ── velocity forces ─────────────────────────────────────────────────────
   vec3 cen = computeCentroid();
-  vel += (cen - pos) * 0.00008 - pos * 0.00003;
 
+  // Centripetal pull — always active; primes vel during metaball so cluster
+  // inherits inward motion without a dead stop at the transition.
+  vel += (cen - pos) * 0.00016 - pos * 0.00006;
+
+  // Cluster noise (fades in with clusterT)
   float np = perlin2D(vec2(pos.x * 3.0 + time * 0.18, pos.z * 3.0 + time * 0.14));
   float nq = perlin2D(vec2(pos.y * 3.0 + time * 0.15, pos.x * 3.0 + time * 0.10));
-  vel += vec3(np, nq, np * nq) * 0.00015;
+  vel += vec3(np, nq, np * nq) * 0.00015 * clusterT;
 
-  pos += vel;
-  vel *= 0.995;
-}
+  // Burst outward force (fades in with burstT)
+  float intensity = clamp(logicalPhase - 1.0, 0.0, 1.0);
+  vec3 burstDir = pos - cen;
+  float burstDist = length(burstDir) + 0.01;
+  vel += normalize(burstDir) * exp(-burstDist * 3.5) * (0.010 + intensity * 0.035) * burstT;
 
-// ── burst ─────────────────────────────────────────────────────────────────────
+  // ── blended position update ─────────────────────────────────────────────
+  // metaball: pos driven directly by orbit; vel is not yet applied.
+  // cluster/burst: pos driven by accumulated vel.
+  pos += orbitDelta * metaT + vel * (clusterT + burstT);
 
-void applyBurst(inout vec3 pos, inout vec3 vel, float lPhase) {
-  float intensity  = clamp(lPhase - 1.0, 0.0, 1.0);
-  vec3  dir        = pos - computeCentroid();
-  float dist       = length(dir) + 0.01;
-  vel += normalize(dir) * exp(-dist * 3.5) * (0.010 + intensity * 0.035);
-  pos += vel;
-  vel *= 0.90;
+  // ── blended velocity decay ──────────────────────────────────────────────
+  // metaball: 0.99 — slow decay so centripetal builds up inward momentum.
+  // cluster:  0.995 — standard cluster damping.
+  // burst:    0.90  — fast decay to cap outward speed.
+  float velDecay = mix(mix(0.99, 0.995, clusterT), 0.90, burstT);
+  vel *= velDecay;
+
+  reflectBounds(pos, vel);
 }
 `;

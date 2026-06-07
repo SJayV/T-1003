@@ -26,10 +26,15 @@ vec3 uvToDir(vec2 uv) {
 }
 
 vec3 envMetaball(vec3 dir, vec3 rDir) {
+  // Ambient gradient: dim floor brightening toward the upper hemisphere.
+  float grad = smoothstep(-1.0, 1.0, dir.y * 0.7 + dir.z * 0.3);
+  vec3 ambient = MOOD_METABALL * (0.18 + 0.28 * grad);
+
+  // Caustic-like highlights — softer exponent gives wider glowing patches.
   float wM1 = worley2D(rDir.xy * 1.0 + time * 0.06);
   float wM2 = worley2D(rDir.xz * 1.6 + time * 0.04);
-  float bM  = pow(clamp(1.0 - min(wM1, wM2) * 1.1, 0.0, 1.0), 3.5);
-  return MOOD_METABALL * bM * 2.2;
+  float bM  = pow(clamp(1.0 - min(wM1, wM2) * 1.1, 0.0, 1.0), 2.0);
+  return ambient + MOOD_METABALL * bM * 2.2;
 }
 
 vec3 envCluster(vec3 dir) {
@@ -55,7 +60,7 @@ void main() {
   float cosR = cos(rot); float sinR = sin(rot);
   vec3  rDir = vec3(dir.x * cosR - dir.z * sinR, dir.y, dir.x * sinR + dir.z * cosR);
 
-  float ambientScale = metaballBlend * 0.14 + clusterBlend * 0.012 + burstBlend * 0.005;
+  float ambientScale = metaballBlend * 0.35 + clusterBlend * 0.012 + burstBlend * 0.005;
   vec3  base = moodColor() * ambientScale;
 
   float amb = (perlin2D(rDir.xz * 2.0 + time * 0.12) * 0.65

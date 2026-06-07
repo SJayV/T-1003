@@ -14,6 +14,7 @@ precision highp sampler2D;
 uniform sampler2D stateTex;
 uniform float     time;
 uniform float     logicalPhase;
+uniform float     visualPhase;
 uniform float     motionSpeed;
 
 const float TEX_W = 36.0;
@@ -40,10 +41,7 @@ void main() {
   float r0 = readR0(ballIdx);
   vec4 orb = readOrb(ballIdx);
 
-  int phaseIdx = int(ceil(logicalPhase));
-  if      (phaseIdx == 0) applyMetaball(pos, vel, orb);
-  else if (phaseIdx == 1) applyCluster(pos, vel);
-  else                    applyBurst(pos, vel, logicalPhase);
+  applySimulation(pos, vel, orb);
 
   if (subIdx == 0) { gl_FragColor = vec4(pos, r0);  }
   else             { gl_FragColor = vec4(vel, 0.0); }

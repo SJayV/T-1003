@@ -1,7 +1,7 @@
 // ── FSM constants ─────────────────────────────────────────────────────────────
 
-const BURST_MIN_FRAMES          = 18;   // 0.3 s  — minimum burst duration
-const BURST_MAX_FRAMES          = 60;   // 1.0 s  — maximum burst duration (random)
+const BURST_MIN_FRAMES          = 60;   // 0.3 s  — minimum burst duration
+const BURST_MAX_FRAMES          = 100;   // 1.0 s  — maximum burst duration (random)
 const METABALL_MIN_FRAMES       = 800;  // 12.0 s  — stays in Metaball regardless of input
 const METABALL_NO_MOTION_FRAMES = 360;  // 6.0 s  — silence → return to Cluster
 const CLUSTER_COOLDOWN_FRAMES   = 180;  // 3.0 s  — after Burst before next allowed
