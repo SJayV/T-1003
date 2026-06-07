@@ -1,4 +1,4 @@
-// Color palette + blend interpolation. Blend weights precomputed in phase.js; always sum to 1.
+// Color palette + blend interpolation. Blend weights precomputed in phase.js via visualPhase smoothsteps; always sum to 1.
 // Preconditions: uniforms metaballBlend, clusterBlend, burstBlend (float) declared.
 
 export const moodLibrary = `

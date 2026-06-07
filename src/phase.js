@@ -44,11 +44,12 @@ export function getLogicalPhase() {
   return 1.0;  // S_CLUSTER
 }
 
-let _visualPhase   = 1.0;
-let _metaballBlend = 0;
-let _clusterBlend  = 1;
-let _burstBlend    = 0;
-let _motionSpeed   = 0;
+let _visualPhase        = 1.0;
+let _metaballBlend      = 0;
+let _clusterBlend       = 1;
+let _burstBlend         = 0;
+let _motionSpeed        = 0;
+let _clusterActivation  = 1.0;  // smooth gate: 1 in Cluster/Burst, lerps to 0 in Metaball
 
 function _ss(e0, e1, x) {
   const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
@@ -64,8 +65,10 @@ function _updateVisualPhase() {
 
 function _updateBlends() {
   const v = _visualPhase;
-  const l = getLogicalPhase();
-  _clusterBlend  = _ss(0.25, 0.75, v) * (1 - _ss(1.0, 1.5, v)) * _ss(0.0, 0.15, l);
+  // Soft gate: decays at 0.20/frame → near-zero within ~27 frames of entering Metaball,
+  // before visualPhase descends from burst levels into the cluster smoothstep zone (v ≈ 1.0).
+  _clusterActivation += ((getLogicalPhase() >= 0.5 ? 1.0 : 0.0) - _clusterActivation) * 0.20;
+  _clusterBlend  = _ss(0.25, 0.75, v) * (1 - _ss(1.0, 1.5, v)) * _clusterActivation;
   _burstBlend    = _ss(1.0, 1.5, v);
   _metaballBlend = Math.max(0, 1 - _clusterBlend - _burstBlend);
 }

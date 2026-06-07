@@ -39,7 +39,8 @@ T-1003/
 ├── shaders/
 │   ├── simulationShader.js     ← Physik-GLSL (Sim-Pass); interpoliert simulationLibrary
 │   ├── environmentShader.js    ← Equirectangular-GLSL; interpoliert noiseLibrary + moodLibrary
-│   └── raymarchShader.js       ← Rendering-GLSL; interpoliert noiseLibrary + moodLibrary + raymarchLibrary
+│   ├── raymarchShader.js       ← Rendering-GLSL; interpoliert noiseLibrary + moodLibrary + raymarchLibrary
+│   └── bloomShader.js          ← Bloom Post-Processing (brightExtract, blur, composite Fragment-Shader)
 └── libraries/
     ├── vertexShaderLibrary.js  ← GLSL-Chunk: gemeinsamer Passthrough-Vertex-Shader
     ├── noiseLibrary.js         ← GLSL-Chunk: perlin2D, worley2D, worley3D
@@ -89,7 +90,10 @@ tick() / triggerPhase() / releasePhase()
 - Jeder Ball i definiert durch Position **c**_i ∈ ℝ³, Basisradius r_i^0 ∈ ℝ, Geschwindigkeit **v**_i ∈ ℝ³
 - Komposition via **smooth minimum (smin)** zum Gesamt-SDF:
 
-$$d(\mathbf{x}, t) = \operatorname{smin}_{i=1}^{n} \bigl(\|\mathbf{x} - \mathbf{c}_i\| - r_i(t)\bigr)$$
+$$d(\mathbf{x}, t) = \operatorname{smin}_{i=1}^{n}\bigl(\|\mathbf{x} - \mathbf{c}_i\| - r_i(t),\; k\bigr)$$
+
+Der Verschmelzungsradius $k$ wird phasenabhängig aus den Blend-Gewichten abgeleitet:
+$$k = 0.5 \cdot w_\text{Cluster} + 0.3 \cdot w_\text{Metaball} + 0.1 \cdot w_\text{Burst}$$
 
 - Rendering: **Raymarching** auf fullscreen Quad — keine explizite Geometrie
 - Normalenberechnung: zentrale finite Differenzen auf dem SDF
@@ -154,7 +158,7 @@ $$\hat{d}(\mathbf{x}, t) = d(\mathbf{x}, t) + \beta \cdot \mathcal{N}(\mathbf{x}
 
 **Burst-Intensität:** `s = clamp(speed, 0, 1)` aus `input.js` → `logicalPhase = 1.0 + s` → Abstoßungskraft $F_0 = 0.010 + s \cdot 0.035$.
 
-**Blend-Gewichte** (berechnet in `phase.js` aus `visualPhase` und `logicalPhase`): Drei per `smoothstep` aus `visualPhase` abgeleitete Gewichte, die immer 1 ergeben. `clusterBlend` ist zusätzlich durch `logicalPhase` gesperrt, sodass kein Cluster-Shading erscheint, solange der FSM im Metaball-State ist. Die Simulation verwendet dieselben Smoothstep-Bereiche, jedoch ohne diesen Guard (→ Abschnitt Physikdynamik).
+**Blend-Gewichte** (berechnet in `phase.js` aus `visualPhase`): Drei per `smoothstep` aus `visualPhase` abgeleitete Gewichte, die immer 1 ergeben. Alle Gewichte sind rein von `visualPhase` abhängig — kein diskreter Gate aus `logicalPhase`, sodass Übergänge vollständig kontinuierlich sind. Die Simulation verwendet dieselben Smoothstep-Bereiche (→ Abschnitt Physikdynamik).
 
 **Metaball** — direktes Orbit-Update (nearest-phi):
 
@@ -195,7 +199,10 @@ Texel 3i+2: statische Orbit-Parameter; `orbitPhase` wird bei Init mit einem zuf�
 ```
 [Sim-Pass]   simulationShader liest stateTexA → schreibt stateTexB; swap(A,B)
 [Env-Pass]   environmentShader rendert 512×256 Equirectangular → PMREMGenerator  (alle 4 Frames)
-[Main-Pass]  raymarchShader liest stateTexB + envMap → Screen
+[Main-Pass]  raymarchShader liest stateTexB + envMap → mainTarget (W×H)
+[Bloom-1]    brightExtract (Luma > threshold) → extractTarget (W/2 × H/2)
+[Bloom-2/3]  separabler 9-Tap-Gauß H+V → blurBTarget (W/2 × H/2)
+[Composite]  main + blur × intensity → Screen (additive)
 ```
 
 Alle Passes: Fullscreen Quad + OrthographicCamera → WebGLRenderTarget (außer Main-Pass → Screen).
@@ -295,6 +302,7 @@ Phasengekoppelte Stimmung der Umgebung:
 - **Transluzent-lumineszent** (Cluster): Fresnel, Streuung, angedeutete Materialdicke; inneres Leuchten
 - Schwarzer Hintergrund; Skybox als Alternative ⚠️ offen
 - Abstrakte dynamische Environment-Map — keine erkennbaren Strukturen
+- **Bloom Post-Processing** (`bloomShader.js` + `gpuSetup.makeBloomSetup`): Hellste Bereiche extrahiert (Luma > threshold), 9-Tap-Gauß H+V geblurt, additiv überlagert; Intensität und Schwellenwert koppeln an `burstBlend` (mehr Leuchtkraft im Burst)
 
 ### Shading-Modul (`raymarchLibrary.js`)
 
@@ -329,12 +337,12 @@ color = shadeHit(p, n, rd, phase);
 | GPU-Simulation (1D-Textur RGBA32F, Ping-Pong, simulationShader.js) | ✅ |
 | Shading-Modul (raymarchLibrary.js, shadeHit) | ✅ |
 | Environment (dynamische PMREM, environmentShader.js) | ✅ |
-| Kamera (autonome Bewegung) | ⚠️ Stub |
 | Externes Eingabegerät (input.js) | ✅ |
-| Audio | ⚠️ Stub |
-| Sensorik / augenähnliche Elemente | ⚠️ |
-| Skybox / Hintergrund | ⚠️ |
-| Bewegungsparameter (experimentell) | ⚠️ |
+| Audio | ⚠️ geplant |
+| Anwesenheitserkennung (Presence vs. Motion) | ⚠️ geplant |
+| Bewegungsparameter (experimentell) | ✅ |
+| Bloom Post-Processing | ✅ |
+| Adaptiver smin-Radius k (phasenabhängig) | ✅ |
 
 ---
 
@@ -342,10 +350,5 @@ color = shadeHit(p, n, rd, phase);
 
 | # | Thema | Notiz |
 |---|---|---|
-| 1 | Kamera | autonome Bewegung (Sakkaden, Orbit) noch offen |
-| 2 | input.js | Externes Gerät: Personenerkennung → triggerPhase() |
-| 3 | Audio | Phasenkopplung via onPhaseTransition, Stimmungsdesign |
-| 4 | Sensorik / Augen | Augenähnliche Elemente als Reaktivitätsmerkmal |
-| 5 | Skybox / Hintergrund | Separater Ansatz nötig |
-| 6 | Bewegungsparameter | Experimentell: Driftgeschwindigkeit, Cluster-Übergang, Burst-Intensität |
-| 7 | Interaktionsanleitung | "Augen zuhalten" etc. als Installationskonzept |
+| 1 | Audio | Web Audio API; drei synthetische Schichten: Metaball = tiefer Drone (Frequenz skaliert mit motionSpeed), Cluster = Subbass-Puls im Atemrhythmus, Burst = perkussiver Anschlag + Hochfrequenz-Rauschen über burstBlend; OscillatorNode + BiquadFilterNode, kein Asset-Loading |
+| 2 | Anwesenheitserkennung | input.js liefert nur Motion-Speed; zweite Schicht: Hintergrundmodell erkennt Präsenz ohne Bewegung → Kreatur reagiert auf bloße Anwesenheit (aufmerksam werden, ohne Burst zu triggern); psychologisch stärker als reiner Bewegungs-Trigger |
