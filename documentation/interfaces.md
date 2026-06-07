@@ -34,7 +34,7 @@ GPU-Physiksimulation. Verwaltet 1D-Zustandstextur (RGBA32F, 36×1) und Ping-Pong
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
 | `initSimulation(renderer)` | `renderer: WebGLRenderer` | Wird intern für Sim-Pass-Render-Calls gespeichert | `void` | — |
-| `stepSimulation(logicalPhase, visualPhase, time, motionSpeed)` | `logicalPhase: float ∈ [0,2]`, `visualPhase: float ∈ [0,1.5]`, `time: float ∈ [0,∞)`, `motionSpeed: float ∈ [0,1]` | `visualPhase` steuert kontinuierlichen Physik-Blend (metaT/clusterT/burstT) im Sim-Shader; `logicalPhase` nur noch für Burst-Intensität; `motionSpeed` skaliert Orbit-Geschwindigkeit | `void` | — |
+| `stepSimulation()` | — | Liest `logicalPhase`, `visualPhase`, `time`, `motionSpeed` direkt aus `phase.js`; steuert Physik-Blend und Burst-Intensität im Sim-Shader | `void` | — |
 | `getUniformDefs()` | — | — | `{ stateTex: { value } }` | Uniform-Objekt für ShaderMaterial |
 | `applyStateToMaterial(material)` | `material: ShaderMaterial` | Setzt `stateTex` auf aktuelle Lesertextur | `void` | — |
 
@@ -49,7 +49,7 @@ Dynamische PMREM-Generierung aus synthetischem Equirectangular-Shader (`environm
 |---|---|---|---|---|
 | `initEnvMap(renderer)` | `renderer: WebGLRenderer` | Renderer für Equirectangular-Pass und `PMREMGenerator` | `void` | — |
 | `getUniformDefs()` | — | — | `{ envMap: { value } }` | Einzelne Env-Map-Uniform |
-| `applyStateToMaterial(material, time)` | `material: ShaderMaterial`, `time: float ∈ [0,∞)` | Liest Blend-Gewichte direkt aus `phase.js`; regeneriert PMREM alle 4 Frames + bei `onPhaseTransition` | `void` | — |
+| `applyStateToMaterial(material)` | `material: ShaderMaterial` | Liest Blend-Gewichte und Zeit direkt aus `phase.js`; regeneriert PMREM alle 4 Frames + bei `onPhaseTransition` | `void` | — |
 
 ---
 
@@ -65,7 +65,7 @@ Stationäre Beobachter-Kamera. Sakkaden-Verhalten: Kamera hält einen Punkt im B
 ---
 
 ### `src/input.js`
-Systemkamera → Bewegungserkennung → FSM + Kamera. ⚠️ Stub (Webcam-Integration ausstehend).
+Systemkamera → Bewegungserkennung → FSM + Kamera.
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
@@ -105,6 +105,15 @@ Initialzustand der 12 Metaballs (Startwerte für GPU-Zustandstextur).
 
 ---
 
+### `src/gpuSetup.js`
+Fullscreen-Quad-Factory für GPU-Passes. Kein öffentlicher State.
+
+| Funktion | Parameter | Semantik | Rückgabe |
+|---|---|---|---|
+| `makeGpuSetup(material)` | `material: ShaderMaterial` | Erstellt `Scene` + `OrthographicCamera(-1,1,1,-1,0,1)` + `PlaneGeometry(2,2)` Mesh | `{ scene, camera }` |
+
+---
+
 ### `src/renderer.js`
 Szenen-Setup. Exportiert Objekte direkt; keine Initialisierungsfunktion.
 
@@ -120,6 +129,11 @@ Szenen-Setup. Exportiert Objekte direkt; keine Initialisierungsfunktion.
 ## GLSL-Bibliotheken (`libraries/`, interpoliert via Template-Literal)
 
 Alle Bibliotheken exportieren einen GLSL-String, der per `${…}` in den jeweiligen Shader interpoliert wird. Die Bibliotheksfunktionen haben Zugriff auf Uniforms und Hilfsfunktionen des umschließenden Shaders (gleicher Programm-Scope).
+
+### `libraries/vertexShaderLibrary.js`
+Gemeinsamer Passthrough-Vertex-Shader. Exportiert: `vertexShaderLibrary: string`. Wird von allen drei Shader-Modulen als jeweiliger `*Vert`-Export verwendet — kein Duplikat mehr pro Shader-Datei.
+
+---
 
 ### `libraries/noiseLibrary.js`
 Rausch-Bibliothek. Von mehreren Shadern nutzbar. Exportiert: `noiseLibrary: string`.

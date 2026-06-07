@@ -1,11 +1,8 @@
-import { noiseLibrary }       from '../libraries/noiseLibrary.js';
-import { simulationLibrary } from '../libraries/simulationLibrary.js';
+import { vertexShaderLibrary } from '../libraries/vertexShaderLibrary.js';
+import { noiseLibrary        } from '../libraries/noiseLibrary.js';
+import { simulationLibrary   } from '../libraries/simulationLibrary.js';
 
-export const simulationVert = `
-void main() {
-  gl_Position = vec4(position, 1.0);
-}
-`;
+export const simulationVert = vertexShaderLibrary;
 
 export const simulationFrag = `
 precision highp float;
