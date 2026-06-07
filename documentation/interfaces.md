@@ -15,7 +15,7 @@ Input-gesteuerter FSM (Cluster → Burst → Metaball → Cluster). Einzige auto
 | `tick()` | — | — | `void` | — |
 | `getTime()` | — | — | `float` | [0, ∞) monoton — für Shader-Animationen |
 | `getLogicalPhase()` | — | — | `float` | 0.0=Metaball, 1.0=Cluster, 1.0+s=Burst |
-| `getVisualPhase()` | — | — | `float` | exp. Lerp zu `getLogicalPhase()`, Rate 0.08/Frame |
+| `getVisualPhase()` | — | — | `float` | exp. Lerp zu `getLogicalPhase()`; Rate 0.025/Frame →Burst, 0.012/Frame →andere |
 | `getMetaballBlend()` | — | — | `float` | [0,1] Blend-Gewicht Metaball |
 | `getClusterBlend()` | — | — | `float` | [0,1] Blend-Gewicht Cluster |
 | `getBurstBlend()` | — | — | `float` | [0,1] Blend-Gewicht Burst |
@@ -34,7 +34,7 @@ GPU-Physiksimulation. Verwaltet 1D-Zustandstextur (RGBA32F, 36×1) und Ping-Pong
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
 | `initSimulation(renderer)` | `renderer: WebGLRenderer` | Wird intern für Sim-Pass-Render-Calls gespeichert | `void` | — |
-| `stepSimulation(logicalPhase, time, motionSpeed)` | `logicalPhase: float ∈ [0,2]`, `time: float ∈ [0,∞)`, `motionSpeed: float ∈ [0,1]` | `logicalPhase` steuert Physik-Zweig im Shader; `time` als Seed für deterministisches Rauschen; `motionSpeed` skaliert Orbit-Geschwindigkeit in Metaball-Phase | `void` | — |
+| `stepSimulation(logicalPhase, visualPhase, time, motionSpeed)` | `logicalPhase: float ∈ [0,2]`, `visualPhase: float ∈ [0,1.5]`, `time: float ∈ [0,∞)`, `motionSpeed: float ∈ [0,1]` | `visualPhase` steuert kontinuierlichen Physik-Blend (metaT/clusterT/burstT) im Sim-Shader; `logicalPhase` nur noch für Burst-Intensität; `motionSpeed` skaliert Orbit-Geschwindigkeit | `void` | — |
 | `getUniformDefs()` | — | — | `{ stateTex: { value } }` | Uniform-Objekt für ShaderMaterial |
 | `applyStateToMaterial(material)` | `material: ShaderMaterial` | Setzt `stateTex` auf aktuelle Lesertextur | `void` | — |
 
@@ -101,7 +101,7 @@ Initialzustand der 12 Metaballs (Startwerte für GPU-Zustandstextur).
 
 | Export | Typ | Bereich / Semantik |
 |---|---|---|
-| `balls` | `Array<{x,y,z,r0,vx,vy,vz}>` (length 12) | Positionen ∈ [−1.8,1.8]×[−1,1]×[−0.5,0.5]; `r0 ∈ (0,∞)` Basisradius; Geschwindigkeiten = 0 initial |
+| `balls` | `Array<{x,y,z,r0,vx,vy,vz,orbitRadius,orbitSpeed,orbitInclination}>` (length 12) | `r0 ∈ (0,∞)` Basisradius; `orbitPhase` entfernt — Startwinkel wird per `Math.random()*2π` in `buildInitData` gesetzt; alle Geschwindigkeiten = 0 initial |
 
 ---
 
@@ -143,10 +143,10 @@ Voraussetzung: `uniform float phase` (= `getVisualPhase()`) deklariert.
 
 | GLSL-Export | Typ | Semantik |
 |---|---|---|
-| `MOOD_METABALL` | `const vec3` | `(0.78, 0.83, 0.90)` — kaltes Silbergrau |
-| `MOOD_CLUSTER` | `const vec3` | `(0.00, 0.78, 0.95)` — cyan-türkis |
-| `MOOD_BURST` | `const vec3` | `(0.10, 1.00, 0.60)` — helles türkis-grün |
-| `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`, berechnet aus `logicalPhase` (v) via `_ss` (smoothstep); immer Summe = 1. Formeln: `clusterBlend = _ss(0.4,0.8,v) * (1 - _ss(1.05,1.4,v)) * guard`; `burstBlend = _ss(1.05,1.4,v)`; `metaballBlend = 1 - clusterBlend - burstBlend` |
+| `MOOD_METABALL` | `const vec3` | Sehr helles Cyan-Blau (aktuell #96E9F2) |
+| `MOOD_CLUSTER` | `const vec3` | Teal-Cyan (aktuell #13BED1) |
+| `MOOD_BURST` | `const vec3` | Kräftiges Orange-Rot (aktuell #EB4C1C) |
+| `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`; immer Summe = 1. `clusterBlend` ist durch `logicalPhase` gegated (kein Cluster-Shading im Metaball-State) |
 | `moodColor() → vec3` | `∈ [0,1]³` | Gewichteter Mix der drei Phasenfarben |
 
 ---
@@ -166,14 +166,23 @@ Benennung nach **Material**: `shadeMetal`/`shadeGlass` sind austauschbare Implem
 ---
 
 ### `libraries/simulationLibrary.js`
-Physikfunktionen pro Phasenmodus. Kein Seed, kein Bounds-Handling — alle Übergänge velocity-only.
-Voraussetzung: Uniforms `stateTex` (sampler2D), `time` (float), `logicalPhase` (float), `motionSpeed` (float) deklariert; `stateUV(int)`, `readOrb(int)` definiert.
+Unified Physik-Blend. Alle drei Phasenmodi werden kontinuierlich per `visualPhase` gemischt — kein harter Umschalter.
+Voraussetzung: Uniforms `stateTex`, `time`, `logicalPhase`, `visualPhase`, `motionSpeed` deklariert; `stateUV(int)` und `perlin2D` definiert.
 
 | GLSL-Funktion | Input / Output | Semantik |
 |---|---|---|
-| `applyMetaball(inout pos, inout vel, orb)` | `pos,vel: vec3`, `orb: vec4` (orbit params) | Sanfte Anziehung zur analytischen Orbitposition; effektive Winkelgeschwindigkeit `omega = orb.g * 3.0 * (1.0 + motionSpeed * 0.8)`; Position nie direkt gesetzt |
-| `applyCluster(inout pos, inout vel)` | `pos,vel: vec3` | Zentripetalkraft zu globalem Schwerpunkt |
-| `applyBurst(inout pos, inout vel, lPhase)` | `pos,vel: vec3`, `lPhase: float ∈ [1,2]` | Exponentiell abklingende Abstoßung; `lPhase−1.0` = Input-Intensität |
+| `orbitPoint(orb, phi)` | `orb: vec4`, `phi: float` → `vec3` | 3D-Punkt auf Orbit-Ellipse bei Winkel phi |
+| `reflectBounds(inout pos, inout vel)` | `pos,vel: vec3` | Reflektiert pos/vel an Sichtbarkeitsgrenzen; verhindert, dass Balls bei Burst dauerhaft aus dem Bild fliegen |
+| `applySimulation(inout pos, inout vel, orb)` | `pos,vel: vec3`, `orb: vec4` | Leitet metaT/clusterT/burstT aus `visualPhase` ab; mischt direktes Orbit-Update (Metaball) mit vel-basierter Physik (Cluster/Burst); ruft `reflectBounds` am Ende auf |
+
+**Blend-Architektur (Simulation vs. Shading):**
+
+| | Shading (`phase.js` → Uniforms) | Simulation (`simulationLibrary.js`) |
+|---|---|---|
+| Quelle | JS, einmal/Frame | GLSL, inline |
+| Smoothstep-Bereiche | identisch | identisch |
+| Gate | `× _ss(0,0.15,l)` auf clusterBlend | keiner — gewollt für burst→metaball-Übergang |
+| Consumer | `moodLibrary`, `environmentShader`, `raymarchShader` | `applySimulation` |
 
 ---
 
@@ -185,9 +194,10 @@ Sim-Pass-Shader. Intern von `simulation.js` verwendet. Interpoliert `simulationL
 | GLSL-Uniform | Typ | Bereich / Semantik |
 |---|---|---|
 | `stateTex` | `sampler2D` | RGBA32F 36×1 Eingangszustand |
-| `logicalPhase` | `float` | [0, 2] `getLogicalPhase()` — bestimmt Physik-Zweig |
-| `time` | `float` | [0, ∞) für Orbit-Berechnung (phi = phi0 + time × omega) |
-| `motionSpeed` | `float` | [0, 1] `getMotionSpeed()` — skaliert Orbit-Geschwindigkeit in `applyMetaball` |
+| `logicalPhase` | `float` | [0, 2] `getLogicalPhase()` — nur noch für Burst-Intensität (`logicalPhase − 1.0`) |
+| `visualPhase` | `float` | [0, 1.5] `getVisualPhase()` — steuert metaT/clusterT/burstT Physik-Blend |
+| `time` | `float` | [0, ∞) für Orbit- und Noise-Animationen |
+| `motionSpeed` | `float` | [0, 1] `getMotionSpeed()` — skaliert Orbit-Winkelgeschwindigkeit |
 
 ---
 

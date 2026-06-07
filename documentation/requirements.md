@@ -43,7 +43,7 @@ T-1003/
     ├── noiseLibrary.js         ← GLSL-Chunk: perlin2D, worley2D, worley3D
     ├── moodLibrary.js          ← GLSL-Chunk: Farbpalette (MOOD_*), Phasengewichte (tMeta/Cluster/Burst), moodColor()
     ├── raymarchLibrary.js      ← GLSL-Chunk: shadeMetal, shadeGlass, shadeHit
-    └── simulationLibrary.js    ← GLSL-Chunk: applyMetaball, applyCluster, applyBurst
+    └── simulationLibrary.js    ← GLSL-Chunk: applySimulation (unified, visualPhase-blended)
 ```
 
 ### Modul-Interface-Prinzip
@@ -57,8 +57,8 @@ Jedes Modul besitzt seine Uniforms vollständig. `main.js` kennt keine Uniform-N
 input.initInput()                                    // Webcam-Stream + Detektor-Setup
 
 // Jeden Frame:
-input.updateInput()                                  // Bewegungsanalyse → reportMotion()
-stepSimulation(logicalPhase, time, getMotionSpeed()) // motionSpeed skaliert Orbit
+input.updateInput()                                               // Bewegungsanalyse → reportMotion()
+stepSimulation(logicalPhase, visualPhase, time, getMotionSpeed()) // visualPhase steuert Physik-Blend
 applyStateToMaterial(material)
 applyEnvState(material, time)
 material.uniforms.motionSpeed.value = getMotionSpeed()
@@ -153,28 +153,25 @@ $$\hat{d}(\mathbf{x}, t) = d(\mathbf{x}, t) + \beta \cdot \mathcal{N}(\mathbf{x}
 
 **Burst-Intensität:** `s = clamp(speed, 0, 1)` aus `input.js` → `logicalPhase = 1.0 + s` → Abstoßungskraft $F_0 = 0.010 + s \cdot 0.035$.
 
-**Blend-Gewichte** (berechnet in `phase.js` aus `logicalPhase` = v, mit `_ss` = smoothstep):
-- `clusterBlend = _ss(0.4, 0.8, v) * (1 - _ss(1.05, 1.4, v)) * guard` — Peak bei v = 1.0
-- `burstBlend = _ss(1.05, 1.4, v)` — aktiviert schnell sobald v > 1.05
-- `metaballBlend = 1 - clusterBlend - burstBlend`
+**Blend-Gewichte** (berechnet in `phase.js` aus `visualPhase` und `logicalPhase`): Drei per `smoothstep` aus `visualPhase` abgeleitete Gewichte, die immer 1 ergeben. `clusterBlend` ist zusätzlich durch `logicalPhase` gesperrt, sodass kein Cluster-Shading erscheint, solange der FSM im Metaball-State ist. Die Simulation verwendet dieselben Smoothstep-Bereiche, jedoch ohne diesen Guard (→ Abschnitt Physikdynamik).
 
-**Metaball** — analytische Einzelorbits, Bounds by Construction:
+**Metaball** — direktes Orbit-Update (nearest-phi):
 
-Jeder Ball i wird sanft zu einem analytischen Orbit-Ziel angezogen, das durch individuelle Parameter $(r_i, \omega_i, \phi_i^0 + \phi_\text{rand}, \sin\theta_i)$ bestimmt wird:
+Pro Frame wird der nächste Punkt auf der Orbit-Ellipse zur aktuellen Ballposition bestimmt. Der Ball wird radial mit einer kleinen Lerp-Rate dorthin gezogen und gleichzeitig um einen Frame-Schritt tangential weitergeführt — kein Spring, kein Overshoot. Der Startwinkel $\phi_\text{rand} \sim \mathcal{U}[0, 2\pi)$ wird bei Programmstart gezogen, sodass jeder Run anders aussieht. Kein Noise in der Metaball-Phase.
 
-$$\mathbf{c}_i^\text{orbit}(t) = \begin{pmatrix} r_i \cos\phi_i(t) \\ r_i \sin\phi_i(t)\,\sin\theta_i \\ r_i \sin\phi_i(t)\,\cos\theta_i \cdot 0.28 \end{pmatrix} + \epsilon_\text{Perlin}(\mathbf{c}_i^\text{orbit}, t)$$
+$$\mathbf{c}_i^\text{orbit}(\phi) = \begin{pmatrix} r_i \cos\phi \\ r_i \sin\phi\,\sin\theta_i \\ r_i \sin\phi\,\cos\theta_i \cdot 0.28 \end{pmatrix}$$
 
-mit $\phi_i(t) = (\phi_i^0 + \phi_\text{rand}) + \omega_i \cdot t$. $\phi_\text{rand} \sim \mathcal{U}[0, 2\pi)$ wird bei Programmstart gezogen — jeder Run sieht anders aus. Noise-Input ist die Orbit-Position selbst (keine Seed); Balls differenzieren durch unterschiedliche Orbitpositionen. Bounds by design mit 10% Marge: $r_i \leq 1.58$, $r_i \sin\theta_i \leq 0.90$. Keine Bounds-Reflexion.
-
-**Orbit-Geschwindigkeit:** In `applyMetaball` skaliert die effektive Winkelgeschwindigkeit mit `motionSpeed`: $\omega_\text{eff} = \omega_i \cdot 3.0 \cdot (1 + \text{motionSpeed} \cdot 0.8)$ — stärkere erkannte Bewegung → schnellere Orbits in der Metaball-Phase.
+Die effektive Winkelgeschwindigkeit skaliert additiv mit `motionSpeed` — stärkere erkannte Bewegung beschleunigt alle Orbits.
 
 **Cluster** — Masseschwerpunkt und Anziehung:
 $$\hat{\mathbf{c}}(t) = \frac{1}{n}\sum_{i=1}^n \mathbf{c}_i(t), \qquad \mathbf{v}_i(t) \mathrel{+}= k_1(\hat{\mathbf{c}} - \mathbf{c}_i) + k_2(0 - \mathbf{c}_i)$$
 
-**Burst** — exponentiell abklingende Abstoßung (stark lokal, asymptotisch 0):
-$$\mathbf{v}_i(t) \mathrel{+}= \hat{\mathbf{d}}_i \cdot F_0 \cdot e^{-\|\mathbf{d}_i\| \cdot 2.0}, \qquad \mathbf{d}_i = \mathbf{c}_i - \hat{\mathbf{c}}$$
+Perlin-Noise-Störung auf $\mathbf{v}_i$ sorgt für organische, unregelmäßige Clusterbewegung.
 
-$F_0 = 0.010 + s \cdot 0.035$ skaliert mit Eingabe-Geschwindigkeit $s \in [0,1]$ (kodiert in `logicalPhase - 1.0`). Kraft ≈ 0 bei $\|\mathbf{d}_i\| \approx 2.1$ (halbe Raumdiagonale).
+**Burst** — exponentiell abklingende Abstoßung (stark lokal, asymptotisch 0):
+$$\mathbf{v}_i(t) \mathrel{+}= \hat{\mathbf{d}}_i \cdot F_0 \cdot e^{-\lambda\|\mathbf{d}_i\|}, \qquad \mathbf{d}_i = \mathbf{c}_i - \hat{\mathbf{c}}$$
+
+$F_0$ skaliert mit der Eingabe-Geschwindigkeit $s \in [0,1]$ (kodiert in `logicalPhase - 1.0`). Balls, die die Sichtbarkeitsgrenzen überschreiten, werden reflektiert (`reflectBounds`).
 
 ---
 
@@ -204,11 +201,14 @@ Alle Passes: Fullscreen Quad + OrthographicCamera → WebGLRenderTarget (außer 
 
 ### Physik- und Phasendynamik (GPU, `simulationLibrary.js`)
 
-Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie Orbit-Parameter (Texel 3i+2), bestimmt anhand von `logicalPhase` den Physik-Zweig und schreibt den neuen Zustand:
+Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie Orbit-Parameter (Texel 3i+2). Die Physik wird **nicht** hart per `logicalPhase` umgeschaltet, sondern kontinuierlich über `visualPhase` gemischt (`applySimulation`):
 
-- **Metaball** (`ceil(logicalPhase) == 0`): Analytische Einzelorbits aus Texel 3i+2 (Radius, Geschwindigkeit, Phase, Inklination); Position direkt gesetzt, keine Integration. Perlin-Noise-Störung für organische Variation. Grenzen by construction eingehalten. Orbit-Geschwindigkeit skaliert mit `motionSpeed` (Uniform aus `getMotionSpeed()`).
-- **Cluster** (`ceil(logicalPhase) == 1`): Velocity-Integration; Zentripetalkraft + schwache Zentrierung
-- **Burst** (`ceil(logicalPhase) == 2`): Velocity-Integration; exponentiell abklingende Abstoßung $F_0 \cdot e^{-3.5d}$; $F_0$ skaliert mit `logicalPhase - 1.0` (Input-Geschwindigkeit)
+Die Physik wird über `visualPhase` kontinuierlich zwischen den drei Modi gemischt — kein harter Umschalter. Blend-Gewichte `metaT`, `clusterT`, `burstT` entsprechen den gleichen Smoothstep-Bereichen wie die Shading-Gewichte in `phase.js`, sind jedoch **bewusst ungegated** (kein `logicalPhase`-Guard): beim Burst→Metaball-Rückzug wird kurzzeitig Zentripetalkraft mitgewendet, um den Rückzug auf die Orbit-Ellipse zu glätten.
+
+**Positions-Update** (kombiniert):
+$$\Delta\mathbf{c}_i = \Delta\mathbf{c}^\text{orbit} \cdot \text{metaT} + \mathbf{v}_i \cdot (\text{clusterT} + \text{burstT})$$
+
+**Kräfte**: Zentripetalkraft ist immer aktiv und baut $\mathbf{v}_i$ schon während der Metaball-Phase auf — beim Übergang zu Cluster ist so bereits Impuls in der richtigen Richtung vorhanden. Cluster-Noise und Burst-Abstoßung werden mit `clusterT` bzw. `burstT` gewichtet. Velocity-Decay wird phasenabhängig interpoliert (hoch bei Burst, niedrig bei Cluster). Nach dem Positions-Update wird `reflectBounds` aufgerufen.
 
 ### Uniforms (CPU → Shader, pro Frame)
 
@@ -220,6 +220,8 @@ Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie 
 | `motionSpeed` | phase.js (`getMotionSpeed()`) | Erkannte Bewegungsgeschwindigkeit ∈ [0,1]; exponentiell abklingend (×0.97/Frame) ohne Bewegung |
 | `camPos` | renderer.js | Kameraposition |
 | `resolution` | renderer.js | Viewport-Größe |
+| `logicalPhase` | phase.js | Diskrete Phase: 0.0/1.0/1.0+s — für Burst-Intensität in Sim |
+| `visualPhase` | phase.js | Geglättete Phase [0,1.5] — steuert Physik-Blend im Sim-Shader |
 | `stateTex` | simulation.js | Ball-Zustandstextur (RGBA32F, 36×1) |
 | `envMap` | environment.js | PMREM Environment-Map (dynamisch regeneriert) |
 

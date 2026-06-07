@@ -45,7 +45,7 @@ function animate() {
   const logicalPhase = getLogicalPhase();
   const visualPhase  = getVisualPhase();
 
-  stepSimulation(logicalPhase, t, getMotionSpeed());
+  stepSimulation(logicalPhase, visualPhase, t, getMotionSpeed());
   applySimState(material);
   applyEnvState(material, t);
   updateInput();

@@ -31,7 +31,7 @@ function buildInitData() {
   const data = new Float32Array(W * 4);
   balls.forEach((b, i) => {
     const t = i * 12;
-    const phi0     = b.orbitPhase + Math.random() * Math.PI * 2; // random offset per run
+    const phi0     = Math.random() * Math.PI * 2;
     const r        = b.orbitRadius;
     const iSin     = b.orbitInclination;
     const iCos     = Math.sqrt(Math.max(0, 1 - iSin * iSin));
@@ -71,6 +71,7 @@ export function initSimulation(renderer) {
       stateTex:     { value: initTex },
       time:         { value: 0.0 },
       logicalPhase: { value: 0.0 },
+      visualPhase:  { value: 1.0 },
       motionSpeed:  { value: 0.0 },
     },
     vertexShader:   simulationVert,
@@ -82,9 +83,10 @@ export function initSimulation(renderer) {
   isFirstFrame = true;
 }
 
-export function stepSimulation(logicalPhase, time, motionSpeed) {
+export function stepSimulation(logicalPhase, visualPhase, time, motionSpeed) {
   simMaterial.uniforms.stateTex.value     = isFirstFrame ? initTex : readTarget.texture;
   simMaterial.uniforms.logicalPhase.value = logicalPhase;
+  simMaterial.uniforms.visualPhase.value  = visualPhase;
   simMaterial.uniforms.time.value         = time;
   simMaterial.uniforms.motionSpeed.value  = motionSpeed;
 
