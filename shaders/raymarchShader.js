@@ -64,21 +64,22 @@ float smin(float a, float b, float k) {
   return mix(b, a, h) - k * h * (1.0 - h);
 }
 
-// d_hat(x,t) = smin_i(sphere(x, c_i, r_i(t))) + beta * N(x,t)
+// d_hat(x,t) = smin_k(sphere(x,c_i,r_i(t))) + beta*N(x,t); k = 0.5*cB + 0.3*mB + 0.1*bB
 // Reads ball globals only — no texture fetches.
 float map(vec3 p) {
+  float k = 0.40 * clusterBlend + 0.35 * metaballBlend + 0.10 * burstBlend;
   float d = sphere(p, gC0,  radiusMod(gC0,  gR_0));
-  d = smin(d, sphere(p, gC1,  radiusMod(gC1,  gR_1)),  0.35);
-  d = smin(d, sphere(p, gC2,  radiusMod(gC2,  gR_2)),  0.35);
-  d = smin(d, sphere(p, gC3,  radiusMod(gC3,  gR_3)),  0.35);
-  d = smin(d, sphere(p, gC4,  radiusMod(gC4,  gR_4)),  0.35);
-  d = smin(d, sphere(p, gC5,  radiusMod(gC5,  gR_5)),  0.35);
-  d = smin(d, sphere(p, gC6,  radiusMod(gC6,  gR_6)),  0.35);
-  d = smin(d, sphere(p, gC7,  radiusMod(gC7,  gR_7)),  0.35);
-  d = smin(d, sphere(p, gC8,  radiusMod(gC8,  gR_8)),  0.35);
-  d = smin(d, sphere(p, gC9,  radiusMod(gC9,  gR_9)),  0.35);
-  d = smin(d, sphere(p, gC10, radiusMod(gC10, gR_10)), 0.35);
-  d = smin(d, sphere(p, gC11, radiusMod(gC11, gR_11)), 0.35);
+  d = smin(d, sphere(p, gC1,  radiusMod(gC1,  gR_1)),  k);
+  d = smin(d, sphere(p, gC2,  radiusMod(gC2,  gR_2)),  k);
+  d = smin(d, sphere(p, gC3,  radiusMod(gC3,  gR_3)),  k);
+  d = smin(d, sphere(p, gC4,  radiusMod(gC4,  gR_4)),  k);
+  d = smin(d, sphere(p, gC5,  radiusMod(gC5,  gR_5)),  k);
+  d = smin(d, sphere(p, gC6,  radiusMod(gC6,  gR_6)),  k);
+  d = smin(d, sphere(p, gC7,  radiusMod(gC7,  gR_7)),  k);
+  d = smin(d, sphere(p, gC8,  radiusMod(gC8,  gR_8)),  k);
+  d = smin(d, sphere(p, gC9,  radiusMod(gC9,  gR_9)),  k);
+  d = smin(d, sphere(p, gC10, radiusMod(gC10, gR_10)), k);
+  d = smin(d, sphere(p, gC11, radiusMod(gC11, gR_11)), k);
   float noise = perlin2D(p.xy * 4.0 + time * 0.30)
               + perlin2D(p.yz * 4.0 + time * 0.25);
   return d + noise * 0.15;

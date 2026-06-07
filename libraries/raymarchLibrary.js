@@ -46,21 +46,23 @@ vec3 shadeMetal(vec3 n, vec3 rd, float NdotV, float roughness) {
 }
 
 // ── glass ─────────────────────────────────────────────────────────────────────
+// No PMREM: thickness proxy via map(), inverted-Fresnel inner glow, back-scatter rim.
 
 vec3 shadeGlass(vec3 p, vec3 n, vec3 rd, float NdotV) {
-  float F     = 0.04 + 0.96 * pow(1.0 - NdotV, 5.0);
-  float eta   = 0.667;
-  vec3  ref1  = refract(rd, n, eta);
-  vec3  ref2  = refract(ref1, -n, 1.0 / eta);
-  float valid = clamp(dot(ref2, ref2) * 4.0, 0.0, 1.0);
-  vec3  thru  = normalize(mix(ref1, ref2, valid));
+  vec3  ld              = normalize(vec3(2.0, 2.5, 2.0));
+  float spec            = pow(max(dot(n, normalize(ld - rd)), 0.0), 192.0);
+  float thickness = clamp(-map(p - n * 0.08), 0.0, 1.0);
+  float innerGlow = smoothstep(0.0, 0.15, thickness) * 1.2;
+  float fresnel   = pow(1.0 - NdotV, 2.5);
+  float scatter   = pow(max(dot(-ld, n), 0.0), 2.0);
 
-  vec3  ld         = normalize(vec3(2.0, 2.5, 2.0));
-  vec3  glass      = mix(_envSample(thru), _envSample(reflect(rd, n)), F);
-  float spec       = pow(max(dot(n, normalize(ld - rd)), 0.0), 256.0);
-  float centerGlow = pow(NdotV, 16.0) * 0.05;
-
-  return glass + MOOD_CLUSTER * centerGlow + spec * 2.5 + _rimLight(NdotV) * 0.4;
+  vec3 color = vec3(0.0);
+  color += MOOD_CLUSTER  * fresnel * 0.3;
+  color += MOOD_METABALL * innerGlow * 0.1;
+  color += spec * 0.8;
+  color += MOOD_CLUSTER  * scatter * 0.25;
+  color += _rimLight(NdotV) * 0.5;
+  return color;
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────

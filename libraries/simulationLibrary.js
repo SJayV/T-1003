@@ -78,7 +78,7 @@ void applySimulation(inout vec3 pos, inout vec3 vel, vec4 orb) {
   float intensity = clamp(logicalPhase - 1.0, 0.0, 1.0);
   vec3 burstDir = pos - cen;
   float burstDist = length(burstDir) + 0.01;
-  vel += normalize(burstDir) * exp(-burstDist * 1.5) * (0.010 + intensity * 0.035) * burstT;
+  vel += normalize(burstDir) * exp(-burstDist * 3.2) * (0.010 + intensity * 0.035) * burstT;
 
   // ── blended position update ─────────────────────────────────────────────
   pos += orbitDelta * metaT + vel * (clusterT + burstT);

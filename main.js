@@ -9,6 +9,8 @@ import { initCamera, updateCamera }                                   from './sr
 import { initInput,  updateInput  }                                   from './src/input.js';
 import { initAudio,  updateAudio  }                                   from './src/audio.js';
 import { mainVert, mainFrag }                                         from './shaders/raymarchShader.js';
+import { makeBloomSetup }                                             from './src/gpuSetup.js';
+import { brightExtractFrag, blurFrag, compositeFrag }                 from './shaders/bloomShader.js';
 
 const material = new THREE.ShaderMaterial({
   uniforms: {
@@ -34,6 +36,7 @@ initCamera(camera);
 initInput();
 initAudio();
 initSimulation(renderer);
+const bloom = makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeFrag });
 
 function animate() {
   tick();
@@ -58,7 +61,10 @@ function animate() {
   material.uniforms.burstBlend.value    = getBurstBlend();
   material.uniforms.motionSpeed.value   = motionSpeed;
 
-  renderer.render(scene, camera);
+  bloom.render(scene, camera, {
+    intensity: 1.2 + getBurstBlend() * 1.5,
+    threshold: 0.65 - getBurstBlend() * 0.25,
+  });
   requestAnimationFrame(animate);
 }
 

@@ -106,11 +106,14 @@ Initialzustand der 12 Metaballs (Startwerte für GPU-Zustandstextur).
 ---
 
 ### `src/gpuSetup.js`
-Fullscreen-Quad-Factory für GPU-Passes. Kein öffentlicher State.
+Fullscreen-Quad-Factory für GPU-Passes + Bloom-Pipeline-Factory. Kein öffentlicher State.
 
 | Funktion | Parameter | Semantik | Rückgabe |
 |---|---|---|---|
 | `makeGpuSetup(material)` | `material: ShaderMaterial` | Erstellt `Scene` + `OrthographicCamera(-1,1,1,-1,0,1)` + `PlaneGeometry(2,2)` Mesh | `{ scene, camera }` |
+| `makeBloomSetup(renderer, shaders)` | `renderer: WebGLRenderer`, `shaders: { brightExtractFrag, blurFrag, compositeFrag }` | 4 Render-Targets (main W×H, extract/blurA/blurB W/2×H/2) + 3 interne GPU-Passes; nutzt intern `makeGpuSetup` | `{ render(scene, camera, opts) }` |
+
+`render(scene, camera, opts)`: rendert `scene → mainTarget`, führt brightExtract → blurH → blurV → composite aus. `opts.intensity: float` (Standard 1.5) und `opts.threshold: float` (Standard 0.6) werden jedes Frame übernommen.
 
 ---
 
@@ -160,7 +163,7 @@ Voraussetzung: `uniform float phase` (= `getVisualPhase()`) deklariert.
 | `MOOD_METABALL` | `const vec3` | Sehr helles Cyan-Blau (aktuell #96E9F2) |
 | `MOOD_CLUSTER` | `const vec3` | Teal-Cyan (aktuell #13BED1) |
 | `MOOD_BURST` | `const vec3` | Kräftiges Orange-Rot (aktuell #EB4C1C) |
-| `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`; immer Summe = 1. `clusterBlend` ist durch `logicalPhase` gegated (kein Cluster-Shading im Metaball-State) |
+| `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`; immer Summe = 1; alle rein aus `visualPhase`-Smoothsteps abgeleitet — keine diskreten Gates |
 | `moodColor() → vec3` | `∈ [0,1]³` | Gewichteter Mix der drei Phasenfarben |
 
 ---
@@ -239,3 +242,14 @@ Haupt-Render-Pass. Interpoliert `noiseLibrary` + `raymarchLibrary`. Exportiert: 
 | `time`, `camPos`, `resolution` | — | Globale Szenenparameter |
 
 `main()`: `loadBalls()` → `raymarch()` → `shadeHit()`. Ball-Daten werden einmalig aus `stateTex` geladen; kein Texture-Read in Raymarch- oder Normal-Schleife.
+
+---
+
+### `shaders/bloomShader.js`
+Bloom Post-Processing. Drei Fragment-Shader-Strings für den 3-Pass-Bloom-Filter; intern von `gpuSetup.makeBloomSetup` verwendet. Vertex-Shader kommt aus `vertexShaderLibrary`.
+
+| Export | Uniforms | Semantik |
+|---|---|---|
+| `brightExtractFrag` | `mainTex: sampler2D`, `resolution: vec2`, `threshold: float` | Extrahiert Pixel oberhalb Luma-Schwellenwert: `color × max(luma − threshold, 0) / luma` |
+| `blurFrag` | `blurTex: sampler2D`, `resolution: vec2`, `blurDir: vec2` | Separabler 9-Tap-Gauß; `blurDir = (1,0)` für H-Pass, `(0,1)` für V-Pass |
+| `compositeFrag` | `mainTex: sampler2D`, `bloomTex: sampler2D`, `resolution: vec2`, `intensity: float` | Additiv: `main + bloom × intensity`; bloomTex wird bilinear von W/2×H/2 auf W×H hochskaliert |
