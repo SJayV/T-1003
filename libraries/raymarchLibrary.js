@@ -1,7 +1,3 @@
-// Preconditions: uniforms envMap (sampler2D), metaballBlend/clusterBlend/burstBlend
-//                declared; moodLibrary + noiseLibrary interpolated before this chunk.
-// Public GLSL: vec3 shadeHit(vec3 p, vec3 n, vec3 rd)
-
 export const raymarchLibrary = `
 
 vec2 _envUV(vec3 dir) {
@@ -68,7 +64,6 @@ vec3 shadeGlass(vec3 p, vec3 n, vec3 rd, float NdotV) {
 }
 
 // ── entry point ───────────────────────────────────────────────────────────────
-// Roughness from Perlin noise on the surface position — organic micro-variation.
 
 vec3 shadeHit(vec3 p, vec3 n, vec3 rd) {
   float NdotV   = max(dot(n, -rd), 0.0);

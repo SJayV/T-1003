@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { onPhaseTransition, getMetaballBlend, getClusterBlend, getBurstBlend } from './phase.js';
+import { onPhaseTransition, getMetaballBlend, getClusterBlend, getBurstBlend, getTime } from './phase.js';
 import { environmentVert, environmentFrag } from '../shaders/environmentShader.js';
+import { makeGpuSetup } from './gpuSetup.js';
 
 const EQUIRECT_W     = 512;
 const EQUIRECT_H     = 256;
@@ -30,32 +31,30 @@ export function initEnvMap(renderer) {
 
   pmremGenerator = new THREE.PMREMGenerator(renderer);
 
-  equirectCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  equirectScene  = new THREE.Scene();
-  equirectMat    = new THREE.ShaderMaterial({
+  equirectMat = new THREE.ShaderMaterial({
     uniforms: {
-      time:         { value: 0.0 },
-      resolution:   { value: new THREE.Vector2(EQUIRECT_W, EQUIRECT_H) },
-      metaballBlend:    { value: 1.0 },
-      clusterBlend: { value: 0.0 },
-      burstBlend:   { value: 0.0 },
+      time:          { value: 0.0 },
+      resolution:    { value: new THREE.Vector2(EQUIRECT_W, EQUIRECT_H) },
+      metaballBlend: { value: 1.0 },
+      clusterBlend:  { value: 0.0 },
+      burstBlend:    { value: 0.0 },
     },
     vertexShader:   environmentVert,
     fragmentShader: environmentFrag,
     depthTest:  false,
     depthWrite: false,
   });
-  equirectScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), equirectMat));
+  ({ scene: equirectScene, camera: equirectCamera } = makeGpuSetup(equirectMat));
 
   onPhaseTransition(() => { needsRegen = true; });
   needsRegen = true;
 }
 
-function _regenerate(time) {
-  equirectMat.uniforms.time.value         = time;
-  equirectMat.uniforms.metaballBlend.value    = getMetaballBlend();
-  equirectMat.uniforms.clusterBlend.value = getClusterBlend();
-  equirectMat.uniforms.burstBlend.value   = getBurstBlend();
+function _regenerate() {
+  equirectMat.uniforms.time.value          = getTime();
+  equirectMat.uniforms.metaballBlend.value = getMetaballBlend();
+  equirectMat.uniforms.clusterBlend.value  = getClusterBlend();
+  equirectMat.uniforms.burstBlend.value    = getBurstBlend();
 
   rendererRef.setRenderTarget(equirectTarget);
   rendererRef.render(equirectScene, equirectCamera);
@@ -71,10 +70,10 @@ export function getUniformDefs() {
   return { envMap: { value: null } };
 }
 
-export function applyStateToMaterial(material, time) {
+export function applyStateToMaterial(material) {
   frameCount++;
   if (needsRegen || frameCount % REGEN_INTERVAL === 0) {
-    _regenerate(time);
+    _regenerate();
     needsRegen = false;
   }
   if (currentPMREM) material.uniforms.envMap.value = currentPMREM.texture;

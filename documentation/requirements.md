@@ -29,6 +29,7 @@ T-1003/
 ├── src/
 │   ├── renderer.js             ← WebGLRenderer, PerspectiveCamera, Resize
 │   ├── simulation.js           ← Ping-Pong RenderTargets, Sim-Pass (GPU)
+│   ├── gpuSetup.js             ← Fullscreen-Quad-Factory (makeGpuSetup)
 │   ├── phase.js                ← FSM, getLogicalPhase/VisualPhase/MotionSpeed, reportMotion(), onPhaseTransition()
 │   ├── balls.js                ← Initialzustand der 12 Bälle (Startwerte für GPU-Textur)
 │   ├── camera.js               ← statische Kamera, Sakkaden-Blick
@@ -40,6 +41,7 @@ T-1003/
 │   ├── environmentShader.js    ← Equirectangular-GLSL; interpoliert noiseLibrary + moodLibrary
 │   └── raymarchShader.js       ← Rendering-GLSL; interpoliert noiseLibrary + moodLibrary + raymarchLibrary
 └── libraries/
+    ├── vertexShaderLibrary.js  ← GLSL-Chunk: gemeinsamer Passthrough-Vertex-Shader
     ├── noiseLibrary.js         ← GLSL-Chunk: perlin2D, worley2D, worley3D
     ├── moodLibrary.js          ← GLSL-Chunk: Farbpalette (MOOD_*), Phasengewichte (tMeta/Cluster/Burst), moodColor()
     ├── raymarchLibrary.js      ← GLSL-Chunk: shadeMetal, shadeGlass, shadeHit
@@ -57,11 +59,10 @@ Jedes Modul besitzt seine Uniforms vollständig. `main.js` kennt keine Uniform-N
 input.initInput()                                    // Webcam-Stream + Detektor-Setup
 
 // Jeden Frame:
-input.updateInput()                                               // Bewegungsanalyse → reportMotion()
-stepSimulation(logicalPhase, visualPhase, time, getMotionSpeed()) // visualPhase steuert Physik-Blend
+input.updateInput()          // Bewegungsanalyse → reportMotion()
+stepSimulation()             // liest logicalPhase/visualPhase/time/motionSpeed aus phase.js
 applyStateToMaterial(material)
-applyEnvState(material, time)
-material.uniforms.motionSpeed.value = getMotionSpeed()
+applyEnvState(material)
 ```
 
 ### Event-Koordination: Zeit / Input → Phase → Ausgaben
@@ -138,18 +139,18 @@ $$\hat{d}(\mathbf{x}, t) = d(\mathbf{x}, t) + \beta \cdot \mathcal{N}(\mathbf{x}
 
 | Konstante | Wert | Semantik |
 |---|---|---|
-| `BURST_MIN_FRAMES` | 18 (0.3 s) | Mindest-Burst-Dauer |
-| `BURST_MAX_FRAMES` | 60 (1.0 s) | Max-Burst-Dauer (zufällig dazwischen) |
-| `METABALL_MIN_FRAMES` | 300 (5 s) | Verbleibt in Metaball unabhängig von Input |
-| `METABALL_NO_MOTION_FRAMES` | 360 (6 s) | Stille-Schwelle → Rückkehr zu Cluster |
-| `CLUSTER_COOLDOWN_FRAMES` | 180 (3 s) | Sperrzeit nach Burst vor nächstem |
+| `BURST_MIN_FRAMES` | 60 (1.0 s) | Mindest-Burst-Dauer |
+| `BURST_MAX_FRAMES` | 100 (1.7 s) | Max-Burst-Dauer (zufällig dazwischen) |
+| `METABALL_MIN_FRAMES` | 800 (13.3 s) | Verbleibt in Metaball unabhängig von Input |
+| `METABALL_NO_MOTION_FRAMES` | 360 (6.0 s) | Stille-Schwelle → Rückkehr zu Cluster |
+| `CLUSTER_COOLDOWN_FRAMES` | 180 (3.0 s) | Sperrzeit nach Burst vor nächstem |
 
 **Parameter (in `input.js`):**
 
 | Konstante | Wert | Semantik |
 |---|---|---|
-| `INPUT_SPEED_THRESHOLD` | 0.10 | Minimale normierte Geschwindigkeit |
-| `INPUT_PERSIST_FRAMES` | 3 | Konsekutive Frames mit Bewegung vor `reportMotion` |
+| `INPUT_SPEED_THRESHOLD` | 0.20 | Minimale normierte Geschwindigkeit |
+| `INPUT_PERSIST_FRAMES` | 2 | Konsekutive Frames mit Bewegung vor `reportMotion` |
 
 **Burst-Intensität:** `s = clamp(speed, 0, 1)` aus `input.js` → `logicalPhase = 1.0 + s` → Abstoßungskraft $F_0 = 0.010 + s \cdot 0.035$.
 
@@ -185,7 +186,7 @@ Format: RGBA32F, Breite 36 (3 Texel × 12 Bälle), Höhe 1
 |---|---|---|---|---|
 | 3i   | pos.x | pos.y | pos.z | r_i^0 |
 | 3i+1 | vel.x | vel.y | vel.z | 0 (unused) |
-| 3i+2 | orbitRadius | orbitSpeed | orbitPhase + φ_rand | orbitInclination |
+| 3i+2 | orbitRadius | orbitSpeed | phi0 (zufällig bei Init) | orbitInclination |
 
 Texel 3i+2: statische Orbit-Parameter; `orbitPhase` wird bei Init mit einem zufälligen Offset $\phi_\text{rand} \sim \mathcal{U}[0, 2\pi)$ addiert, sodass jeder Run anders aussieht. Passthrough im Sim-Shader — nie überschrieben.
 
@@ -244,8 +245,7 @@ Primärer deterministischer Input; steuert Phasenzyklus. Variation entsteht durc
 ### Externes Eingabegerät (`input.js`)
 - Kamerabasiertes Gerät (z.B. Webcam + Personenerkennung) registriert Anwesenheit und Bewegung
 - Ruft `phase.js`-Interfaces direkt auf — keine Kopplung durch `main.js`:
-  - `triggerPhase(1.0 + speed)` bei erkannter Bewegung während Cluster-Phase → Burst
-  - `releasePhase()` nach Abklingen
+  - `reportMotion(speed)` bei erkannter Bewegung; `phase.js` entscheidet über Burst-Auslösung
   - Bewegungsgeschwindigkeit skaliert Burst-Stärke
 - Anleitungsinteraktion als Installationskonzept denkbar ⚠️ offen
 
@@ -296,7 +296,7 @@ Phasengekoppelte Stimmung der Umgebung:
 - Schwarzer Hintergrund; Skybox als Alternative ⚠️ offen
 - Abstrakte dynamische Environment-Map — keine erkennbaren Strukturen
 
-### Shading-Modul (`shadingLib.js`)
+### Shading-Modul (`raymarchLibrary.js`)
 
 Da `MeshPhysicalMaterial` mit Raymarching inkompatibel ist (es operiert auf rasterisierter Geometrie, nicht auf SDF-ausgewerteten impliziten Flächen), wird das Shading vollständig manuell nachimplementiert. Ziel-Feature-Set, orientiert an `MeshPhysicalMaterial`:
 
@@ -311,7 +311,7 @@ Einziger öffentlicher Aufruf aus `main()` des Fragment-Shaders:
 color = shadeHit(p, n, rd, phase);
 ```
 
-`shadingLib.js` ist ein GLSL-Chunk, der in `raymarchShader.js` nach `map()` interpoliert wird (notwendig, da `shadeCluster` `map()` für einen Materialdicken-Proxy aufruft). Austausch des Materialmodells erfordert nur Änderungen in `shadingLib.js`.
+`raymarchLibrary.js` ist ein GLSL-Chunk, der in `raymarchShader.js` nach `map()` interpoliert wird (notwendig, da `shadeCluster` `map()` für einen Materialdicken-Proxy aufruft). Austausch des Materialmodells erfordert nur Änderungen in `raymarchLibrary.js`.
 
 ### Audio
 - Phasengekoppelte Klangkulisse ⚠️ offen
@@ -327,10 +327,10 @@ color = shadeHit(p, n, rd, phase);
 | Noise-Bibliothek (Perlin, Worley 2D/3D) | ✅ |
 | Phasensystem (zeitgesteuert + externer Trigger + onPhaseTransition) | ✅ |
 | GPU-Simulation (1D-Textur RGBA32F, Ping-Pong, simulationShader.js) | ✅ |
-| Shading-Modul (shadingLib.js, shadeHit) | ✅ |
+| Shading-Modul (raymarchLibrary.js, shadeHit) | ✅ |
 | Environment (dynamische PMREM, environmentShader.js) | ✅ |
-| Autonome Kamera (elliptische Umlaufbahn + Bob, kein OrbitControls) | ✅ |
-| Externes Eingabegerät (input.js) | ⚠️ Stub |
+| Kamera (autonome Bewegung) | ⚠️ Stub |
+| Externes Eingabegerät (input.js) | ✅ |
 | Audio | ⚠️ Stub |
 | Sensorik / augenähnliche Elemente | ⚠️ |
 | Skybox / Hintergrund | ⚠️ |
@@ -342,7 +342,7 @@ color = shadeHit(p, n, rd, phase);
 
 | # | Thema | Notiz |
 |---|---|---|
-| 1 | Kamera | ✅ implementiert: elliptische Umlaufbahn + Lissajous-Bob, OrbitControls entfernt |
+| 1 | Kamera | autonome Bewegung (Sakkaden, Orbit) noch offen |
 | 2 | input.js | Externes Gerät: Personenerkennung → triggerPhase() |
 | 3 | Audio | Phasenkopplung via onPhaseTransition, Stimmungsdesign |
 | 4 | Sensorik / Augen | Augenähnliche Elemente als Reaktivitätsmerkmal |

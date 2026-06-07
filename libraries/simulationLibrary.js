@@ -1,5 +1,3 @@
-// Preconditions: uniforms stateTex, time, logicalPhase, visualPhase, motionSpeed declared;
-//                stateUV() and perlin2D defined.
 // Public GLSL: orbitPoint, reflectBounds, applySimulation
 
 export const simulationLibrary = `
@@ -80,17 +78,12 @@ void applySimulation(inout vec3 pos, inout vec3 vel, vec4 orb) {
   float intensity = clamp(logicalPhase - 1.0, 0.0, 1.0);
   vec3 burstDir = pos - cen;
   float burstDist = length(burstDir) + 0.01;
-  vel += normalize(burstDir) * exp(-burstDist * 3.5) * (0.010 + intensity * 0.035) * burstT;
+  vel += normalize(burstDir) * exp(-burstDist * 1.5) * (0.010 + intensity * 0.035) * burstT;
 
   // ── blended position update ─────────────────────────────────────────────
-  // metaball: pos driven directly by orbit; vel is not yet applied.
-  // cluster/burst: pos driven by accumulated vel.
   pos += orbitDelta * metaT + vel * (clusterT + burstT);
 
   // ── blended velocity decay ──────────────────────────────────────────────
-  // metaball: 0.99 — slow decay so centripetal builds up inward momentum.
-  // cluster:  0.995 — standard cluster damping.
-  // burst:    0.90  — fast decay to cap outward speed.
   float velDecay = mix(mix(0.99, 0.995, clusterT), 0.90, burstT);
   vel *= velDecay;
 

@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { balls } from './balls.js';
 import { simulationVert, simulationFrag } from '../shaders/simulationShader.js';
+import { makeGpuSetup } from './gpuSetup.js';
+import { getLogicalPhase, getVisualPhase, getTime, getMotionSpeed } from './phase.js';
 
 const N = 12;
-const W = N * 3; // 36 texels wide, 1 texel tall
+const W = N * 3;
 
 let rendererRef  = null;
 let readTarget   = null;
@@ -30,24 +32,24 @@ function makeTarget() {
 function buildInitData() {
   const data = new Float32Array(W * 4);
   balls.forEach((b, i) => {
-    const t = i * 12;
-    const phi0     = Math.random() * Math.PI * 2;
-    const r        = b.orbitRadius;
-    const iSin     = b.orbitInclination;
-    const iCos     = Math.sqrt(Math.max(0, 1 - iSin * iSin));
-    const dPhi     = b.orbitSpeed * 3.0 * 0.004;
+    const t    = i * 12;
+    const phi0 = Math.random() * Math.PI * 2;
+    const r    = b.orbitRadius;
+    const iSin = b.orbitInclination;
+    const iCos = Math.sqrt(Math.max(0, 1 - iSin * iSin));
+    const dPhi = b.orbitSpeed * 3.0 * 0.004;
 
-    // texel 3i: initial pos on orbit, r0
+    // texel 3i:   pos on orbit, r0
     data[t + 0] = r * Math.cos(phi0);
     data[t + 1] = r * Math.sin(phi0) * iSin;
     data[t + 2] = r * Math.sin(phi0) * iCos * 0.28;
     data[t + 3] = b.r0;
-    // texel 3i+1: initial vel = analytic orbit derivative
-    data[t + 4] = -r * Math.sin(phi0)          * dPhi;
-    data[t + 5] =  r * Math.cos(phi0) * iSin   * dPhi;
-    data[t + 6] =  r * Math.cos(phi0) * iCos   * 0.28 * dPhi;
+    // texel 3i+1: analytic orbit derivative as initial vel
+    data[t + 4] = -r * Math.sin(phi0)        * dPhi;
+    data[t + 5] =  r * Math.cos(phi0) * iSin * dPhi;
+    data[t + 6] =  r * Math.cos(phi0) * iCos * 0.28 * dPhi;
     data[t + 7] = 0.0;
-    // texel 3i+2: orbit params; phi0 randomised so orbit target matches initial pos
+    // texel 3i+2: orbit params (r, speed, phi0, inclination)
     data[t + 8]  = b.orbitRadius;
     data[t + 9]  = b.orbitSpeed;
     data[t + 10] = phi0;
@@ -64,8 +66,6 @@ export function initSimulation(renderer) {
   initTex = new THREE.DataTexture(buildInitData(), W, 1, THREE.RGBAFormat, THREE.FloatType);
   initTex.needsUpdate = true;
 
-  simCamera   = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  simScene    = new THREE.Scene();
   simMaterial = new THREE.ShaderMaterial({
     uniforms: {
       stateTex:     { value: initTex },
@@ -79,22 +79,22 @@ export function initSimulation(renderer) {
     depthTest:      false,
     depthWrite:     false,
   });
-  simScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), simMaterial));
+  ({ scene: simScene, camera: simCamera } = makeGpuSetup(simMaterial));
   isFirstFrame = true;
 }
 
-export function stepSimulation(logicalPhase, visualPhase, time, motionSpeed) {
+export function stepSimulation() {
   simMaterial.uniforms.stateTex.value     = isFirstFrame ? initTex : readTarget.texture;
-  simMaterial.uniforms.logicalPhase.value = logicalPhase;
-  simMaterial.uniforms.visualPhase.value  = visualPhase;
-  simMaterial.uniforms.time.value         = time;
-  simMaterial.uniforms.motionSpeed.value  = motionSpeed;
+  simMaterial.uniforms.logicalPhase.value = getLogicalPhase();
+  simMaterial.uniforms.visualPhase.value  = getVisualPhase();
+  simMaterial.uniforms.time.value         = getTime();
+  simMaterial.uniforms.motionSpeed.value  = getMotionSpeed();
 
   rendererRef.setRenderTarget(writeTarget);
   rendererRef.render(simScene, simCamera);
   rendererRef.setRenderTarget(null);
 
-  const tmp  = readTarget;
+  const tmp   = readTarget;
   readTarget  = writeTarget;
   writeTarget = tmp;
   isFirstFrame = false;

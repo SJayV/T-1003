@@ -29,25 +29,22 @@ const material = new THREE.ShaderMaterial({
 
 scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
 
-// ── init ──────────────────────────────────────────────────────────────────────
-
 initEnvMap(renderer);
 initCamera(camera);
 initInput();
 initAudio();
 initSimulation(renderer);
 
-// ── animate ───────────────────────────────────────────────────────────────────
-
 function animate() {
   tick();
   const t            = getTime();
   const logicalPhase = getLogicalPhase();
   const visualPhase  = getVisualPhase();
+  const motionSpeed  = getMotionSpeed();
 
-  stepSimulation(logicalPhase, visualPhase, t, getMotionSpeed());
+  stepSimulation();
   applySimState(material);
-  applyEnvState(material, t);
+  applyEnvState(material);
   updateInput();
   updateCamera(camera, logicalPhase, t);
   updateAudio(logicalPhase, t);
@@ -59,7 +56,7 @@ function animate() {
   material.uniforms.metaballBlend.value = getMetaballBlend();
   material.uniforms.clusterBlend.value  = getClusterBlend();
   material.uniforms.burstBlend.value    = getBurstBlend();
-  material.uniforms.motionSpeed.value   = getMotionSpeed();
+  material.uniforms.motionSpeed.value   = motionSpeed;
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);

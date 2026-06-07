@@ -1,11 +1,8 @@
-import { noiseLibrary } from '../libraries/noiseLibrary.js';
-import { moodLibrary  } from '../libraries/moodLibrary.js';
+import { vertexShaderLibrary } from '../libraries/vertexShaderLibrary.js';
+import { noiseLibrary        } from '../libraries/noiseLibrary.js';
+import { moodLibrary         } from '../libraries/moodLibrary.js';
 
-export const environmentVert = `
-void main() {
-  gl_Position = vec4(position, 1.0);
-}
-`;
+export const environmentVert = vertexShaderLibrary;
 
 export const environmentFrag = `
 precision highp float;
@@ -38,8 +35,6 @@ vec3 envMetaball(vec3 dir, vec3 rDir) {
 }
 
 vec3 envCluster(vec3 dir) {
-  // Soft gradient: black at bottom/sides, MOOD_CLUSTER fading in toward top.
-  // Gives calm, dark atmosphere for the glass phase.
   float grad = smoothstep(-0.4, 1.0, dir.y * 0.75 + dir.z * 0.25);
   return MOOD_CLUSTER * grad * 0.55;
 }

@@ -1,12 +1,9 @@
-import { noiseLibrary    } from '../libraries/noiseLibrary.js';
-import { moodLibrary     } from '../libraries/moodLibrary.js';
-import { raymarchLibrary } from '../libraries/raymarchLibrary.js';
+import { vertexShaderLibrary } from '../libraries/vertexShaderLibrary.js';
+import { noiseLibrary        } from '../libraries/noiseLibrary.js';
+import { moodLibrary         } from '../libraries/moodLibrary.js';
+import { raymarchLibrary     } from '../libraries/raymarchLibrary.js';
 
-export const mainVert = `
-void main() {
-  gl_Position = vec4(position, 1.0);
-}
-`;
+export const mainVert = vertexShaderLibrary;
 
 export const mainFrag = `
 precision highp float;
