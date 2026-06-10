@@ -2,7 +2,7 @@
 
 export const simulationLibrary = `
 
-vec3 computeCentroid() {
+vec3 _computeCentroid() {
   vec3 c = vec3(0.0);
   for (int i = 0; i < 12; i++) c += texture2D(stateTex, stateUV(i * 3)).xyz;
   return c / 12.0;
@@ -10,7 +10,7 @@ vec3 computeCentroid() {
 
 // Angle of the nearest point on the orbit ring to pos.
 // Orbit basis: e1=(1,0,0), e2=(0,incl_sin,incl_cos*0.28).
-float nearestOrbitPhi(vec3 pos, vec3 e2norm) {
+float _nearestOrbitPhi(vec3 pos, vec3 e2norm) {
   return atan(dot(pos, e2norm), pos.x);
 }
 
@@ -57,13 +57,13 @@ void applySimulation(inout vec3 pos, inout vec3 vel, vec4 orb) {
   vec3 e2     = vec3(0.0, incl_sin, incl_cos * 0.28);
   vec3 e2norm = normalize(e2);
   float omega    = orb.g * 18.0 + motionSpeed * 9.0;
-  float phi_near = nearestOrbitPhi(pos, e2norm);
+  float phi_near = _nearestOrbitPhi(pos, e2norm);
   vec3 nearPt    = orbitPoint(orb, phi_near);
   vec3 nextPt    = orbitPoint(orb, phi_near + omega * 0.004);
   vec3 orbitDelta = (nearPt - pos) * 0.002 + (nextPt - nearPt);
 
   // ── velocity forces ─────────────────────────────────────────────────────
-  vec3 cen = computeCentroid();
+  vec3 cen = _computeCentroid();
 
   // Centripetal pull — always active; primes vel during metaball so cluster
   // inherits inward motion without a dead stop at the transition.

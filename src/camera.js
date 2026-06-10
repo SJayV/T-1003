@@ -3,6 +3,6 @@ export function initCamera(camera) {
   camera.lookAt(0, 0, 0);
 }
 
-export function updateCamera(camera, logicalPhase, time) {}
+export function updateCamera(camera) {}
 
 export function onInput(type, data) {}

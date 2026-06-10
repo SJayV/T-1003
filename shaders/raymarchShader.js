@@ -25,7 +25,7 @@ vec3  gC0,  gC1,  gC2,  gC3,  gC4,  gC5,  gC6,  gC7,  gC8,  gC9,  gC10, gC11;
 float gR_0, gR_1, gR_2, gR_3, gR_4, gR_5, gR_6, gR_7, gR_8, gR_9, gR_10, gR_11;
 
 void loadBalls() {
-  const float S = 1.0 / 36.0;
+  const float S = 1.0 / 36.0;  // must match STATE_TEX_W in simulation.js
   vec4 p;
   p=texture2D(stateTex,vec2( 0.5*S,0.5)); gC0 =p.xyz; gR_0 =p.w;
   p=texture2D(stateTex,vec2( 3.5*S,0.5)); gC1 =p.xyz; gR_1 =p.w;
@@ -42,7 +42,6 @@ void loadBalls() {
 }
 
 // ── noise (noiseLib) ──────────────────────────────────────────────────────────
-// Provides: perlin2D, worley2D, worley3D
 
 ${noiseLibrary}
 ${moodLibrary}
@@ -64,7 +63,7 @@ float smin(float a, float b, float k) {
   return mix(b, a, h) - k * h * (1.0 - h);
 }
 
-// d_hat(x,t) = smin_k(sphere(x,c_i,r_i(t))) + beta*N(x,t); k = 0.5*cB + 0.3*mB + 0.1*bB
+// d_hat(x,t) = smin_k(sphere(x,c_i,r_i(t))) + beta*N(x,t); k = 0.40*cB + 0.35*mB + 0.10*bB
 // Reads ball globals only — no texture fetches.
 float map(vec3 p) {
   float k = 0.40 * clusterBlend + 0.35 * metaballBlend + 0.10 * burstBlend;

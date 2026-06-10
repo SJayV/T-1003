@@ -4,20 +4,20 @@ import { simulationVert, simulationFrag } from '../shaders/simulationShader.js';
 import { makeGpuSetup } from './gpuSetup.js';
 import { getLogicalPhase, getVisualPhase, getTime, getMotionSpeed } from './phase.js';
 
-const N = 12;
-const W = N * 3;
+const BALL_COUNT   = 12;
+const STATE_TEX_W  = BALL_COUNT * 3;
 
-let rendererRef  = null;
-let readTarget   = null;
-let writeTarget  = null;
-let simScene     = null;
-let simCamera    = null;
-let simMaterial  = null;
-let initTex      = null;
-let isFirstFrame = true;
+let _renderer   = null;
+let _readTarget  = null;
+let _writeTarget = null;
+let _simScene    = null;
+let _simCamera   = null;
+let _simMat      = null;
+let _initTex     = null;
+let _firstFrame  = true;
 
-function makeTarget() {
-  return new THREE.WebGLRenderTarget(W, 1, {
+function _makeTarget() {
+  return new THREE.WebGLRenderTarget(STATE_TEX_W, 1, {
     type:          THREE.FloatType,
     format:        THREE.RGBAFormat,
     minFilter:     THREE.NearestFilter,
@@ -29,8 +29,8 @@ function makeTarget() {
   });
 }
 
-function buildInitData() {
-  const data = new Float32Array(W * 4);
+function _buildInitData() {
+  const data = new Float32Array(STATE_TEX_W * 4);
   balls.forEach((b, i) => {
     const t    = i * 12;
     const phi0 = Math.random() * Math.PI * 2;
@@ -59,16 +59,16 @@ function buildInitData() {
 }
 
 export function initSimulation(renderer) {
-  rendererRef = renderer;
-  readTarget  = makeTarget();
-  writeTarget = makeTarget();
+  _renderer   = renderer;
+  _readTarget  = _makeTarget();
+  _writeTarget = _makeTarget();
 
-  initTex = new THREE.DataTexture(buildInitData(), W, 1, THREE.RGBAFormat, THREE.FloatType);
-  initTex.needsUpdate = true;
+  _initTex = new THREE.DataTexture(_buildInitData(), STATE_TEX_W, 1, THREE.RGBAFormat, THREE.FloatType);
+  _initTex.needsUpdate = true;
 
-  simMaterial = new THREE.ShaderMaterial({
+  _simMat = new THREE.ShaderMaterial({
     uniforms: {
-      stateTex:     { value: initTex },
+      stateTex:     { value: _initTex },
       time:         { value: 0.0 },
       logicalPhase: { value: 0.0 },
       visualPhase:  { value: 1.0 },
@@ -79,25 +79,25 @@ export function initSimulation(renderer) {
     depthTest:      false,
     depthWrite:     false,
   });
-  ({ scene: simScene, camera: simCamera } = makeGpuSetup(simMaterial));
-  isFirstFrame = true;
+  ({ scene: _simScene, camera: _simCamera } = makeGpuSetup(_simMat));
+  _firstFrame = true;
 }
 
 export function stepSimulation() {
-  simMaterial.uniforms.stateTex.value     = isFirstFrame ? initTex : readTarget.texture;
-  simMaterial.uniforms.logicalPhase.value = getLogicalPhase();
-  simMaterial.uniforms.visualPhase.value  = getVisualPhase();
-  simMaterial.uniforms.time.value         = getTime();
-  simMaterial.uniforms.motionSpeed.value  = getMotionSpeed();
+  _simMat.uniforms.stateTex.value     = _firstFrame ? _initTex : _readTarget.texture;
+  _simMat.uniforms.logicalPhase.value = getLogicalPhase();
+  _simMat.uniforms.visualPhase.value  = getVisualPhase();
+  _simMat.uniforms.time.value         = getTime();
+  _simMat.uniforms.motionSpeed.value  = getMotionSpeed();
 
-  rendererRef.setRenderTarget(writeTarget);
-  rendererRef.render(simScene, simCamera);
-  rendererRef.setRenderTarget(null);
+  _renderer.setRenderTarget(_writeTarget);
+  _renderer.render(_simScene, _simCamera);
+  _renderer.setRenderTarget(null);
 
-  const tmp   = readTarget;
-  readTarget  = writeTarget;
-  writeTarget = tmp;
-  isFirstFrame = false;
+  const tmp    = _readTarget;
+  _readTarget  = _writeTarget;
+  _writeTarget = tmp;
+  _firstFrame  = false;
 }
 
 export function getUniformDefs() {
@@ -105,5 +105,5 @@ export function getUniformDefs() {
 }
 
 export function applyStateToMaterial(material) {
-  if (readTarget) material.uniforms.stateTex.value = readTarget.texture;
+  if (_readTarget) material.uniforms.stateTex.value = _readTarget.texture;
 }

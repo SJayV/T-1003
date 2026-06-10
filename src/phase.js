@@ -1,8 +1,8 @@
-const BURST_MIN_FRAMES          = 60;   // 0.3 s  — minimum burst duration
-const BURST_MAX_FRAMES          = 100;  // 1.0 s  — maximum burst duration (random)
-const METABALL_MIN_FRAMES       = 800;  // 12.0 s — stays in Metaball regardless of input
-const METABALL_NO_MOTION_FRAMES = 360;  // 6.0 s  — silence → return to Cluster
-const CLUSTER_COOLDOWN_FRAMES   = 180;  // 3.0 s  — after Burst before next allowed
+const BURST_MIN_FRAMES          = 10;
+const BURST_MAX_FRAMES          = 40;
+const METABALL_MIN_FRAMES       = 800;
+const METABALL_NO_MOTION_FRAMES = 360;
+const CLUSTER_COOLDOWN_FRAMES   = 180;
 
 const S_CLUSTER  = 0;
 const S_BURST    = 1;
@@ -59,7 +59,7 @@ function _ss(e0, e1, x) {
 function _updateVisualPhase() {
   const target = getLogicalPhase();
   // Burst arrives faster (energetic); other transitions are slow.
-  const rate = target > 1.05 ? 0.025 : 0.012;
+  const rate = target > 1.05 ? 0.025 : 0.007;
   _visualPhase += (target - _visualPhase) * rate;
 }
 
