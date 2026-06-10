@@ -47,7 +47,6 @@ export function initEnvMap(renderer) {
   ({ scene: _equirectScene, camera: _equirectCamera } = makeGpuSetup(_equirectMat));
 
   onPhaseTransition(() => { _needsRegen = true; });
-  _needsRegen = true;
 }
 
 function _regenerate() {
