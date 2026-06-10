@@ -8,12 +8,10 @@ const EQUIRECT_H     = 256;
 const REGEN_INTERVAL = 4;
 
 let _renderer       = null;
-let _pmremGen       = null;
 let _equirectTarget = null;
 let _equirectScene  = null;
 let _equirectCamera = null;
 let _equirectMat    = null;
-let _currentPMREM   = null;
 let _frameCount     = 0;
 let _needsRegen     = true;
 
@@ -28,8 +26,6 @@ export function initEnvMap(renderer) {
     depthBuffer: false,
   });
   _equirectTarget.texture.colorSpace = THREE.LinearSRGBColorSpace;
-
-  _pmremGen = new THREE.PMREMGenerator(renderer);
 
   _equirectMat = new THREE.ShaderMaterial({
     uniforms: {
@@ -58,11 +54,6 @@ function _regenerate() {
   _renderer.setRenderTarget(_equirectTarget);
   _renderer.render(_equirectScene, _equirectCamera);
   _renderer.setRenderTarget(null);
-
-  const old = _currentPMREM;
-  _currentPMREM = _pmremGen.fromEquirectangular(_equirectTarget.texture);
-  _currentPMREM.texture.anisotropy = _renderer.capabilities.getMaxAnisotropy();
-  if (old) old.dispose();
 }
 
 export function getUniformDefs() {
@@ -75,5 +66,5 @@ export function applyStateToMaterial(material) {
     _regenerate();
     _needsRegen = false;
   }
-  if (_currentPMREM) material.uniforms.envMap.value = _currentPMREM.texture;
+  material.uniforms.envMap.value = _equirectTarget.texture;
 }
