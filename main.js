@@ -40,9 +40,12 @@ const bloom = makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeF
 
 function animate() {
   tick();
-  const t           = getTime();
-  const visualPhase = getVisualPhase();
-  const motionSpeed = getMotionSpeed();
+  const t            = getTime();
+  const visualPhase  = getVisualPhase();
+  const metaballBlend = getMetaballBlend();
+  const clusterBlend  = getClusterBlend();
+  const burstBlend    = getBurstBlend();
+  const motionSpeed  = getMotionSpeed();
 
   stepSimulation();
   applySimState(material);
@@ -55,14 +58,14 @@ function animate() {
   material.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
   material.uniforms.camPos.value.copy(camera.position);
   material.uniforms.visualPhase.value   = visualPhase;
-  material.uniforms.metaballBlend.value = getMetaballBlend();
-  material.uniforms.clusterBlend.value  = getClusterBlend();
-  material.uniforms.burstBlend.value    = getBurstBlend();
+  material.uniforms.metaballBlend.value = metaballBlend;
+  material.uniforms.clusterBlend.value  = clusterBlend;
+  material.uniforms.burstBlend.value    = burstBlend;
   material.uniforms.motionSpeed.value   = motionSpeed;
 
   bloom.render(scene, camera, {
-    intensity: 1.2 + getBurstBlend() * 1.5,
-    threshold: 0.65 - getBurstBlend() * 0.25,
+    intensity: 1.2 + burstBlend * 1.5,
+    threshold: 0.65 - burstBlend * 0.25,
   });
   requestAnimationFrame(animate);
 }
