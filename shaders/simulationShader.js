@@ -14,7 +14,7 @@ uniform float     logicalPhase;
 uniform float     visualPhase;
 uniform float     motionSpeed;
 
-const float TEX_W = 36.0;
+const float TEX_W = 36.0;  // must match STATE_TEX_W in simulation.js (BALL_COUNT × 3)
 
 vec2 stateUV(int i) { return vec2((float(i) + 0.5) / TEX_W, 0.5); }
 

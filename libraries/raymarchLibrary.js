@@ -46,7 +46,7 @@ vec3 shadeMetal(vec3 n, vec3 rd, float NdotV, float roughness) {
 }
 
 // ── glass ─────────────────────────────────────────────────────────────────────
-// No PMREM: thickness proxy via map(), inverted-Fresnel inner glow, back-scatter rim.
+// No PMREM: map()-thickness inner glow, Fresnel rim, backscatter.
 
 vec3 shadeGlass(vec3 p, vec3 n, vec3 rd, float NdotV) {
   vec3  ld              = normalize(vec3(2.0, 2.5, 2.0));

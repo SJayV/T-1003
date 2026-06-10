@@ -7,31 +7,31 @@ const EQUIRECT_W     = 512;
 const EQUIRECT_H     = 256;
 const REGEN_INTERVAL = 4;
 
-let rendererRef    = null;
-let pmremGenerator = null;
-let equirectTarget = null;
-let equirectScene  = null;
-let equirectCamera = null;
-let equirectMat    = null;
-let currentPMREM   = null;
-let frameCount     = 0;
-let needsRegen     = true;
+let _renderer       = null;
+let _pmremGen       = null;
+let _equirectTarget = null;
+let _equirectScene  = null;
+let _equirectCamera = null;
+let _equirectMat    = null;
+let _currentPMREM   = null;
+let _frameCount     = 0;
+let _needsRegen     = true;
 
 export function initEnvMap(renderer) {
-  rendererRef = renderer;
+  _renderer = renderer;
 
-  equirectTarget = new THREE.WebGLRenderTarget(EQUIRECT_W, EQUIRECT_H, {
+  _equirectTarget = new THREE.WebGLRenderTarget(EQUIRECT_W, EQUIRECT_H, {
     type:        THREE.HalfFloatType,
     format:      THREE.RGBAFormat,
     minFilter:   THREE.LinearFilter,
     magFilter:   THREE.LinearFilter,
     depthBuffer: false,
   });
-  equirectTarget.texture.colorSpace = THREE.LinearSRGBColorSpace;
+  _equirectTarget.texture.colorSpace = THREE.LinearSRGBColorSpace;
 
-  pmremGenerator = new THREE.PMREMGenerator(renderer);
+  _pmremGen = new THREE.PMREMGenerator(renderer);
 
-  equirectMat = new THREE.ShaderMaterial({
+  _equirectMat = new THREE.ShaderMaterial({
     uniforms: {
       time:          { value: 0.0 },
       resolution:    { value: new THREE.Vector2(EQUIRECT_W, EQUIRECT_H) },
@@ -44,25 +44,25 @@ export function initEnvMap(renderer) {
     depthTest:  false,
     depthWrite: false,
   });
-  ({ scene: equirectScene, camera: equirectCamera } = makeGpuSetup(equirectMat));
+  ({ scene: _equirectScene, camera: _equirectCamera } = makeGpuSetup(_equirectMat));
 
-  onPhaseTransition(() => { needsRegen = true; });
-  needsRegen = true;
+  onPhaseTransition(() => { _needsRegen = true; });
+  _needsRegen = true;
 }
 
 function _regenerate() {
-  equirectMat.uniforms.time.value          = getTime();
-  equirectMat.uniforms.metaballBlend.value = getMetaballBlend();
-  equirectMat.uniforms.clusterBlend.value  = getClusterBlend();
-  equirectMat.uniforms.burstBlend.value    = getBurstBlend();
+  _equirectMat.uniforms.time.value          = getTime();
+  _equirectMat.uniforms.metaballBlend.value = getMetaballBlend();
+  _equirectMat.uniforms.clusterBlend.value  = getClusterBlend();
+  _equirectMat.uniforms.burstBlend.value    = getBurstBlend();
 
-  rendererRef.setRenderTarget(equirectTarget);
-  rendererRef.render(equirectScene, equirectCamera);
-  rendererRef.setRenderTarget(null);
+  _renderer.setRenderTarget(_equirectTarget);
+  _renderer.render(_equirectScene, _equirectCamera);
+  _renderer.setRenderTarget(null);
 
-  const old = currentPMREM;
-  currentPMREM = pmremGenerator.fromEquirectangular(equirectTarget.texture);
-  currentPMREM.texture.anisotropy = rendererRef.capabilities.getMaxAnisotropy();
+  const old = _currentPMREM;
+  _currentPMREM = _pmremGen.fromEquirectangular(_equirectTarget.texture);
+  _currentPMREM.texture.anisotropy = _renderer.capabilities.getMaxAnisotropy();
   if (old) old.dispose();
 }
 
@@ -71,10 +71,10 @@ export function getUniformDefs() {
 }
 
 export function applyStateToMaterial(material) {
-  frameCount++;
-  if (needsRegen || frameCount % REGEN_INTERVAL === 0) {
+  _frameCount++;
+  if (_needsRegen || _frameCount % REGEN_INTERVAL === 0) {
     _regenerate();
-    needsRegen = false;
+    _needsRegen = false;
   }
-  if (currentPMREM) material.uniforms.envMap.value = currentPMREM.texture;
+  if (_currentPMREM) material.uniforms.envMap.value = _currentPMREM.texture;
 }

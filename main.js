@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { scene, camera, renderer }                                    from './src/renderer.js';
-import { tick, getTime, getLogicalPhase, getVisualPhase,
+import { tick, getTime, getVisualPhase,
          getMetaballBlend, getClusterBlend, getBurstBlend,
          getMotionSpeed }                                              from './src/phase.js';
 import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
@@ -40,17 +40,16 @@ const bloom = makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeF
 
 function animate() {
   tick();
-  const t            = getTime();
-  const logicalPhase = getLogicalPhase();
-  const visualPhase  = getVisualPhase();
-  const motionSpeed  = getMotionSpeed();
+  const t           = getTime();
+  const visualPhase = getVisualPhase();
+  const motionSpeed = getMotionSpeed();
 
   stepSimulation();
   applySimState(material);
   applyEnvState(material);
   updateInput();
-  updateCamera(camera, logicalPhase, t);
-  updateAudio(logicalPhase, t);
+  updateCamera(camera);
+  updateAudio();
 
   material.uniforms.time.value          = t;
   material.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);

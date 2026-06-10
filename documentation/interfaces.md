@@ -15,15 +15,15 @@ Input-gesteuerter FSM (Cluster → Burst → Metaball → Cluster). Einzige auto
 | `tick()` | — | — | `void` | — |
 | `getTime()` | — | — | `float` | [0, ∞) monoton — für Shader-Animationen |
 | `getLogicalPhase()` | — | — | `float` | 0.0=Metaball, 1.0=Cluster, 1.0+s=Burst |
-| `getVisualPhase()` | — | — | `float` | exp. Lerp zu `getLogicalPhase()`; Rate 0.025/Frame →Burst, 0.012/Frame →andere |
+| `getVisualPhase()` | — | — | `float` | [0, 1.5] exp. Lerp zu `getLogicalPhase()`; Burst schneller als andere Übergänge |
 | `getMetaballBlend()` | — | — | `float` | [0,1] Blend-Gewicht Metaball |
 | `getClusterBlend()` | — | — | `float` | [0,1] Blend-Gewicht Cluster |
 | `getBurstBlend()` | — | — | `float` | [0,1] Blend-Gewicht Burst |
-| `getMotionSpeed()` | — | — | `float` | [0,1] Aktuell erkannte Bewegungsgeschwindigkeit; ×0.97/Frame Decay ohne Bewegung |
+| `getMotionSpeed()` | — | — | `float` | [0,1] Aktuell erkannte Bewegungsgeschwindigkeit; exponentiell abklingend ohne Bewegung |
 | `reportMotion(speed)` | `speed: float ∈ [0,1]` | Von `input.js`: löst Cluster→Burst aus (wenn Cooldown ≤ 0); in Metaball: setzt no-motion-Timer zurück; setzt intern `_motionSpeed = speed` | `void` | — |
 | `onPhaseTransition(fn)` | `fn: (logicalPhase: float) → void` | Feuert bei `Math.ceil(logicalPhase)` Wechsel | `void` | — |
 
-`tick()` einmal pro Frame: zählt State-Timer, führt FSM-Übergänge aus, aktualisiert `visualPhase`, Blend-Gewichte und multipliziert `_motionSpeed` mit 0.97 (exponentieller Decay).
+`tick()` einmal pro Frame: zählt State-Timer, führt FSM-Übergänge aus, aktualisiert `visualPhase`, Blend-Gewichte und gibt `_motionSpeed` exponentiellen Decay (ohne Bewegung).
 `reportMotion` setzt intern `_motionThisFrame = true` und `_motionSpeed = speed` — wird von `tick()` ausgelesen und zurückgesetzt.
 
 ---
@@ -49,18 +49,18 @@ Dynamische PMREM-Generierung aus synthetischem Equirectangular-Shader (`environm
 |---|---|---|---|---|
 | `initEnvMap(renderer)` | `renderer: WebGLRenderer` | Renderer für Equirectangular-Pass und `PMREMGenerator` | `void` | — |
 | `getUniformDefs()` | — | — | `{ envMap: { value } }` | Einzelne Env-Map-Uniform |
-| `applyStateToMaterial(material)` | `material: ShaderMaterial` | Liest Blend-Gewichte und Zeit direkt aus `phase.js`; regeneriert PMREM alle 4 Frames + bei `onPhaseTransition` | `void` | — |
+| `applyStateToMaterial(material)` | `material: ShaderMaterial` | Liest Blend-Gewichte und Zeit direkt aus `phase.js`; regeneriert PMREM periodisch + bei `onPhaseTransition` | `void` | — |
 
 ---
 
 ### `src/camera.js`
-Stationäre Beobachter-Kamera. Sakkaden-Verhalten: Kamera hält einen Punkt im Blick, wechselt dann per Smoothstep zu einem neuen Zufallspunkt. Phase bestimmt Hold-Dauer und Übergangsgeschwindigkeit.
+Stationäre Beobachter-Kamera (stub). Gibt Startposition vor; `updateCamera` und `onInput` sind leer und werden befüllt, wenn Kameradynamik implementiert wird. Phasenwerte werden dann direkt aus `phase.js` importiert, nicht als Parameter übergeben.
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
 | `initCamera(camera)` | `camera: PerspectiveCamera` | Setzt Startposition | `void` | — |
-| `updateCamera(camera, logicalPhase, time)` | `logicalPhase: float ∈ [0,2]`, `time: float ∈ [0,∞)` | Setzt Look-at auf `(0.8·sin(t·0.4) + 0.35·sin(t·1.1), 0, 0)`; Position bleibt fest | `void` | — |
-| `onInput(type, data)` | `type: string ∈ {'presence','absence'}`, `data: { speed?: float ∈ [0,1] }` | Aufgerufen von `input.js` | `void` | — |
+| `updateCamera(camera)` | `camera: PerspectiveCamera` | Stub | `void` | — |
+| `onInput(type, data)` | `type: string ∈ {'presence','absence'}`, `data: { speed?: float ∈ [0,1] }` | Aufgerufen von `input.js`; stub | `void` | — |
 
 ---
 
@@ -75,12 +75,12 @@ Systemkamera → Bewegungserkennung → FSM + Kamera.
 Bewegungserkennung: Frame-Differencing auf 80×60 Offscreen-Canvas (`willReadFrequently`).
 `speed = min(1, meanAbsDiff(R+G+B) / (n×765) × INPUT_SENSITIVITY)`
 
-| Konstante | Wert | Semantik |
-|---|---|---|
-| `INPUT_SPEED_THRESHOLD` | 0.20 | Minimale normierte Geschwindigkeit |
-| `INPUT_PERSIST_FRAMES` | 4 | Konsekutive Motion-Frames vor `reportMotion` |
-| `INPUT_SENSITIVITY` | 20 | Skalierungsfaktor thresholded-diff → speed ∈ [0,1] |
-| `INPUT_PIXEL_THRESHOLD` | 10 | Per-Pixel-Kanal-Diff darunter = Rauschen, ignoriert |
+| Konstante | Semantik |
+|---|---|
+| `INPUT_SPEED_THRESHOLD` | Minimale normierte Geschwindigkeit |
+| `INPUT_PERSIST_FRAMES` | Konsekutive Motion-Frames vor `reportMotion` |
+| `INPUT_SENSITIVITY` | Skalierungsfaktor thresholded-diff → speed ∈ [0,1] |
+| `INPUT_PIXEL_THRESHOLD` | Per-Pixel-Kanal-Diff darunter = Rauschen, ignoriert |
 
 ---
 
@@ -90,7 +90,7 @@ Phasengekoppelte Klangkulisse. ⚠️ Stub.
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
 | `initAudio()` | — | — | `void` | — |
-| `updateAudio(phase, time)` | `phase: float ∈ [0,2]`, `time: float ∈ [0,∞)` | `phase` steuert Klangcharakter (0: niederfrequent/ruhig → 2: hochfrequent/dissonant) | `void` | — |
+| `updateAudio()` | — | Stub; liest bei Implementierung Phasenwerte direkt aus `phase.js` | `void` | — |
 
 Registriert sich bei `onPhaseTransition` für Klangwechsel an Schwellenwerten.
 
@@ -101,7 +101,7 @@ Initialzustand der 12 Metaballs (Startwerte für GPU-Zustandstextur).
 
 | Export | Typ | Bereich / Semantik |
 |---|---|---|
-| `balls` | `Array<{x,y,z,r0,vx,vy,vz,orbitRadius,orbitSpeed,orbitInclination}>` (length 12) | `r0 ∈ (0,∞)` Basisradius; `orbitPhase` entfernt — Startwinkel wird per `Math.random()*2π` in `buildInitData` gesetzt; alle Geschwindigkeiten = 0 initial |
+| `balls` | `Array<{r0,orbitRadius,orbitSpeed,orbitInclination}>` (length 12) | `r0 ∈ (0,∞)` Basisradius; Startwinkel wird per `Math.random()*2π` in `buildInitData` gesetzt; Startposition und -geschwindigkeit analytisch aus Orbit-Parametern abgeleitet |
 
 ---
 
@@ -113,7 +113,7 @@ Fullscreen-Quad-Factory für GPU-Passes + Bloom-Pipeline-Factory. Kein öffentli
 | `makeGpuSetup(material)` | `material: ShaderMaterial` | Erstellt `Scene` + `OrthographicCamera(-1,1,1,-1,0,1)` + `PlaneGeometry(2,2)` Mesh | `{ scene, camera }` |
 | `makeBloomSetup(renderer, shaders)` | `renderer: WebGLRenderer`, `shaders: { brightExtractFrag, blurFrag, compositeFrag }` | 4 Render-Targets (main W×H, extract/blurA/blurB W/2×H/2) + 3 interne GPU-Passes; nutzt intern `makeGpuSetup` | `{ render(scene, camera, opts) }` |
 
-`render(scene, camera, opts)`: rendert `scene → mainTarget`, führt brightExtract → blurH → blurV → composite aus. `opts.intensity: float` (Standard 1.5) und `opts.threshold: float` (Standard 0.6) werden jedes Frame übernommen.
+`render(scene, camera, opts)`: rendert `scene → mainTarget`, führt brightExtract → blurH → blurV → composite aus. `opts.intensity: float` und `opts.threshold: float` werden jedes Frame übernommen.
 
 ---
 
@@ -123,7 +123,7 @@ Szenen-Setup. Exportiert Objekte direkt; keine Initialisierungsfunktion.
 | Export | Typ | Semantik |
 |---|---|---|
 | `scene` | `THREE.Scene` | Hauptszene |
-| `camera` | `THREE.PerspectiveCamera` | fov 60, pos (−0.4, −0.2, 3) |
+| `camera` | `THREE.PerspectiveCamera` | Startkonfiguration in `renderer.js` |
 | `renderer` | `THREE.WebGLRenderer` | antialias, Reinhard tone-mapping |
 | ~~`controls`~~ | — | Entfernt — kein OrbitControls |
 
@@ -145,7 +145,6 @@ Rausch-Bibliothek. Von mehreren Shadern nutzbar. Exportiert: `noiseLibrary: stri
 |---|---|---|---|---|---|
 | `perlin2D(p)` | `p: vec2` | ℝ²; Skalierung bestimmt Frequenz | `float` | [−1, 1], Mittelwert ≈ 0 | Glattes Gradienten-Rauschen; bandbegrenzt; stetig |
 | `worley2D(p)` | `p: vec2` | ℝ²; Einheitszellen-Koordinaten | `float` | [0, ~1.0] F1-Distanz | Zelluläres Muster; Minima an Feature-Points |
-| `worley3D(p)` | `p: vec3` | ℝ³ | `float` | [0, ~1.2] F1-Distanz | 3D-Zelluläres Muster; 27-Zellen-Lookup |
 
 ```glsl
 float n = perlin2D(p.xy * 4.0 + time * 0.3);
@@ -155,30 +154,30 @@ float c = worley2D(p.xz * 2.0);
 ---
 
 ### `libraries/moodLibrary.js`
-Zentraler Stimmungs-Provider: Farbpalette und Phasengewichte. Von `raymarchLibrary` und `environmentShader` gemeinsam genutzt — stellt sicher, dass Shading und Umgebung dieselben Übergänge und Farben verwenden. Später: Audio-Parameter hier eintragen.
-Voraussetzung: `uniform float phase` (= `getVisualPhase()`) deklariert.
+Zentraler Stimmungs-Provider: Farbpalette und Phasengewichte. Von `raymarchLibrary` und `environmentShader` gemeinsam genutzt — stellt sicher, dass Shading und Umgebung dieselben Übergänge und Farben verwenden.
+Deklariert eigene Uniforms — keine Voraussetzungen an den umschließenden Shader.
 
 | GLSL-Export | Typ | Semantik |
 |---|---|---|
-| `MOOD_METABALL` | `const vec3` | Sehr helles Cyan-Blau (aktuell #96E9F2) |
-| `MOOD_CLUSTER` | `const vec3` | Teal-Cyan (aktuell #13BED1) |
-| `MOOD_BURST` | `const vec3` | Kräftiges Orange-Rot (aktuell #EB4C1C) |
-| `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`; immer Summe = 1; alle rein aus `visualPhase`-Smoothsteps abgeleitet — keine diskreten Gates |
+| `MOOD_METABALL` | `const vec3` | Sehr helles Cyan-Blau |
+| `MOOD_CLUSTER` | `const vec3` | Teal-Cyan |
+| `MOOD_BURST` | `const vec3` | Kräftiges Orange-Rot |
+| `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`; immer Summe = 1; `clusterBlend` zusätzlich durch `_clusterActivation` (Exp.-Gate) gedämpft — verhindert teal-Flash beim Burst→Metaball-Übergang |
 | `moodColor() → vec3` | `∈ [0,1]³` | Gewichteter Mix der drei Phasenfarben |
 
 ---
 
 ### `libraries/raymarchLibrary.js`
 Shading-Modell (Nachimplementierung von `MeshPhysicalMaterial` für Raymarching). Nur von `raymarchShader.js` verwendet.
-Voraussetzung: Uniforms `envMap` (sampler2D), `phase` (float) deklariert; `map(vec3)` + `moodLibrary` definiert.
+Voraussetzung: Uniforms `envMap` (sampler2D), `time` (float) deklariert; `map(vec3)`, `perlin2D`, `moodLibrary` (und damit `clusterBlend`, `MOOD_*`, `moodColor()`) in Scope.
 
-Benennung nach **Material**: `shadeMetal`/`shadeGlass` sind austauschbare Implementierungen; `shadeHit` enthält die Blending-Logik via `tCluster()` aus `moodLibrary`.
+Benennung nach **Material**: `shadeMetal`/`shadeGlass` sind austauschbare Implementierungen; `shadeHit` enthält die Blending-Logik via `clusterBlend`.
 
 | GLSL-Funktion | Input | Bereich / Semantik | Output | Bereich |
 |---|---|---|---|---|
 | `shadeHit(p, n, rd)` | `p: vec3`, `n: vec3` (norm.), `rd: vec3` (norm.) | Berechnet Perlin-Roughness aus `p`; Blend via `clusterBlend`: Metall↔Glas | `vec3` | [0, ∞) HDR |
-| `shadeMetal(n, rd, NdotV, roughness)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]`, `roughness: float ∈ [0,1]` | PMREM via `textureLod` (Mip = roughness×7); Specular skaliert mit roughness; Rim-Light | `vec3` | HDR |
-| `shadeGlass(p, n, rd, NdotV)` | `p,n,rd: vec3`, `NdotV: float ∈ [0,1]` | Doppelte Refraktion (IOR 1.5), Schlick-Fresnel, Rim × 0.4, Specular 256er | `vec3` | HDR |
+| `shadeMetal(n, rd, NdotV, roughness)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]`, `roughness: float ∈ [0,1]` | PMREM via Cone-Sampling (5 Taps, `_envSampleLod`); Specular skaliert mit (1−roughness); Rim-Light | `vec3` | HDR |
+| `shadeGlass(p, n, rd, NdotV)` | `p,n,rd: vec3`, `NdotV: float ∈ [0,1]` | map()-Materialdicken-Proxy für inneres Leuchten; Fresnel-Rim (pow(1−NdotV, 2.5)); Rückstreuung; Specular 192er; kein PMREM | `vec3` | HDR |
 
 ---
 
@@ -198,7 +197,7 @@ Voraussetzung: Uniforms `stateTex`, `time`, `logicalPhase`, `visualPhase`, `moti
 |---|---|---|
 | Quelle | JS, einmal/Frame | GLSL, inline |
 | Smoothstep-Bereiche | identisch | identisch |
-| Gate | `× _ss(0,0.15,l)` auf clusterBlend | keiner — gewollt für burst→metaball-Übergang |
+| Gate | `× _clusterActivation` (JS, Exp.-Lerp) | keiner — gewollt für burst→metaball-Übergang |
 | Consumer | `moodLibrary`, `environmentShader`, `raymarchShader` | `applySimulation` |
 
 ---
@@ -219,26 +218,27 @@ Sim-Pass-Shader. Intern von `simulation.js` verwendet. Interpoliert `simulationL
 ---
 
 ### `shaders/environmentShader.js`
-Equirectangular-Umgebungsgenerator. Intern von `environment.js` verwendet. Interpoliert `noiseLibrary`. Exportiert: `environmentVert`, `environmentFrag`.
+Equirectangular-Umgebungsgenerator. Intern von `environment.js` verwendet. Interpoliert `noiseLibrary` + `moodLibrary`. Exportiert: `environmentVert`, `environmentFrag`.
 
 | GLSL-Uniform | Typ | Bereich / Semantik |
 |---|---|---|
-| `phase` | `float` | [0, 2] `getVisualPhase()` — Farbtemperatur, Direktivität, Kontrast |
-| `time` | `float` | [0, ∞) Animation (Noise-Drift, Sphären-Rotation) |
-| `resolution` | `vec2` | Rendertarget-Größe (512×256) |
+| `time` | `float` | [0, ∞) Animation (Noise-Drift, Rotation) |
+| `resolution` | `vec2` | Rendertarget-Größe |
+| `metaballBlend, clusterBlend, burstBlend` | `float` | Via `moodLibrary`; steuern Farbtemperatur, Direktivität, Kontrast |
 
 Output: HDR RGB-Farbe der Himmelskugel an der UV-Position (Equirectangular-Mapping).
 
 ---
 
 ### `shaders/raymarchShader.js`
-Haupt-Render-Pass. Interpoliert `noiseLibrary` + `raymarchLibrary`. Exportiert: `mainVert`, `mainFrag`.
+Haupt-Render-Pass. Interpoliert `noiseLibrary` + `moodLibrary` + `raymarchLibrary`. Exportiert: `mainVert`, `mainFrag`.
 
 | GLSL-Uniform | Typ | Bereich / Semantik |
 |---|---|---|
 | `stateTex` | `sampler2D` | Ball-Zustandstextur |
 | `envMap` | `sampler2D` | PMREM-Textur |
-| `phase` | `float` | [0, 2] `getVisualPhase()` — Shading-Blend |
+| `visualPhase` | `float` | [0, 1.5] `getVisualPhase()` — Radius-Modulation |
+| `metaballBlend, clusterBlend, burstBlend` | `float` | Via `moodLibrary`; steuern Shading-Blend und smin-k |
 | `time`, `camPos`, `resolution` | — | Globale Szenenparameter |
 
 `main()`: `loadBalls()` → `raymarch()` → `shadeHit()`. Ball-Daten werden einmalig aus `stateTex` geladen; kein Texture-Read in Raymarch- oder Normal-Schleife.
