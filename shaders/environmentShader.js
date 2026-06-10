@@ -22,16 +22,39 @@ vec3 uvToDir(vec2 uv) {
   return vec3(cosT * cos(phi), sin(theta), cosT * sin(phi));
 }
 
-vec3 envMetaball(vec3 dir, vec3 rDir) {
-  // Ambient gradient: dim floor brightening toward the upper hemisphere.
-  float grad = smoothstep(-1.0, 1.0, dir.y * 0.7 + dir.z * 0.3);
-  vec3 ambient = MOOD_METABALL * (0.18 + 0.28 * grad);
+// Returns a normalised colour direction: vec3(1) = grey, tinted toward band colours.
+// Mix weight controls saturation; output is always a positive, bounded colour vector.
+vec3 _envBands(vec3 dir, vec3 rDir) {
+  float n = perlin2D(rDir.xz * 1.8 + time * 0.020) * 0.28
+          + perlin2D(rDir.xy * 3.1 + time * 0.033) * 0.10;
+  float bPos = dir.y + n;
 
-  // Caustic-like highlights — softer exponent gives wider glowing patches.
-  float wM1 = worley2D(rDir.xy * 1.0 + time * 0.06);
-  float wM2 = worley2D(rDir.xz * 1.6 + time * 0.04);
-  float bM  = pow(clamp(1.0 - min(wM1, wM2) * 1.1, 0.0, 1.0), 2.0);
-  return ambient + MOOD_METABALL * bM * 2.2;
+  float aw1 = 1.0 - smoothstep(0.0, 0.22, abs(bPos + 0.70));
+  float bw  = 1.0 - smoothstep(0.0, 0.32, abs(bPos));
+  float aw2 = 1.0 - smoothstep(0.0, 0.22, abs(bPos - 0.70));
+
+  vec3 grey     = vec3(0.88, 0.91, 0.96);
+  vec3 bordeaux = vec3(1.0, 0.08, 0.12);
+  vec3 azure    = vec3(0.04, 0.32, 1.0);
+
+  vec3 color = grey;
+  color = mix(color, azure,    aw1 * 0.75);
+  color = mix(color, bordeaux, bw  * 0.80);
+  color = mix(color, azure,    aw2 * 0.75);
+  return color;
+}
+
+vec3 envMetaball(vec3 dir, vec3 rDir) {
+  float grad       = smoothstep(-1.0, 1.0, dir.y * 0.7 + dir.z * 0.3);
+  float brightness = 0.8 + 0.60 * grad;
+
+  // Worley as brightness multiplier (floor 0.78) — variation without dark patches.
+  float wM1      = worley2D(rDir.xy * 1.0 + time * 0.06);
+  float wM2      = worley2D(rDir.xz * 1.6 + time * 0.04);
+  float bM       = pow(clamp(1.0 - min(wM1, wM2) * 1.1, 0.0, 1.0), 2.0);
+  float variation = 0.78 + 0.38 * bM;
+
+  return _envBands(dir, rDir) * brightness * variation;
 }
 
 vec3 envCluster(vec3 dir) {
@@ -60,7 +83,10 @@ void main() {
 
   float amb = (perlin2D(rDir.xz * 2.0 + time * 0.12) * 0.65
              + perlin2D(rDir.yz * 3.5  + time * 0.28) * 0.35) * 0.5 + 0.5;
-  base *= 0.08 + 0.92 * amb;
+  // Metaball: noise floor raised to 0.55 so the base never goes dark.
+  // Other phases keep the full 0.08 range for dramatic darks.
+  float noiseFloor = mix(0.08, 0.55, metaballBlend);
+  base *= noiseFloor + (1.0 - noiseFloor) * amb;
 
   base += envMetaball(dir, rDir) * metaballBlend;
   base += envCluster(dir)        * clusterBlend;
