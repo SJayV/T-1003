@@ -34,7 +34,7 @@ vec3 _envBands(vec3 dir, vec3 rDir) {
   float aw2 = 1.0 - smoothstep(0.0, 0.22, abs(bPos - 0.70));
 
   vec3 grey     = vec3(0.88, 0.91, 0.96);
-  vec3 bordeaux = vec3(1.0, 0.08, 0.12);
+  vec3 bordeaux = vec3(0.3, 0.58, 0.82);
   vec3 azure    = vec3(0.04, 0.32, 1.0);
 
   vec3 color = grey;
