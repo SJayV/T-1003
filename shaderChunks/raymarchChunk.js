@@ -1,4 +1,4 @@
-export const raymarchLibrary = `
+export const raymarchChunk = `
 
 vec2 _envUV(vec3 dir) {
   const float PI = 3.14159265;

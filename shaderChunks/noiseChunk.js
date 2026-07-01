@@ -1,4 +1,4 @@
-export const noiseLibrary = `
+export const noiseChunk = `
 
 vec2  _fade(vec2 t)  { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
 float _hash1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }

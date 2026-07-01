@@ -1,7 +1,7 @@
 // Color palette and phase blend weights. Declares own uniforms (metaballBlend, clusterBlend, burstBlend).
 // Preconditions: none.
 
-export const moodLibrary = `
+export const moodChunk = `
 
 uniform float metaballBlend;
 uniform float clusterBlend;

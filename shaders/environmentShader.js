@@ -1,8 +1,8 @@
-import { vertexShaderLibrary } from '../libraries/vertexShaderLibrary.js';
-import { noiseLibrary        } from '../libraries/noiseLibrary.js';
-import { moodLibrary         } from '../libraries/moodLibrary.js';
+import { vertexChunk } from '../shaderChunks/vertexChunk.js';
+import { noiseChunk  } from '../shaderChunks/noiseChunk.js';
+import { moodChunk   } from '../shaderChunks/moodChunk.js';
 
-export const environmentVert = vertexShaderLibrary;
+export const environmentVert = vertexChunk;
 
 export const environmentFrag = `
 precision highp float;
@@ -11,8 +11,8 @@ uniform float time;
 uniform vec2  resolution;
 uniform float envSelect;  // 0=auto, 1=metaball, 2=cluster, 3=burst
 
-${noiseLibrary}
-${moodLibrary}
+${noiseChunk}
+${moodChunk}
 
 const float PI = 3.14159265;
 
