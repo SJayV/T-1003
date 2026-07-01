@@ -12,7 +12,6 @@ vec3 _envSample(vec3 dir) {
 }
 
 // Cone-sampling approximation of roughness-blurred reflection.
-// Builds an orthonormal basis around dir and takes 5 samples spread by roughness.
 vec3 _envSampleLod(vec3 dir, float roughness) {
   vec3  right  = normalize(cross(dir, vec3(0.0, 1.0, 0.001)));
   vec3  up     = cross(right, dir);
@@ -25,24 +24,54 @@ vec3 _envSampleLod(vec3 dir, float roughness) {
   return sum * 0.2;
 }
 
+// ── Cook-Torrance PBR helpers (metalness = 1, no diffuse) ─────────────────────
+
+float _D_GGX(float roughness, float NdotH) {
+  float a2 = roughness * roughness * roughness * roughness;
+  float d  = NdotH * NdotH * (a2 - 1.0) + 1.0;
+  return a2 / (3.14159265 * d * d);
+}
+
+float _G_Smith(float roughness, float NdotV, float NdotL) {
+  float k  = (roughness + 1.0); k = k * k / 8.0;
+  float gV = NdotV / (NdotV * (1.0 - k) + k);
+  float gL = NdotL / (NdotL * (1.0 - k) + k);
+  return gV * gL;
+}
+
+vec3 _F_Schlick(vec3 F0, float cosTheta) {
+  return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
 vec3 _rimLight(float NdotV) {
   return moodColor() * pow(1.0 - NdotV, 2.5) * 1.5;
 }
 
 // ── metallic ──────────────────────────────────────────────────────────────────
-// roughness ∈ [0, 1] controls PMREM mip level (0 = mirror, 1 = fully diffuse).
+// Cook-Torrance BRDF, metalness = 1: no diffuse, F0 = base colour.
+// Matches Three.js MeshStandardMaterial(metalness:1, roughness:r).
 
 vec3 shadeMetal(vec3 n, vec3 rd, float NdotV, float roughness) {
-  vec3  ld      = normalize(vec3(2.0, 2.5, 2.0));
-  float fresnel = pow(1.0 - NdotV, 4.0);
-  float diffuse = max(dot(n, ld), 0.0);
-  float spec    = pow(max(dot(n, normalize(ld - rd)), 0.0), 512.0);
+  vec3 F0 = vec3(0.92);           // neutral polished steel
+
+  vec3  ld    = normalize(vec3(2.0, 2.5, 2.0));
+  vec3  v     = -rd;
+  vec3  h     = normalize(ld + v);
+  float NdotL = max(dot(n, ld), 0.0);
+  float NdotH = max(dot(n, h),  0.0);
+  float VdotH = max(dot(v, h),  0.0);
+
+  // Direct light: Cook-Torrance specular BRDF
+  float D   = _D_GGX(roughness, NdotH);
+  float G   = _G_Smith(roughness, NdotV, NdotL);
+  vec3  F   = _F_Schlick(F0, VdotH);
+  vec3 spec = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
+
+  // IBL: roughness-blurred reflection weighted by Fresnel
+  vec3 F_ibl = _F_Schlick(F0, NdotV);
   vec3 env   = _envSampleLod(reflect(rd, n), roughness);
-  vec3 color = vec3(0.3, 0.3, 0.35) * diffuse * 0.08;
-  color     += env * (0.5 + fresnel * 0.5);
-  color     += spec * 4.0 * (1.0 - roughness * 3.0);
-  color     += _rimLight(NdotV);
-  return color;
+
+  return spec * NdotL + env * F_ibl + _rimLight(NdotV);
 }
 
 // ── glass ─────────────────────────────────────────────────────────────────────
@@ -69,7 +98,7 @@ vec3 shadeGlass(vec3 p, vec3 n, vec3 rd, float NdotV) {
 
 vec3 shadeHit(vec3 p, vec3 n, vec3 rd) {
   float NdotV   = max(dot(n, -rd), 0.0);
-  float roughness = clamp(0.05 + perlin2D(p.xz * 0.8 + time * 0.04) * 0.28, 0.0, 1.0);
+  const float roughness = 0.15;
   return mix(shadeMetal(n, rd, NdotV, roughness), shadeGlass(p, n, rd, NdotV), clusterBlend);
 }
 `;

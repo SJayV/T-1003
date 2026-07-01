@@ -19,6 +19,36 @@ float perlin2D(vec2 p) {
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
 
+vec3 _fade3(vec3 t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+
+vec3 _grad3(vec3 p) {
+  vec3 h = fract(sin(vec3(
+    dot(p, vec3(127.1, 311.7,  74.7)),
+    dot(p, vec3(269.5, 183.3, 246.1)),
+    dot(p, vec3(113.5, 271.9, 124.6))
+  )) * 43758.5453);
+  return normalize(h * 2.0 - 1.0);
+}
+
+float perlin3D(vec3 p) {
+  vec3 i  = floor(p);
+  vec3 fr = fract(p);
+  vec3 u  = _fade3(fr);
+  float v000 = dot(_grad3(i + vec3(0,0,0)), fr - vec3(0,0,0));
+  float v100 = dot(_grad3(i + vec3(1,0,0)), fr - vec3(1,0,0));
+  float v010 = dot(_grad3(i + vec3(0,1,0)), fr - vec3(0,1,0));
+  float v110 = dot(_grad3(i + vec3(1,1,0)), fr - vec3(1,1,0));
+  float v001 = dot(_grad3(i + vec3(0,0,1)), fr - vec3(0,0,1));
+  float v101 = dot(_grad3(i + vec3(1,0,1)), fr - vec3(1,0,1));
+  float v011 = dot(_grad3(i + vec3(0,1,1)), fr - vec3(0,1,1));
+  float v111 = dot(_grad3(i + vec3(1,1,1)), fr - vec3(1,1,1));
+  return mix(
+    mix(mix(v000, v100, u.x), mix(v010, v110, u.x), u.y),
+    mix(mix(v001, v101, u.x), mix(v011, v111, u.x), u.y),
+    u.z
+  );
+}
+
 float worley2D(vec2 p) {
   vec2  cell = floor(p);
   float minD = 1e10;

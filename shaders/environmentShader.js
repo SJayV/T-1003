@@ -9,6 +9,7 @@ precision highp float;
 
 uniform float time;
 uniform vec2  resolution;
+uniform float envSelect;  // 0=auto, 1=metaball, 2=cluster, 3=burst
 
 ${noiseLibrary}
 ${moodLibrary}
@@ -78,19 +79,29 @@ void main() {
   float cosR = cos(rot); float sinR = sin(rot);
   vec3  rDir = vec3(dir.x * cosR - dir.z * sinR, dir.y, dir.x * sinR + dir.z * cosR);
 
-  float ambientScale = metaballBlend * 0.35 + clusterBlend * 0.012 + burstBlend * 0.005;
-  vec3  base = moodColor() * ambientScale;
+  vec3 base;
 
-  float amb = (perlin2D(rDir.xz * 2.0 + time * 0.12) * 0.65
-             + perlin2D(rDir.yz * 3.5  + time * 0.28) * 0.35) * 0.5 + 0.5;
-  // Metaball: noise floor raised to 0.55 so the base never goes dark.
-  // Other phases keep the full 0.08 range for dramatic darks.
-  float noiseFloor = mix(0.08, 0.55, metaballBlend);
-  base *= noiseFloor + (1.0 - noiseFloor) * amb;
-
-  base += envMetaball(dir, rDir) * metaballBlend;
-  base += envCluster(dir)        * clusterBlend;
-  base += envBurst(dir, rDir, cosR, sinR) * burstBlend;
+  if (envSelect < 1.5) {
+    // 0 = auto: phase-driven blend
+    float ambientScale = metaballBlend * 0.35 + clusterBlend * 0.012 + burstBlend * 0.005;
+    base = moodColor() * ambientScale;
+    float amb = (perlin2D(rDir.xz * 2.0 + time * 0.12) * 0.65
+               + perlin2D(rDir.yz * 3.5  + time * 0.28) * 0.35) * 0.5 + 0.5;
+    float noiseFloor = mix(0.08, 0.55, metaballBlend);
+    base *= noiseFloor + (1.0 - noiseFloor) * amb;
+    base += envMetaball(dir, rDir) * metaballBlend;
+    base += envCluster(dir)        * clusterBlend;
+    base += envBurst(dir, rDir, cosR, sinR) * burstBlend;
+  } else if (envSelect < 2.5) {
+    // 2 = metaball
+    base = envMetaball(dir, rDir);
+  } else if (envSelect < 3.5) {
+    // 3 = cluster
+    base = envCluster(dir);
+  } else {
+    // 4 = burst
+    base = envBurst(dir, rDir, cosR, sinR);
+  }
 
   gl_FragColor = vec4(base, 1.0);
 }

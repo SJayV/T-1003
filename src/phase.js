@@ -30,7 +30,7 @@ export function reportMotion(speed) {
   if (_state === S_CLUSTER && _cooldownFrames <= 0 && _visualPhase > 0.65) {
     _burstIntensity = _motionSpeed;
     _burstDuration  = BURST_MIN_FRAMES
-      + Math.floor(Math.random() * (BURST_MAX_FRAMES - BURST_MIN_FRAMES + 1));
+      + Math.floor(_motionSpeed * (BURST_MAX_FRAMES - BURST_MIN_FRAMES));
     _enterState(S_BURST);
   }
 }

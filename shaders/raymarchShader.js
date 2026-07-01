@@ -79,8 +79,7 @@ float map(vec3 p) {
   d = smin(d, sphere(p, gC9,  radiusMod(gC9,  gR_9)),  k);
   d = smin(d, sphere(p, gC10, radiusMod(gC10, gR_10)), k);
   d = smin(d, sphere(p, gC11, radiusMod(gC11, gR_11)), k);
-  float noise = perlin2D(p.xy * 4.0 + time * 0.30)
-              + perlin2D(p.yz * 4.0 + time * 0.25);
+  float noise = perlin3D(p * 4.0 + time * 0.75);
   return d + noise * 0.15;
 }
 
