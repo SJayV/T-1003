@@ -1,6 +1,6 @@
 // Public GLSL: orbitPoint, reflectBounds, applySimulation
 
-export const simulationLibrary = `
+export const simulationChunk = `
 
 vec3 _computeCentroid() {
   vec3 c = vec3(0.0);

@@ -1,8 +1,8 @@
-import { vertexShaderLibrary } from '../libraries/vertexShaderLibrary.js';
-import { noiseLibrary        } from '../libraries/noiseLibrary.js';
-import { simulationLibrary   } from '../libraries/simulationLibrary.js';
+import { vertexChunk     } from '../shaderChunks/vertexChunk.js';
+import { noiseChunk      } from '../shaderChunks/noiseChunk.js';
+import { simulationChunk } from '../shaderChunks/simulationChunk.js';
 
-export const simulationVert = vertexShaderLibrary;
+export const simulationVert = vertexChunk;
 
 export const simulationFrag = `
 precision highp float;
@@ -23,8 +23,8 @@ float readR0 (int b) { return texture2D(stateTex, stateUV(b * 3    )).w;   }
 vec3  readVel(int b) { return texture2D(stateTex, stateUV(b * 3 + 1)).xyz; }
 vec4  readOrb(int b) { return texture2D(stateTex, stateUV(b * 3 + 2));     }
 
-${noiseLibrary}
-${simulationLibrary}
+${noiseChunk}
+${simulationChunk}
 
 void main() {
   int texelIdx = int(gl_FragCoord.x);

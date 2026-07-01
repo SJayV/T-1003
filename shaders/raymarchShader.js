@@ -1,9 +1,9 @@
-import { vertexShaderLibrary } from '../libraries/vertexShaderLibrary.js';
-import { noiseLibrary        } from '../libraries/noiseLibrary.js';
-import { moodLibrary         } from '../libraries/moodLibrary.js';
-import { raymarchLibrary     } from '../libraries/raymarchLibrary.js';
+import { vertexChunk   } from '../shaderChunks/vertexChunk.js';
+import { noiseChunk    } from '../shaderChunks/noiseChunk.js';
+import { moodChunk     } from '../shaderChunks/moodChunk.js';
+import { raymarchChunk } from '../shaderChunks/raymarchChunk.js';
 
-export const mainVert = vertexShaderLibrary;
+export const mainVert = vertexChunk;
 
 export const mainFrag = `
 precision highp float;
@@ -43,8 +43,8 @@ void loadBalls() {
 
 // ── noise (noiseLib) ──────────────────────────────────────────────────────────
 
-${noiseLibrary}
-${moodLibrary}
+${noiseChunk}
+${moodChunk}
 
 // ── radius modulation: r_i(t) = r_i^0 * (1 + alpha * N(c_i, t)) ──────────────
 
@@ -108,7 +108,7 @@ float raymarch(vec3 ro, vec3 rd) {
 // ── shading ───────────────────────────────────────────────────────────────────
 // Injected after map() so shadeGlass can call map() for the thickness proxy.
 
-${raymarchLibrary}
+${raymarchChunk}
 
 // ── main ──────────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { vertexShaderLibrary } from '../libraries/vertexShaderLibrary.js';
+import { vertexChunk } from '../shaderChunks/vertexChunk.js';
 
 export function makeGpuSetup(material) {
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -35,7 +35,7 @@ export function makeBloomSetup(renderer, { brightExtractFrag, blurFrag, composit
       resolution: { value: new THREE.Vector2(BW, BH) },
       threshold:  { value: 0.6 },
     },
-    vertexShader:   vertexShaderLibrary,
+    vertexShader:   vertexChunk,
     fragmentShader: brightExtractFrag,
     depthTest: false, depthWrite: false,
   });
@@ -46,7 +46,7 @@ export function makeBloomSetup(renderer, { brightExtractFrag, blurFrag, composit
       resolution: { value: new THREE.Vector2(BW, BH) },
       blurDir:    { value: new THREE.Vector2(1, 0) },
     },
-    vertexShader:   vertexShaderLibrary,
+    vertexShader:   vertexChunk,
     fragmentShader: blurFrag,
     depthTest: false, depthWrite: false,
   });
@@ -58,7 +58,7 @@ export function makeBloomSetup(renderer, { brightExtractFrag, blurFrag, composit
       resolution: { value: new THREE.Vector2(W, H) },
       intensity:  { value: 1.5 },
     },
-    vertexShader:   vertexShaderLibrary,
+    vertexShader:   vertexChunk,
     fragmentShader: compositeFrag,
     depthTest: false, depthWrite: false,
   });
