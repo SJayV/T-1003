@@ -34,6 +34,7 @@ export function initEnvMap(renderer) {
       metaballBlend: { value: 1.0 },
       clusterBlend:  { value: 0.0 },
       burstBlend:    { value: 0.0 },
+      envSelect:     { value: 0.0 },
     },
     vertexShader:   environmentVert,
     fragmentShader: environmentFrag,
@@ -54,6 +55,11 @@ function _regenerate() {
   _renderer.setRenderTarget(_equirectTarget);
   _renderer.render(_equirectScene, _equirectCamera);
   _renderer.setRenderTarget(null);
+}
+
+export function setEnvPreset(n) {
+  _equirectMat.uniforms.envSelect.value = n;
+  _needsRegen = true;
 }
 
 export function getUniformDefs() {

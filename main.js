@@ -4,7 +4,7 @@ import { tick, getTime, getVisualPhase,
          getMetaballBlend, getClusterBlend, getBurstBlend,
          getMotionSpeed }                                              from './src/phase.js';
 import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
-import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState }       from './src/environment.js';
+import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState, setEnvPreset } from './src/environment.js';
 import { initCamera, updateCamera }                                   from './src/camera.js';
 import { initInput,  updateInput  }                                   from './src/input.js';
 import { initAudio,  updateAudio  }                                   from './src/audio.js';
@@ -69,5 +69,13 @@ function animate() {
   });
   requestAnimationFrame(animate);
 }
+
+document.querySelectorAll('#env-ui button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#env-ui button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    setEnvPreset(Number(btn.dataset.preset));
+  });
+});
 
 animate();
