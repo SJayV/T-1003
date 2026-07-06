@@ -1,8 +1,20 @@
+import { FRAME_TIME_STEP, CLUSTER_BLEND_START, CLUSTER_BLEND_END, BURST_BLEND_START, BURST_BLEND_END } from './constants.js';
+
 const BURST_MIN_FRAMES          = 10;
 const BURST_MAX_FRAMES          = 40;
 const METABALL_MIN_FRAMES       = 800;
 const METABALL_NO_MOTION_FRAMES = 360;
 const CLUSTER_COOLDOWN_FRAMES   = 180;
+const BURST_TRIGGER_MIN_VISUAL_PHASE = 0.65;  // visualPhase must have recovered at least this far from Metaball before a new Burst can trigger
+
+const MOTION_SPEED_DECAY  = 0.97;   // exponential decay of motionSpeed per frame when silent
+
+const VISUAL_PHASE_BURST_TARGET_THRESHOLD = 1.05;  // above this, target is a Burst level -> approach faster
+const VISUAL_PHASE_RATE_BURST   = 0.025;  // Burst arrives faster (energetic)
+const VISUAL_PHASE_RATE_DEFAULT = 0.007;  // other transitions are slow
+
+const CLUSTER_GATE_PHASE_THRESHOLD = 0.5;   // logicalPhase >= this counts as "not Metaball" for the gate
+const CLUSTER_GATE_RATE            = 0.20;  // decays to near-zero within ~27 frames of entering Metaball
 
 const S_CLUSTER  = 0;
 const S_BURST    = 1;
@@ -27,7 +39,7 @@ function _enterState(s) {
 export function reportMotion(speed) {
   _motionThisFrame = true;
   _motionSpeed     = Math.max(0, Math.min(1, speed));
-  if (_state === S_CLUSTER && _cooldownFrames <= 0 && _visualPhase > 0.65) {
+  if (_state === S_CLUSTER && _cooldownFrames <= 0 && _visualPhase > BURST_TRIGGER_MIN_VISUAL_PHASE) {
     _burstIntensity = _motionSpeed;
     _burstDuration  = BURST_MIN_FRAMES
       + Math.floor(_motionSpeed * (BURST_MAX_FRAMES - BURST_MIN_FRAMES));
@@ -58,18 +70,18 @@ function _ss(e0, e1, x) {
 
 function _updateVisualPhase() {
   const target = getLogicalPhase();
-  // Burst arrives faster (energetic); other transitions are slow.
-  const rate = target > 1.05 ? 0.025 : 0.007;
+  const rate = target > VISUAL_PHASE_BURST_TARGET_THRESHOLD ? VISUAL_PHASE_RATE_BURST : VISUAL_PHASE_RATE_DEFAULT;
   _visualPhase += (target - _visualPhase) * rate;
 }
 
 function _updateBlends() {
   const v = _visualPhase;
-  // Soft gate: decays at 0.20/frame → near-zero within ~27 frames of entering Metaball,
-  // before visualPhase descends from burst levels into the cluster smoothstep zone (v ≈ 1.0).
-  _clusterActivation += ((getLogicalPhase() >= 0.5 ? 1.0 : 0.0) - _clusterActivation) * 0.20;
-  _clusterBlend  = _ss(0.25, 0.75, v) * (1 - _ss(1.0, 1.5, v)) * _clusterActivation;
-  _burstBlend    = _ss(1.0, 1.5, v);
+  // Soft gate: decays at CLUSTER_GATE_RATE/frame → near-zero within ~27 frames of entering
+  // Metaball, before visualPhase descends from burst levels into the cluster smoothstep zone (v ≈ 1.0).
+  const gateTarget = getLogicalPhase() >= CLUSTER_GATE_PHASE_THRESHOLD ? 1.0 : 0.0;
+  _clusterActivation += (gateTarget - _clusterActivation) * CLUSTER_GATE_RATE;
+  _clusterBlend  = _ss(CLUSTER_BLEND_START, CLUSTER_BLEND_END, v) * (1 - _ss(BURST_BLEND_START, BURST_BLEND_END, v)) * _clusterActivation;
+  _burstBlend    = _ss(BURST_BLEND_START, BURST_BLEND_END, v);
   _metaballBlend = Math.max(0, 1 - _clusterBlend - _burstBlend);
 }
 
@@ -95,7 +107,7 @@ export function onPhaseTransition(fn) {
 }
 
 export function tick() {
-  _t += 0.004;
+  _t += FRAME_TIME_STEP;
   _stateFrames++;
   if (_cooldownFrames > 0) _cooldownFrames--;
 
@@ -115,7 +127,7 @@ export function tick() {
     }
   }
 
-  if (!_motionThisFrame) _motionSpeed *= 0.97;  // exponential decay when silent
+  if (!_motionThisFrame) _motionSpeed *= MOTION_SPEED_DECAY;
   _motionThisFrame = false;
   _updateVisualPhase();
   _updateBlends();

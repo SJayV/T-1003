@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { balls } from '../src/balls.js';
+import { balls } from '../src/constants.js';
 
 describe('balls — Struktur', () => {
   it('enthält genau 12 Einträge', () => {

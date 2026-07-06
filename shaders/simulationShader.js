@@ -1,6 +1,7 @@
 import { vertexChunk     } from '../shaderChunks/vertexChunk.js';
 import { noiseChunk      } from '../shaderChunks/noiseChunk.js';
 import { simulationChunk } from '../shaderChunks/simulationChunk.js';
+import { STATE_TEX_W, glslFloat } from '../src/constants.js';
 
 export const simulationVert = vertexChunk;
 
@@ -14,7 +15,7 @@ uniform float     logicalPhase;
 uniform float     visualPhase;
 uniform float     motionSpeed;
 
-const float TEX_W = 36.0;  // must match STATE_TEX_W in simulation.js (BALL_COUNT × 3)
+const float TEX_W = ${glslFloat(STATE_TEX_W)};
 
 vec2 stateUV(int i) { return vec2((float(i) + 0.5) / TEX_W, 0.5); }
 

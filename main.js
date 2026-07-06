@@ -4,13 +4,19 @@ import { tick, getTime, getVisualPhase,
          getMetaballBlend, getClusterBlend, getBurstBlend,
          getMotionSpeed }                                              from './src/phase.js';
 import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
-import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState, setEnvPreset } from './src/environment.js';
+import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState } from './src/environment.js';
 import { initCamera, updateCamera }                                   from './src/camera.js';
 import { initInput,  updateInput  }                                   from './src/input.js';
 import { initAudio,  updateAudio  }                                   from './src/audio.js';
+import { initUI }                                                     from './src/ui.js';
 import { mainVert, mainFrag }                                         from './shaders/raymarchShader.js';
 import { makeBloomSetup }                                             from './src/gpuSetup.js';
 import { brightExtractFrag, blurFrag, compositeFrag }                 from './shaders/bloomShader.js';
+
+const BLOOM_INTENSITY_BASE        = 1.2;
+const BLOOM_INTENSITY_BURST_BOOST = 1.5;
+const BLOOM_THRESHOLD_BASE        = 0.65;
+const BLOOM_THRESHOLD_BURST_DROP  = 0.25;
 
 const material = new THREE.ShaderMaterial({
   uniforms: {
@@ -35,6 +41,7 @@ initEnvMap(renderer);
 initCamera(camera);
 initInput();
 initAudio();
+initUI();
 initSimulation(renderer);
 const bloom = makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeFrag });
 
@@ -64,18 +71,10 @@ function animate() {
   material.uniforms.motionSpeed.value   = motionSpeed;
 
   bloom.render(scene, camera, {
-    intensity: 1.2 + burstBlend * 1.5,
-    threshold: 0.65 - burstBlend * 0.25,
+    intensity: BLOOM_INTENSITY_BASE + burstBlend * BLOOM_INTENSITY_BURST_BOOST,
+    threshold: BLOOM_THRESHOLD_BASE - burstBlend * BLOOM_THRESHOLD_BURST_DROP,
   });
   requestAnimationFrame(animate);
 }
-
-document.querySelectorAll('#env-ui button').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('#env-ui button').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    setEnvPreset(Number(btn.dataset.preset));
-  });
-});
 
 animate();
