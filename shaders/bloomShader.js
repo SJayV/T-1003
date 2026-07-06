@@ -4,14 +4,16 @@ uniform sampler2D mainTex;
 uniform vec2      resolution;
 uniform float     threshold;
 void main() {
+  const vec3  LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);  // Rec. 709 perceptual luminance
   vec2  uv    = gl_FragCoord.xy / resolution;
   vec3  color = texture2D(mainTex, uv).rgb;
-  float luma  = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  float luma  = dot(color, LUMA_WEIGHTS);
   float t     = max(luma - threshold, 0.0) / max(luma, 0.001);
   gl_FragColor = vec4(color * t, 1.0);
 }
 `;
 
+// 9-tap separable Gaussian kernel (sigma tuned for bloom softness), normalized to sum to 1.
 export const blurFrag = `
 precision highp float;
 uniform sampler2D blurTex;

@@ -43,13 +43,14 @@ Aufrufsequenz pro Frame: `stepSimulation` → `applyStateToMaterial` → Haupt-R
 ---
 
 ### `src/environment.js`
-Dynamische PMREM-Generierung aus synthetischem Equirectangular-Shader (`environmentShader.js`). Regeneriert alle 4 Frames und bei Phasenübergängen via `onPhaseTransition`.
+Dynamische Equirectangular-Env-Map-Generierung aus synthetischem Shader (`environmentShader.js`), direkt als `envMap` gesampelt (keine PMREM-Prefilterung). Regeneriert alle 4 Frames und bei Phasenübergängen via `onPhaseTransition`.
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
-| `initEnvMap(renderer)` | `renderer: WebGLRenderer` | Renderer für Equirectangular-Pass und `PMREMGenerator` | `void` | — |
+| `initEnvMap(renderer)` | `renderer: WebGLRenderer` | Renderer für Equirectangular-Pass | `void` | — |
 | `getUniformDefs()` | — | — | `{ envMap: { value } }` | Einzelne Env-Map-Uniform |
-| `applyStateToMaterial(material)` | `material: ShaderMaterial` | Liest Blend-Gewichte und Zeit direkt aus `phase.js`; regeneriert PMREM periodisch + bei `onPhaseTransition` | `void` | — |
+| `setEnvPreset(n)` | `n: int ∈ {0,2,3,4}` | 0=auto (phasengesteuert), 2=Metaball, 3=Cluster, 4=Burst; erzwingt Regenerierung | `void` | — |
+| `applyStateToMaterial(material)` | `material: ShaderMaterial` | Liest Blend-Gewichte und Zeit direkt aus `phase.js`; regeneriert periodisch + bei `onPhaseTransition` | `void` | — |
 
 ---
 
@@ -96,12 +97,27 @@ Registriert sich bei `onPhaseTransition` für Klangwechsel an Schwellenwerten.
 
 ---
 
-### `src/balls.js`
-Initialzustand der 12 Metaballs (Startwerte für GPU-Zustandstextur).
+### `src/ui.js`
+DOM-Event-Wiring für die Env-Preset-Buttons (`#env-ui` in `index.html`). Ruft `environment.setEnvPreset` direkt auf — keine Vermittlung durch `main.js`, analog zum `input.js` → `phase.js`-Muster.
 
-| Export | Typ | Bereich / Semantik |
+| Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
+|---|---|---|---|---|
+| `initUI()` | — | Bindet Click-Handler an alle `#env-ui button`-Elemente; togglet `.active`-Klasse und ruft `setEnvPreset(Number(btn.dataset.preset))` | `void` | — |
+
+---
+
+### `src/constants.js`
+Einzige Quelle für Konstanten, die in mehr als einer Datei benötigt werden — entweder zwei JS-Modulen, oder einem JS-Modul und einem GLSL-Chunk/Shader, der den Wert per Template-Interpolation in seinen Quelltext einsetzt (z. B. `` const int BALL_COUNT = ${BALL_COUNT}; ``). Konstanten, die nur an einer Stelle vorkommen, bleiben lokal in der jeweiligen Datei.
+
+| Export | Typ | Verwendet von |
 |---|---|---|
-| `balls` | `Array<{r0,orbitRadius,orbitSpeed,orbitInclination}>` (length 12) | `r0 ∈ (0,∞)` Basisradius; Startwinkel wird per `Math.random()*2π` in `buildInitData` gesetzt; Startposition und -geschwindigkeit analytisch aus Orbit-Parametern abgeleitet |
+| `balls` | `Array<{r0,orbitRadius,orbitSpeed,orbitInclination}>` (length 12) | `simulation.js` (`buildInitData`), `tests/balls.test.js`; `r0 ∈ (0,∞)` Basisradius; Startwinkel wird per `Math.random()*2π` in `buildInitData` gesetzt |
+| `BALL_COUNT` | `int` | `simulation.js`, `simulationChunk.js` |
+| `STATE_TEX_W` | `int` (= `BALL_COUNT * 3`) | `simulation.js`, `simulationShader.js` (`TEX_W`), `raymarchShader.js` (`loadBalls`) |
+| `ORBIT_Z_SQUASH` | `float` | `simulation.js` (`buildInitData`), `simulationChunk.js` (`orbitPoint`/`_orbitBasisE2`) |
+| `FRAME_TIME_STEP` | `float` | `phase.js` (`tick`), `simulation.js` (`buildInitData`), `simulationChunk.js` (`applySimulation`) |
+| `CLUSTER_BLEND_START`, `CLUSTER_BLEND_END`, `BURST_BLEND_START`, `BURST_BLEND_END` | `float` | `phase.js` (Shading-Blend), `simulationChunk.js` (Physik-Blend) — müssen identisch sein, damit beide Blends im Gleichschritt laufen |
+| `glslFloat(n)` | `(number) => string` | Jede Stelle, die einen JS-Zahlenwert in einen GLSL-`float`-Kontext interpoliert. JS stringifiziert ganze Zahlen ohne Dezimalpunkt (`String(1.0) === '1'`), aber GLSL ES 1.00 verlangt einen Dezimalpunkt bei `float`-Literalen — `const float x = 1;` ist auf strikten Validatoren (z. B. ANGLE unter Windows) ein Typfehler und lässt das Shader-Programm nicht linken. Immer verwenden, nie den nackten JS-Wert interpolieren |
 
 ---
 
@@ -129,32 +145,35 @@ Szenen-Setup. Exportiert Objekte direkt; keine Initialisierungsfunktion.
 
 ---
 
-## GLSL-Bibliotheken (`libraries/`, interpoliert via Template-Literal)
+## GLSL-Chunks (`shaderChunks/`, interpoliert via Template-Literal)
 
-Alle Bibliotheken exportieren einen GLSL-String, der per `${…}` in den jeweiligen Shader interpoliert wird. Die Bibliotheksfunktionen haben Zugriff auf Uniforms und Hilfsfunktionen des umschließenden Shaders (gleicher Programm-Scope).
+Alle Chunks exportieren einen GLSL-String, der per `${…}` in den jeweiligen Shader interpoliert wird. Die Chunk-Funktionen haben Zugriff auf Uniforms und Hilfsfunktionen des umschließenden Shaders (gleicher Programm-Scope).
 
-### `libraries/vertexShaderLibrary.js`
-Gemeinsamer Passthrough-Vertex-Shader. Exportiert: `vertexShaderLibrary: string`. Wird von allen drei Shader-Modulen als jeweiliger `*Vert`-Export verwendet — kein Duplikat mehr pro Shader-Datei.
+### `shaderChunks/vertexChunk.js`
+Gemeinsamer Passthrough-Vertex-Shader. Exportiert: `vertexChunk: string`. Wird von allen drei Shader-Modulen als jeweiliger `*Vert`-Export verwendet — kein Duplikat mehr pro Shader-Datei.
 
 ---
 
-### `libraries/noiseLibrary.js`
-Rausch-Bibliothek. Von mehreren Shadern nutzbar. Exportiert: `noiseLibrary: string`.
+### `shaderChunks/noiseChunk.js`
+Rausch-Bibliothek. Von mehreren Shadern nutzbar. Exportiert: `noiseChunk: string`.
 
 | GLSL-Funktion | Input | Bereich | Output | Bereich | Charakteristik |
 |---|---|---|---|---|---|
 | `perlin2D(p)` | `p: vec2` | ℝ²; Skalierung bestimmt Frequenz | `float` | [−1, 1], Mittelwert ≈ 0 | Glattes Gradienten-Rauschen; bandbegrenzt; stetig |
+| `perlin3D(p)` | `p: vec3` | ℝ³; Skalierung bestimmt Frequenz | `float` | [−1, 1], Mittelwert ≈ 0 | Wie `perlin2D`, dritte Dimension für Oberflächenperturbation über Zeit |
 | `worley2D(p)` | `p: vec2` | ℝ²; Einheitszellen-Koordinaten | `float` | [0, ~1.0] F1-Distanz | Zelluläres Muster; Minima an Feature-Points |
+| `dualOctaveNoise(a, wa, b, wb)` | `a,b: vec2` (vorskaliert), `wa,wb: float` Gewichte | Gewichtete Summe zweier `perlin2D`-Samples; extrahiert aus der wiederkehrenden "zwei Oktaven kombinieren"-Form in `radiusMod()` und `_envBands()`/`main()` | `float` | Summe der gewichteten Samples | Aufrufer behalten ihre eigenen Frequenz-/Zeit-Konstanten inline; nur der Kombinationsschritt ist geteilt |
 
 ```glsl
 float n = perlin2D(p.xy * 4.0 + time * 0.3);
 float c = worley2D(p.xz * 2.0);
+float d = dualOctaveNoise(p.xz * 1.8 + time * 0.02, 0.28, p.xy * 3.1 + time * 0.03, 0.10);
 ```
 
 ---
 
-### `libraries/moodLibrary.js`
-Zentraler Stimmungs-Provider: Farbpalette und Phasengewichte. Von `raymarchLibrary` und `environmentShader` gemeinsam genutzt — stellt sicher, dass Shading und Umgebung dieselben Übergänge und Farben verwenden.
+### `shaderChunks/moodChunk.js`
+Zentraler Stimmungs-Provider: Farbpalette und Phasengewichte. Von `raymarchChunk` und `environmentShader` gemeinsam genutzt — stellt sicher, dass Shading und Umgebung dieselben Übergänge und Farben verwenden.
 Deklariert eigene Uniforms — keine Voraussetzungen an den umschließenden Shader.
 
 | GLSL-Export | Typ | Semantik |
@@ -167,22 +186,22 @@ Deklariert eigene Uniforms — keine Voraussetzungen an den umschließenden Shad
 
 ---
 
-### `libraries/raymarchLibrary.js`
+### `shaderChunks/raymarchChunk.js`
 Shading-Modell (Nachimplementierung von `MeshPhysicalMaterial` für Raymarching). Nur von `raymarchShader.js` verwendet.
-Voraussetzung: Uniforms `envMap` (sampler2D), `time` (float) deklariert; `map(vec3)`, `perlin2D`, `moodLibrary` (und damit `clusterBlend`, `MOOD_*`, `moodColor()`) in Scope.
+Voraussetzung: Uniforms `envMap` (sampler2D), `time` (float) deklariert; `map(vec3)`, `perlin2D`, `moodChunk` (und damit `clusterBlend`, `MOOD_*`, `moodColor()`) in Scope.
 
 Benennung nach **Material**: `shadeMetal`/`shadeGlass` sind austauschbare Implementierungen; `shadeHit` enthält die Blending-Logik via `clusterBlend`.
 
 | GLSL-Funktion | Input | Bereich / Semantik | Output | Bereich |
 |---|---|---|---|---|
 | `shadeHit(p, n, rd)` | `p: vec3`, `n: vec3` (norm.), `rd: vec3` (norm.) | Berechnet Perlin-Roughness aus `p`; Blend via `clusterBlend`: Metall↔Glas | `vec3` | [0, ∞) HDR |
-| `shadeMetal(n, rd, NdotV, roughness)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]`, `roughness: float ∈ [0,1]` | PMREM via Cone-Sampling (5 Taps, `_envSampleLod`); Specular skaliert mit (1−roughness); Rim-Light | `vec3` | HDR |
-| `shadeGlass(p, n, rd, NdotV)` | `p,n,rd: vec3`, `NdotV: float ∈ [0,1]` | map()-Materialdicken-Proxy für inneres Leuchten; Fresnel-Rim (pow(1−NdotV, 2.5)); Rückstreuung; Specular 192er; kein PMREM | `vec3` | HDR |
+| `shadeMetal(n, rd, NdotV, roughness)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]`, `roughness: float ∈ [0,1]` | Cook-Torrance-BRDF + Env-Map-Sampling via Cone-Sampling (5 Taps, `_envSampleLod`, approximiert rauheitsabhängige Unschärfe ohne PMREM); Rim-Light | `vec3` | HDR |
+| `shadeGlass(p, n, rd, NdotV)` | `p,n,rd: vec3`, `NdotV: float ∈ [0,1]` | map()-Materialdicken-Proxy für inneres Leuchten; Fresnel-Rim (pow(1−NdotV, 2.5)); Rückstreuung; Specular 192er; kein Env-Map-Sampling | `vec3` | HDR |
 
 ---
 
-### `libraries/simulationLibrary.js`
-Unified Physik-Blend. Alle drei Phasenmodi werden kontinuierlich per `visualPhase` gemischt — kein harter Umschalter.
+### `shaderChunks/simulationChunk.js`
+Unified Physik-Blend. Alle drei Phasenmodi werden kontinuierlich per `visualPhase` gemischt — kein harter Umschalter. Tunable Kräfte/Decay-Raten sind als lokale `const float` (SCREAMING_SNAKE_CASE) am Funktionsanfang benannt, analog zur JS-seitigen Konstanten-Konvention.
 Voraussetzung: Uniforms `stateTex`, `time`, `logicalPhase`, `visualPhase`, `motionSpeed` deklariert; `stateUV(int)` und `perlin2D` definiert.
 
 | GLSL-Funktion | Input / Output | Semantik |
@@ -193,19 +212,19 @@ Voraussetzung: Uniforms `stateTex`, `time`, `logicalPhase`, `visualPhase`, `moti
 
 **Blend-Architektur (Simulation vs. Shading):**
 
-| | Shading (`phase.js` → Uniforms) | Simulation (`simulationLibrary.js`) |
+| | Shading (`phase.js` → Uniforms) | Simulation (`simulationChunk.js`) |
 |---|---|---|
 | Quelle | JS, einmal/Frame | GLSL, inline |
 | Smoothstep-Bereiche | identisch | identisch |
 | Gate | `× _clusterActivation` (JS, Exp.-Lerp) | keiner — gewollt für burst→metaball-Übergang |
-| Consumer | `moodLibrary`, `environmentShader`, `raymarchShader` | `applySimulation` |
+| Consumer | `moodChunk`, `environmentShader`, `raymarchShader` | `applySimulation` |
 
 ---
 
 ## Shader-Module (`shaders/`)
 
 ### `shaders/simulationShader.js`
-Sim-Pass-Shader. Intern von `simulation.js` verwendet. Interpoliert `simulationLibrary`. Exportiert: `simulationVert`, `simulationFrag`.
+Sim-Pass-Shader. Intern von `simulation.js` verwendet. Interpoliert `simulationChunk`. Exportiert: `simulationVert`, `simulationFrag`.
 
 | GLSL-Uniform | Typ | Bereich / Semantik |
 |---|---|---|
@@ -218,27 +237,28 @@ Sim-Pass-Shader. Intern von `simulation.js` verwendet. Interpoliert `simulationL
 ---
 
 ### `shaders/environmentShader.js`
-Equirectangular-Umgebungsgenerator. Intern von `environment.js` verwendet. Interpoliert `noiseLibrary` + `moodLibrary`. Exportiert: `environmentVert`, `environmentFrag`.
+Equirectangular-Umgebungsgenerator. Intern von `environment.js` verwendet. Interpoliert `noiseChunk` + `moodChunk`. Exportiert: `environmentVert`, `environmentFrag`.
 
 | GLSL-Uniform | Typ | Bereich / Semantik |
 |---|---|---|
 | `time` | `float` | [0, ∞) Animation (Noise-Drift, Rotation) |
 | `resolution` | `vec2` | Rendertarget-Größe |
-| `metaballBlend, clusterBlend, burstBlend` | `float` | Via `moodLibrary`; steuern Farbtemperatur, Direktivität, Kontrast |
+| `envSelect` | `float` | 0=auto, 1=unbenutzt, 2=Metaball, 3=Cluster, 4=Burst — via `setEnvPreset()` |
+| `metaballBlend, clusterBlend, burstBlend` | `float` | Via `moodChunk`; steuern Farbtemperatur, Direktivität, Kontrast |
 
 Output: HDR RGB-Farbe der Himmelskugel an der UV-Position (Equirectangular-Mapping).
 
 ---
 
 ### `shaders/raymarchShader.js`
-Haupt-Render-Pass. Interpoliert `noiseLibrary` + `moodLibrary` + `raymarchLibrary`. Exportiert: `mainVert`, `mainFrag`.
+Haupt-Render-Pass. Interpoliert `noiseChunk` + `moodChunk` + `raymarchChunk`. Exportiert: `mainVert`, `mainFrag`.
 
 | GLSL-Uniform | Typ | Bereich / Semantik |
 |---|---|---|
 | `stateTex` | `sampler2D` | Ball-Zustandstextur |
-| `envMap` | `sampler2D` | PMREM-Textur |
+| `envMap` | `sampler2D` | Equirectangular Env-Map (direkt gesampelt, keine PMREM-Textur) |
 | `visualPhase` | `float` | [0, 1.5] `getVisualPhase()` — Radius-Modulation |
-| `metaballBlend, clusterBlend, burstBlend` | `float` | Via `moodLibrary`; steuern Shading-Blend und smin-k |
+| `metaballBlend, clusterBlend, burstBlend` | `float` | Via `moodChunk`; steuern Shading-Blend und smin-k |
 | `time`, `camPos`, `resolution` | — | Globale Szenenparameter |
 
 `main()`: `loadBalls()` → `raymarch()` → `shadeHit()`. Ball-Daten werden einmalig aus `stateTex` geladen; kein Texture-Read in Raymarch- oder Normal-Schleife.
@@ -246,7 +266,7 @@ Haupt-Render-Pass. Interpoliert `noiseLibrary` + `moodLibrary` + `raymarchLibrar
 ---
 
 ### `shaders/bloomShader.js`
-Bloom Post-Processing. Drei Fragment-Shader-Strings für den 3-Pass-Bloom-Filter; intern von `gpuSetup.makeBloomSetup` verwendet. Vertex-Shader kommt aus `vertexShaderLibrary`.
+Bloom Post-Processing. Drei Fragment-Shader-Strings für den 3-Pass-Bloom-Filter; intern von `gpuSetup.makeBloomSetup` verwendet. Vertex-Shader kommt aus `vertexChunk`.
 
 | Export | Uniforms | Semantik |
 |---|---|---|

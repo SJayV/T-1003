@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { vertexChunk } from '../shaderChunks/vertexChunk.js';
 
+const DEFAULT_BLOOM_INTENSITY = 1.5;
+const DEFAULT_BLOOM_THRESHOLD = 0.6;
+
 export function makeGpuSetup(material) {
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const scene  = new THREE.Scene();
@@ -33,7 +36,7 @@ export function makeBloomSetup(renderer, { brightExtractFrag, blurFrag, composit
     uniforms: {
       mainTex:    { value: null },
       resolution: { value: new THREE.Vector2(BW, BH) },
-      threshold:  { value: 0.6 },
+      threshold:  { value: DEFAULT_BLOOM_THRESHOLD },
     },
     vertexShader:   vertexChunk,
     fragmentShader: brightExtractFrag,
@@ -56,7 +59,7 @@ export function makeBloomSetup(renderer, { brightExtractFrag, blurFrag, composit
       mainTex:    { value: null },
       bloomTex:   { value: null },
       resolution: { value: new THREE.Vector2(W, H) },
-      intensity:  { value: 1.5 },
+      intensity:  { value: DEFAULT_BLOOM_INTENSITY },
     },
     vertexShader:   vertexChunk,
     fragmentShader: compositeFrag,
@@ -68,7 +71,7 @@ export function makeBloomSetup(renderer, { brightExtractFrag, blurFrag, composit
   const { scene: compositeScene, camera: compositeCam } = makeGpuSetup(compositeMat);
 
   return {
-    render(scene, camera, { intensity = 1.5, threshold = 0.6 } = {}) {
+    render(scene, camera, { intensity = DEFAULT_BLOOM_INTENSITY, threshold = DEFAULT_BLOOM_THRESHOLD } = {}) {
       const cW = renderer.domElement.width;
       const cH = renderer.domElement.height;
       if (cW !== mainTarget.width || cH !== mainTarget.height) {
