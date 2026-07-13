@@ -50,6 +50,7 @@ Dynamische Equirectangular-Env-Map-Generierung aus synthetischem Shader (`enviro
 | `initEnvMap(renderer)` | `renderer: WebGLRenderer` | Renderer für Equirectangular-Pass | `void` | — |
 | `getUniformDefs()` | — | — | `{ envMap: { value } }` | Einzelne Env-Map-Uniform |
 | `setEnvPreset(n)` | `n: int ∈ {0,2,3,4}` | 0=auto (phasengesteuert), 2=Metaball, 3=Cluster, 4=Burst; erzwingt Regenerierung | `void` | — |
+| `getEnvPreset()` | — | Aktuell gewählter Preset; von `main.js` gelesen, um die Shading-Blend-Uniforms des Haupt-Materials auf den Preset zu erzwingen (siehe `requirements.md` → Environment) | `int` | ∈ {0,2,3,4} |
 | `applyStateToMaterial(material)` | `material: ShaderMaterial` | Liest Blend-Gewichte und Zeit direkt aus `phase.js`; regeneriert periodisch + bei `onPhaseTransition` | `void` | — |
 
 ---
@@ -162,7 +163,7 @@ Rausch-Bibliothek. Von mehreren Shadern nutzbar. Exportiert: `noiseChunk: string
 | `perlin2D(p)` | `p: vec2` | ℝ²; Skalierung bestimmt Frequenz | `float` | [−1, 1], Mittelwert ≈ 0 | Glattes Gradienten-Rauschen; bandbegrenzt; stetig |
 | `perlin3D(p)` | `p: vec3` | ℝ³; Skalierung bestimmt Frequenz | `float` | [−1, 1], Mittelwert ≈ 0 | Wie `perlin2D`, dritte Dimension für Oberflächenperturbation über Zeit |
 | `worley2D(p)` | `p: vec2` | ℝ²; Einheitszellen-Koordinaten | `float` | [0, ~1.0] F1-Distanz | Zelluläres Muster; Minima an Feature-Points |
-| `dualOctaveNoise(a, wa, b, wb)` | `a,b: vec2` (vorskaliert), `wa,wb: float` Gewichte | Gewichtete Summe zweier `perlin2D`-Samples; extrahiert aus der wiederkehrenden "zwei Oktaven kombinieren"-Form in `radiusMod()` und `_envBands()`/`main()` | `float` | Summe der gewichteten Samples | Aufrufer behalten ihre eigenen Frequenz-/Zeit-Konstanten inline; nur der Kombinationsschritt ist geteilt |
+| `dualOctaveNoise(a, wa, b, wb)` | `a,b: vec2` (vorskaliert), `wa,wb: float` Gewichte | Gewichtete Summe zweier `perlin2D`-Samples; extrahiert aus der wiederkehrenden "zwei Oktaven kombinieren"-Form in `radiusMod()` und `environmentShader.js`s `main()` | `float` | Summe der gewichteten Samples | Aufrufer behalten ihre eigenen Frequenz-/Zeit-Konstanten inline; nur der Kombinationsschritt ist geteilt |
 
 ```glsl
 float n = perlin2D(p.xy * 4.0 + time * 0.3);
@@ -178,9 +179,10 @@ Deklariert eigene Uniforms — keine Voraussetzungen an den umschließenden Shad
 
 | GLSL-Export | Typ | Semantik |
 |---|---|---|
-| `MOOD_METABALL` | `const vec3` | Sehr helles Cyan-Blau |
+| `MOOD_METABALL` | `const vec3` | Sehr helles Cyan-Blau (Rim-/Ambient-Stimmung, nicht das Metall-Tint) |
 | `MOOD_CLUSTER` | `const vec3` | Teal-Cyan |
-| `MOOD_BURST` | `const vec3` | Kräftiges Orange-Rot |
+| `MOOD_BURST` | `const vec3` | Kräftiges Orange-Rot; dient auch als F0-Tint für `shadeBurst` |
+| `MOOD_METABALL_METAL` | `const vec3` | F0-Tint für `shadeMetaball`; Platzhalter-Grau, zur individuellen Abstimmung vorgesehen |
 | `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`; immer Summe = 1; `clusterBlend` zusätzlich durch `_clusterActivation` (Exp.-Gate) gedämpft — verhindert teal-Flash beim Burst→Metaball-Übergang |
 | `moodColor() → vec3` | `∈ [0,1]³` | Gewichteter Mix der drei Phasenfarben |
 
@@ -190,25 +192,30 @@ Deklariert eigene Uniforms — keine Voraussetzungen an den umschließenden Shad
 Shading-Modell (Nachimplementierung von `MeshPhysicalMaterial` für Raymarching). Nur von `raymarchShader.js` verwendet.
 Voraussetzung: Uniforms `envMap` (sampler2D), `time` (float) deklariert; `map(vec3)`, `perlin2D`, `moodChunk` (und damit `clusterBlend`, `MOOD_*`, `moodColor()`) in Scope.
 
-Benennung nach **Material**: `shadeMetal`/`shadeGlass` sind austauschbare Implementierungen; `shadeHit` enthält die Blending-Logik via `clusterBlend`.
+Benennung nach **Phase**: `shadeMetaball`/`shadeCluster`/`shadeBurst` sind austauschbare Implementierungen, je eine pro Phase; `shadeHit` mischt alle drei gewichtet nach `metaballBlend`/`clusterBlend`/`burstBlend` (immer 3-Wege, keine Early-Outs). Metaball und Burst teilen sich die interne `_shadeReflective`-Implementierung (Cook-Torrance + Env-Map-Sampling) und unterscheiden sich nur in Tint und Rauheit; Cluster trägt das stärkste Rim-Light, Metaball/Burst ein deutlich schwächeres (beide über `_rimLight()`, gefärbt nach `moodColor()`).
 
 | GLSL-Funktion | Input | Bereich / Semantik | Output | Bereich |
 |---|---|---|---|---|
-| `shadeHit(p, n, rd)` | `p: vec3`, `n: vec3` (norm.), `rd: vec3` (norm.) | Berechnet Perlin-Roughness aus `p`; Blend via `clusterBlend`: Metall↔Glas | `vec3` | [0, ∞) HDR |
-| `shadeMetal(n, rd, NdotV, roughness)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]`, `roughness: float ∈ [0,1]` | Cook-Torrance-BRDF + Env-Map-Sampling via Cone-Sampling (5 Taps, `_envSampleLod`, approximiert rauheitsabhängige Unschärfe ohne PMREM); Rim-Light | `vec3` | HDR |
-| `shadeGlass(p, n, rd, NdotV)` | `p,n,rd: vec3`, `NdotV: float ∈ [0,1]` | map()-Materialdicken-Proxy für inneres Leuchten; Fresnel-Rim (pow(1−NdotV, 2.5)); Rückstreuung; Specular 192er; kein Env-Map-Sampling | `vec3` | HDR |
+| `shadeHit(p, n, rd)` | `p: vec3`, `n: vec3` (norm.), `rd: vec3` (norm.) | 3-Wege-Blend: `shadeMetaball·metaballBlend + shadeCluster·clusterBlend + shadeBurst·burstBlend` | `vec3` | [0, ∞) HDR |
+| `shadeMetaball(n, rd, NdotV)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]` | `_shadeReflective` mit `MOOD_METABALL_METAL`-Tint, Rauheit 0.15 | `vec3` | HDR |
+| `shadeBurst(n, rd, NdotV)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]` | `_shadeReflective` mit `MOOD_BURST`-Tint, Rauheit 1.0 (maximal — diffuses Streulicht passend zur chaotischen Burst-Stimmung) | `vec3` | HDR |
+| `shadeCluster(p, n, rd, NdotV)` | `p,n,rd: vec3`, `NdotV: float ∈ [0,1]` | map()-Materialdicken-Proxy für inneres Leuchten; Fresnel-Rim (pow(1−NdotV, 2.5)); Rückstreuung; Specular 192er; kein Env-Map-Sampling; `_rimLight`-Aufruf mit `RIM_WEIGHT` | `vec3` | HDR |
+
+Interner Helfer `_shadeReflective(n, rd, NdotV, roughness, tint)`: Cook-Torrance-BRDF + Env-Map-Sampling via Cone-Sampling (5 Taps, `_envSampleLod`, approximiert rauheitsabhängige Unschärfe ohne PMREM) + `_rimLight()` mit `REFLECTIVE_RIM_WEIGHT` (schwächer als Clusters `RIM_WEIGHT`). Leitet aus `tint` intern eine hellere Highlight-Variante für den direkten Specular-Term ab (`HIGHLIGHT_BRIGHTEN`-Faktor) — ein einzelner Tint-Wert genügt pro Aufrufer.
 
 ---
 
 ### `shaderChunks/simulationChunk.js`
-Unified Physik-Blend. Alle drei Phasenmodi werden kontinuierlich per `visualPhase` gemischt — kein harter Umschalter. Tunable Kräfte/Decay-Raten sind als lokale `const float` (SCREAMING_SNAKE_CASE) am Funktionsanfang benannt, analog zur JS-seitigen Konstanten-Konvention.
+Unified Physik-Blend. Alle drei Phasenmodi werden kontinuierlich per `visualPhase` gemischt — kein harter Umschalter. Eine `_simulate<Phase>`-Funktion pro Regime, benannt konsistent mit `shade<Phase>` in `raymarchChunk.js`; jede wendet ihr `weight` selbst an, sodass eine Verhaltensänderung (z. B. Clusters Zielform) nur die jeweilige Funktion betrifft. `applySimulation` komponiert sie nur noch. Tunable Kräfte/Decay-Raten sind file-level `const float` (SCREAMING_SNAKE_CASE), geteilt von allen Phasenfunktionen.
 Voraussetzung: Uniforms `stateTex`, `time`, `logicalPhase`, `visualPhase`, `motionSpeed` deklariert; `stateUV(int)` und `perlin2D` definiert.
 
 | GLSL-Funktion | Input / Output | Semantik |
 |---|---|---|
 | `orbitPoint(orb, phi)` | `orb: vec4`, `phi: float` → `vec3` | 3D-Punkt auf Orbit-Ellipse bei Winkel phi |
 | `reflectBounds(inout pos, inout vel)` | `pos,vel: vec3` | Reflektiert pos/vel an Sichtbarkeitsgrenzen; verhindert, dass Balls bei Burst dauerhaft aus dem Bild fliegen |
-| `applySimulation(inout pos, inout vel, orb)` | `pos,vel: vec3`, `orb: vec4` | Leitet metaT/clusterT/burstT aus `visualPhase` ab; mischt direktes Orbit-Update (Metaball) mit vel-basierter Physik (Cluster/Burst); ruft `reflectBounds` am Ende auf |
+| `applySimulation(inout pos, inout vel, orb)` | `pos,vel: vec3`, `orb: vec4` | Leitet `metaballBlend`/`clusterBlend`/`burstBlend` aus `visualPhase` ab (lokale Variablen, benannt wie die gleichnamigen Shading-Uniforms); ruft `_simulateCluster`/`_simulateBurst` (lesen die Frame-Start-Position) dann `_simulateMetaball` (mutiert `pos`) auf; hält die immer-aktive Ursprungsanziehung `ORIGIN_PULL` (nicht phasengewichtet); ruft `reflectBounds` am Ende auf |
+
+Interne Phasenfunktionen: `_simulateMetaball(inout pos, orb, weight)` — mutiert `pos` direkt, gewichtet mit `weight` (metaballBlend); die radiale Annäherung an den nächsten Orbit-Punkt läuft über `ORBIT_SNAP_RATE`, empirisch so hoch wie möglich gewählt, ohne dass `_nearestOrbitPhi`s Näherungsfehler mit der Korrektur resoniert und den Ball dauerhaft festhält (verifiziert über alle 12 Bälle). `_simulateCluster(inout vel, pos, target, weight)` — Zug auf `target` (ungewichtet, bleibt während Metaball aktiv als Priming) + organisches Rauschen (gewichtet mit `weight`); `target` ist heute der Centroid — ein alternatives Zielform-Regime, z. B. eine Linie, würde denselben Helfer mit einem anderen `target` aufrufen, siehe `requirements.md` → Zielform/Linie in Cluster. `_simulateBurst(inout vel, pos, cen, weight)` — exponentiell abklingende Abstoßung vom Centroid, gewichtet mit `weight`.
 
 **Blend-Architektur (Simulation vs. Shading):**
 
@@ -230,7 +237,7 @@ Sim-Pass-Shader. Intern von `simulation.js` verwendet. Interpoliert `simulationC
 |---|---|---|
 | `stateTex` | `sampler2D` | RGBA32F 36×1 Eingangszustand |
 | `logicalPhase` | `float` | [0, 2] `getLogicalPhase()` — nur noch für Burst-Intensität (`logicalPhase − 1.0`) |
-| `visualPhase` | `float` | [0, 1.5] `getVisualPhase()` — steuert metaT/clusterT/burstT Physik-Blend |
+| `visualPhase` | `float` | [0, 1.5] `getVisualPhase()` — steuert metaballBlend/clusterBlend/burstBlend Physik-Blend |
 | `time` | `float` | [0, ∞) für Orbit- und Noise-Animationen |
 | `motionSpeed` | `float` | [0, 1] `getMotionSpeed()` — skaliert Orbit-Winkelgeschwindigkeit |
 
@@ -245,6 +252,8 @@ Equirectangular-Umgebungsgenerator. Intern von `environment.js` verwendet. Inter
 | `resolution` | `vec2` | Rendertarget-Größe |
 | `envSelect` | `float` | 0=auto, 1=unbenutzt, 2=Metaball, 3=Cluster, 4=Burst — via `setEnvPreset()` |
 | `metaballBlend, clusterBlend, burstBlend` | `float` | Via `moodChunk`; steuern Farbtemperatur, Direktivität, Kontrast |
+
+`envMetaball(dir, rDir, cosR, sinR)` und `envBurst(dir, rDir, cosR, sinR)` teilen sich den internen Generator `_envKeyLight(dir, rDir, cosR, sinR, tint)` (Worley-Speckle + rotierendes Key-Light) und unterscheiden sich nur im Tint (`MOOD_METABALL_METAL` grau vs. `MOOD_BURST` orange) — Metaballs Environment liest sich damit als kühlere Variante von Bursts, nicht als eigenständige Technik. `envCluster(dir)` bleibt unabhängig (weicher Top-Glow).
 
 Output: HDR RGB-Farbe der Himmelskugel an der UV-Position (Equirectangular-Mapping).
 

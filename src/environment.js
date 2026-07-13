@@ -14,6 +14,7 @@ let _equirectCamera = null;
 let _equirectMat    = null;
 let _frameCount     = 0;
 let _needsRegen     = true;
+let _preset         = 0;
 
 export function initEnvMap(renderer) {
   _renderer = renderer;
@@ -58,8 +59,13 @@ function _regenerate() {
 }
 
 export function setEnvPreset(n) {
+  _preset = n;
   _equirectMat.uniforms.envSelect.value = n;
   _needsRegen = true;
+}
+
+export function getEnvPreset() {
+  return _preset;
 }
 
 export function getUniformDefs() {
