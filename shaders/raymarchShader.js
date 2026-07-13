@@ -136,7 +136,7 @@ float raymarch(vec3 ro, vec3 rd) {
 }
 
 // ── shading ───────────────────────────────────────────────────────────────────
-// Injected after map() so shadeGlass can call map() for the thickness proxy.
+// Injected after map() so shadeCluster can call map() for the thickness proxy.
 
 ${raymarchChunk}
 

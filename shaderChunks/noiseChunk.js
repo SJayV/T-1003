@@ -67,8 +67,8 @@ float worley2D(vec2 p) {
 
 // Weighted sum of two perlin2D octaves sampled on (typically) different planes —
 // the "two perlin samples combined" shape recurring across raymarchShader.js's
-// radiusMod() and environmentShader.js's _envBands()/main(). Callers keep their
-// own frequency/time-scale constants inline; only the combine step is shared.
+// radiusMod() and environmentShader.js's main(). Callers keep their own
+// frequency/time-scale constants inline; only the combine step is shared.
 float dualOctaveNoise(vec2 sampleA, float weightA, vec2 sampleB, float weightB) {
   return perlin2D(sampleA) * weightA + perlin2D(sampleB) * weightB;
 }

@@ -27,13 +27,11 @@ vec3 _computeCentroid() {
   return c / float(BALL_COUNT);
 }
 
-// Angle of the nearest point on the orbit ring to pos.
 // Orbit basis: e1=(1,0,0), e2=_orbitBasisE2(orb.a).
 float _nearestOrbitPhi(vec3 pos, vec3 e2norm) {
   return atan(dot(pos, e2norm), pos.x);
 }
 
-// 3D position on the orbit ellipse at angle phi.
 vec3 orbitPoint(vec4 orb, float phi) {
   vec3 e2 = _orbitBasisE2(orb.a);
   return orb.r * (cos(phi) * vec3(1.0, 0.0, 0.0) + sin(phi) * e2);
@@ -54,42 +52,48 @@ void reflectBounds(inout vec3 pos, inout vec3 vel) {
   if (pos.z < -BZ) { pos.z = -BZ; vel.z =  abs(vel.z); }
 }
 
-// ── unified physics ───────────────────────────────────────────────────────────
-// Blends metaball / cluster / burst physics using visualPhase so all transitions
-// are continuous. No hard switch: orbit contribution fades out while vel-based
-// cluster motion fades in, preventing any speed discontinuity.
-//
-//   metaT    = weight of direct orbit update (pos += orbitDelta)
-//   clusterT = weight of vel-based cluster pull (pos += vel)
-//   burstT   = weight of outward burst force   (pos += vel)
+// ── per-phase physics ─────────────────────────────────────────────────────────
+// One _simulate<Phase> function per regime, named consistently with shade<Phase>
+// in raymarchChunk.js. Each owns its full contribution — including applying its
+// own \`weight\` internally — so changing a phase's behavior (e.g. Cluster's goal
+// shape) means editing only that one function. applySimulation() just composes
+// them, weighted by the same smoothstep ranges the shading blend uses
+// (CLUSTER_BLEND_*/BURST_BLEND_*). No hard switch anywhere: each contribution
+// fades in/out continuously.
 
-void applySimulation(inout vec3 pos, inout vec3 vel, vec4 orb) {
-  const float ORBIT_DT            = ${glslFloat(FRAME_TIME_STEP)};
-  const float ORBIT_SNAP_RATE     = 0.002;   // radial pull-in rate toward nearest orbit point
-  const float ORBIT_OMEGA_SCALE   = 18.0;    // orbitSpeed -> angular velocity
-  const float ORBIT_OMEGA_MOTION  = 9.0;     // motionSpeed contribution to angular velocity
-  const float CENTRIPETAL_PULL    = 0.00016;
-  const float ORIGIN_PULL         = 0.00006;
-  const float CLUSTER_NOISE_FREQ    = 3.0;   // spatial frequency of the cluster-jitter noise field
-  const float CLUSTER_NOISE_TIME_X1 = 0.18;
-  const float CLUSTER_NOISE_TIME_Z1 = 0.14;
-  const float CLUSTER_NOISE_TIME_Y2 = 0.15;
-  const float CLUSTER_NOISE_TIME_X2 = 0.10;
-  const float CLUSTER_NOISE_FORCE   = 0.00015;
-  const float BURST_DIST_EPSILON  = 0.01;    // avoids normalize(0) when a ball sits at the centroid
-  const float BURST_FALLOFF       = 3.2;     // exponential decay of burst force with distance
-  const float BURST_FORCE_BASE    = 0.010;
-  const float BURST_FORCE_SCALE   = 0.035;   // additional force scaled by input intensity
-  const float VEL_DECAY_META      = 0.99;
-  const float VEL_DECAY_CLUSTER   = 0.995;
-  const float VEL_DECAY_BURST     = 0.90;
+const float ORBIT_DT           = ${glslFloat(FRAME_TIME_STEP)};
+const float ORBIT_SNAP_RATE    = 0.012;   // radial pull-in rate toward the nearest orbit point
+const float ORBIT_OMEGA_SCALE  = 18.0;    // orbitSpeed -> angular velocity
+const float ORBIT_OMEGA_MOTION = 9.0;     // motionSpeed contribution to angular velocity
 
-  float clusterT = smoothstep(CLUSTER_BLEND_START, CLUSTER_BLEND_END, visualPhase)
-                 * (1.0 - smoothstep(BURST_BLEND_START, BURST_BLEND_END, visualPhase));
-  float burstT   = smoothstep(BURST_BLEND_START, BURST_BLEND_END, visualPhase);
-  float metaT    = 1.0 - clusterT - burstT;
+const float CENTRIPETAL_PULL = 0.00016;   // Cluster's pull toward its target point (see _simulateCluster)
+const float ORIGIN_PULL      = 0.00006;   // always active (not phase-weighted) — keeps the whole formation near the origin
 
-  // ── orbit delta (metaball) ──────────────────────────────────────────────
+const float CLUSTER_NOISE_FREQ    = 3.0;  // spatial frequency of the cluster-jitter noise field
+const float CLUSTER_NOISE_TIME_X1 = 0.18;
+const float CLUSTER_NOISE_TIME_Z1 = 0.14;
+const float CLUSTER_NOISE_TIME_Y2 = 0.15;
+const float CLUSTER_NOISE_TIME_X2 = 0.10;
+const float CLUSTER_NOISE_FORCE   = 0.00015;
+
+const float BURST_DIST_EPSILON = 0.01;    // avoids normalize(0) when a ball sits at the centroid
+const float BURST_FALLOFF      = 3.2;     // exponential decay of burst force with distance
+const float BURST_FORCE_BASE   = 0.010;
+const float BURST_FORCE_SCALE  = 0.035;   // additional force scaled by input intensity
+
+const float VEL_DECAY_META    = 0.99;
+const float VEL_DECAY_CLUSTER = 0.995;
+const float VEL_DECAY_BURST   = 0.90;
+
+// Metaball regime: drives pos directly toward the nearest orbit point, weighted
+// by weight (applySimulation passes metaballBlend). ORBIT_SNAP_RATE is tuned as
+// fast as possible without breaking the orbit: _nearestOrbitPhi is only an
+// approximation (projects onto the ellipse's basis plane rather than solving
+// for the true nearest point), and a radial correction comparable in magnitude
+// to the tangential step can resonate with that approximation error and get
+// the ball permanently stuck instead of converging — verified empirically
+// across offset directions/magnitudes before landing on this value.
+void _simulateMetaball(inout vec3 pos, vec4 orb, float weight) {
   vec3 e2norm    = normalize(_orbitBasisE2(orb.a));
   float omega    = orb.g * ORBIT_OMEGA_SCALE + motionSpeed * ORBIT_OMEGA_MOTION;
   float phi_near = _nearestOrbitPhi(pos, e2norm);
@@ -97,29 +101,50 @@ void applySimulation(inout vec3 pos, inout vec3 vel, vec4 orb) {
   vec3 nextPt    = orbitPoint(orb, phi_near + omega * ORBIT_DT);
   vec3 orbitDelta = (nearPt - pos) * ORBIT_SNAP_RATE + (nextPt - nearPt);
 
-  // ── velocity forces ─────────────────────────────────────────────────────
-  vec3 cen = _computeCentroid();
+  pos += orbitDelta * weight;
+}
 
-  // Centripetal pull — always active; primes vel during metaball so cluster
-  // inherits inward motion without a dead stop at the transition.
-  vel += (cen - pos) * CENTRIPETAL_PULL - pos * ORIGIN_PULL;
+// Cluster regime: pulls vel toward target (today: the centroid) plus organic
+// noise jitter. The pull toward target is NOT scaled by weight — it stays
+// active through Metaball too, priming vel ahead of the transition so Cluster
+// inherits inward motion without a dead stop. A future alternate-shape regime
+// (e.g. a line) only needs to change what the caller computes target as.
+void _simulateCluster(inout vec3 vel, vec3 pos, vec3 target, float weight) {
+  vel += (target - pos) * CENTRIPETAL_PULL;
 
-  // Cluster noise (fades in with clusterT)
   float np = perlin2D(vec2(pos.x * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_X1, pos.z * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_Z1));
   float nq = perlin2D(vec2(pos.y * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_Y2, pos.x * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_X2));
-  vel += vec3(np, nq, np * nq) * CLUSTER_NOISE_FORCE * clusterT;
+  vel += vec3(np, nq, np * nq) * CLUSTER_NOISE_FORCE * weight;
+}
 
-  // Burst outward force (fades in with burstT)
+// Burst regime: exponentially-decaying outward force from the centroid, weighted by weight.
+void _simulateBurst(inout vec3 vel, vec3 pos, vec3 cen, float weight) {
   float intensity = clamp(logicalPhase - 1.0, 0.0, 1.0);
   vec3 burstDir = pos - cen;
   float burstDist = length(burstDir) + BURST_DIST_EPSILON;
-  vel += normalize(burstDir) * exp(-burstDist * BURST_FALLOFF) * (BURST_FORCE_BASE + intensity * BURST_FORCE_SCALE) * burstT;
+  vel += normalize(burstDir) * exp(-burstDist * BURST_FALLOFF) * (BURST_FORCE_BASE + intensity * BURST_FORCE_SCALE) * weight;
+}
 
-  // ── blended position update ─────────────────────────────────────────────
-  pos += orbitDelta * metaT + vel * (clusterT + burstT);
+void applySimulation(inout vec3 pos, inout vec3 vel, vec4 orb) {
+  float clusterBlend = smoothstep(CLUSTER_BLEND_START, CLUSTER_BLEND_END, visualPhase)
+                      * (1.0 - smoothstep(BURST_BLEND_START, BURST_BLEND_END, visualPhase));
+  float burstBlend    = smoothstep(BURST_BLEND_START, BURST_BLEND_END, visualPhase);
+  float metaballBlend = 1.0 - clusterBlend - burstBlend;
 
-  // ── blended velocity decay ──────────────────────────────────────────────
-  float velDecay = mix(mix(VEL_DECAY_META, VEL_DECAY_CLUSTER, clusterT), VEL_DECAY_BURST, burstT);
+  vec3 cen = _computeCentroid();
+
+  // Always active regardless of phase — keeps the whole formation near the origin.
+  vel -= pos * ORIGIN_PULL;
+
+  // _simulateCluster/_simulateBurst read pos before _simulateMetaball mutates it,
+  // matching the single frame-start position every force in this function sees.
+  _simulateCluster(vel, pos, cen, clusterBlend);
+  _simulateBurst(vel, pos, cen, burstBlend);
+  _simulateMetaball(pos, orb, metaballBlend);
+
+  pos += vel * (clusterBlend + burstBlend);
+
+  float velDecay = mix(mix(VEL_DECAY_META, VEL_DECAY_CLUSTER, clusterBlend), VEL_DECAY_BURST, burstBlend);
   vel *= velDecay;
 
   reflectBounds(pos, vel);

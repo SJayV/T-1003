@@ -1,7 +1,14 @@
 import { FRAME_TIME_STEP, CLUSTER_BLEND_START, CLUSTER_BLEND_END, BURST_BLEND_START, BURST_BLEND_END } from './constants.js';
 
-const BURST_MIN_FRAMES          = 10;
-const BURST_MAX_FRAMES          = 40;
+// BURST_MIN_FRAMES must be long enough that visualPhase (approaching its target
+// at VISUAL_PHASE_RATE_BURST per frame) gets most of the way there before the
+// FSM already moves on to Metaball — otherwise Burst can end before it was ever
+// visually distinguishable from a direct Cluster -> Metaball cut. At n=60 that's
+// ~78% closure toward the target, ~92% at n=100 — a good tradeoff of snappy vs.
+// reliably visible (full ~90%-at-minimum closure would need n~=91, feels sluggish).
+// BURST_MAX_FRAMES adds a motion-speed-interpolated amplifier on top, no randomness.
+const BURST_MIN_FRAMES          = 60;
+const BURST_MAX_FRAMES          = 100;
 const METABALL_MIN_FRAMES       = 800;
 const METABALL_NO_MOTION_FRAMES = 360;
 const CLUSTER_COOLDOWN_FRAMES   = 180;

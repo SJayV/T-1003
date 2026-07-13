@@ -18,7 +18,7 @@ beforeEach(async () => {
 function ticks(n) { for (let i = 0; i < n; i++) tick(); }
 
 // Burst-Dauer ist deterministisch: BURST_MIN_FRAMES + floor(speed * (MAX - MIN))
-// speed=0.01 → 10 Frames (Minimum); speed=1.0 → 40 Frames (Maximum)
+// speed=0.01 → 60 Frames (Minimum); speed=1.0 → 100 Frames (Maximum)
 
 // ═════════════════════════════════════════════════════════════════════════════
 // FSM — Zustände und Übergänge
@@ -64,62 +64,62 @@ describe('FSM: Cluster → Burst', () => {
 
 describe('FSM: Burst-Dauer (Grenzen)', () => {
   it('noch aktiv einen Tick vor BURST_MIN_FRAMES', () => {
-    reportMotion(0.01); // speed=0.01 → burstDuration = 10
-    ticks(9);           // stateFrames = 9 < 10
+    reportMotion(0.01); // speed=0.01 → burstDuration = 60
+    ticks(59);          // stateFrames = 59 < 60
     expect(getLogicalPhase()).toBeGreaterThan(1.0);
   });
 
   it('endet genau bei BURST_MIN_FRAMES (Minimum)', () => {
     reportMotion(0.01);
-    ticks(10); // stateFrames = 10 → Metaball
+    ticks(60); // stateFrames = 60 → Metaball
     expect(getLogicalPhase()).toBe(0.0);
   });
 
   it('noch aktiv einen Tick vor BURST_MAX_FRAMES', () => {
-    reportMotion(1.0); // speed=1.0 → burstDuration = 40
-    ticks(39);         // stateFrames = 39 < 40
+    reportMotion(1.0); // speed=1.0 → burstDuration = 100
+    ticks(99);         // stateFrames = 99 < 100
     expect(getLogicalPhase()).toBeGreaterThan(1.0);
   });
 
   it('endet genau bei BURST_MAX_FRAMES (Maximum)', () => {
     reportMotion(1.0);
-    ticks(40); // stateFrames = 40 → Metaball
+    ticks(100); // stateFrames = 100 → Metaball
     expect(getLogicalPhase()).toBe(0.0);
   });
 });
 
 describe('FSM: Metaball-Verhalten', () => {
-  // Mit minimum burst (speed=0.01 → 10 Frames):
-  // Nach ticks(10): Metaball, stateFrames=0, noMotionFrames=1.
+  // Mit minimum burst (speed=0.01 → 60 Frames):
+  // Nach ticks(60): Metaball, stateFrames=0, noMotionFrames=1.
   // Übergang: stateFrames >= 800 UND noMotionFrames >= 360.
-  // noMotionFrames wächst parallel (360 < 800) → bindend: stateFrames=800 bei Tick 810.
+  // noMotionFrames wächst parallel (360 < 800) → bindend: stateFrames=800 bei Tick 860.
 
   it('bleibt in Metaball einen Tick vor METABALL_MIN_FRAMES', () => {
     reportMotion(0.01);
-    ticks(809); // 10 Burst + 799 Metaball-stateFrames
+    ticks(859); // 60 Burst + 799 Metaball-stateFrames
     expect(getLogicalPhase()).toBe(0.0);
   });
 
   it('wechselt zu Cluster genau bei METABALL_MIN_FRAMES', () => {
     reportMotion(0.01);
-    ticks(810); // stateFrames erreicht 800 → Cluster
+    ticks(860); // stateFrames erreicht 800 → Cluster
     expect(getLogicalPhase()).toBe(1.0);
   });
 
   it('reportMotion in Metaball löst keinen Burst aus', () => {
     reportMotion(0.01);
-    ticks(10); // → Metaball
+    ticks(60); // → Metaball
     reportMotion(1.0);
     expect(getLogicalPhase()).toBe(0.0);
   });
 
   it('reportMotion setzt noMotionFrames zurück und verzögert Rückkehr zu Cluster', () => {
-    // Tick 809: stateFrames=799, noMotionFrames=800.
+    // Tick 859: stateFrames=799, noMotionFrames=800.
     // Motion → noMotionFrames auf 0 beim nächsten Tick.
-    // Tick 810: stateFrames=800 ok, noMotionFrames=0 < 360 → bleibt Metaball.
+    // Tick 860: stateFrames=800 ok, noMotionFrames=0 < 360 → bleibt Metaball.
     // Erst nach 360 weiteren stillen Ticks: beide Bedingungen erfüllt.
     reportMotion(0.01);
-    ticks(809);
+    ticks(859);
     reportMotion(0.3);
     tick();    // stateFrames=800, noMotionFrames=0
     expect(getLogicalPhase()).toBe(0.0);
@@ -137,7 +137,7 @@ describe('FSM: Cluster-Rückkehr-Guard (visualPhase)', () => {
 
   it('kein Burst aus frischem Cluster (visualPhase < 0.65 nach Rückkehr)', () => {
     reportMotion(0.01);
-    ticks(810); // voller Zyklus; visualPhase ≈ 0 bei Rückeintritt
+    ticks(860); // voller Zyklus; visualPhase ≈ 0 bei Rückeintritt
     expect(getVisualPhase()).toBeLessThan(0.65);
     reportMotion(1.0);
     expect(getLogicalPhase()).toBe(1.0); // Cluster, kein Burst
@@ -160,7 +160,7 @@ describe('Blend: Invariante (Summe = 1, alle ≥ 0)', () => {
     check();                       // Cluster (initial)
     reportMotion(0.5); ticks(5);
     check();                       // Burst
-    ticks(50);
+    ticks(150);
     check();                       // Metaball
   });
 });
@@ -174,7 +174,7 @@ describe('Blend: Konvergenz in stabilen Zuständen', () => {
 
   it('metaballBlend → 1 und visualPhase → 0 nach langer Zeit in Metaball', () => {
     reportMotion(0.5);
-    ticks(50 + 500); // → Metaball, dann exponentieller Abfall von visualPhase
+    ticks(150 + 500); // → Metaball, dann exponentieller Abfall von visualPhase
     expect(getVisualPhase()).toBeLessThan(0.1);
     expect(getMetaballBlend()).toBeCloseTo(1.0, 1);
     expect(getClusterBlend()).toBeCloseTo(0.0, 1);
@@ -194,7 +194,7 @@ describe('Blend: clusterActivation-Gate (Teal-Flash-Unterdrückung)', () => {
 
   it('clusterBlend < 0.15 direkt nach Eintritt in Metaball aus Burst', () => {
     reportMotion(1.0);
-    ticks(50); // → Metaball; Gate zerfällt, visualPhase noch erhöht
+    ticks(110); // → Metaball (duration 100); Gate zerfällt, visualPhase noch erhöht
     expect(getClusterBlend()).toBeLessThan(0.15);
   });
 });
@@ -212,7 +212,7 @@ describe('visualPhase', () => {
 
   it('bleibt stets im Bereich [0, 2]', () => {
     reportMotion(1.0);
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 110; i++) { // spans the Burst(100) -> Metaball transition
       tick();
       expect(getVisualPhase()).toBeGreaterThanOrEqual(0);
       expect(getVisualPhase()).toBeLessThanOrEqual(2.0);
@@ -262,14 +262,14 @@ describe('onPhaseTransition', () => {
     tick(); // Burst-Eintritt feuert (vor Registrierung verbraucht)
     const calls = [];
     onPhaseTransition(p => calls.push(p));
-    ticks(50); // Burst endet → Metaball, slot 2→0
+    ticks(90); // Burst (Dauer 80 bei speed=0.5) endet → Metaball, slot 2→0
     expect(calls).toHaveLength(1);
     expect(calls[0]).toBe(0.0);
   });
 
   it('feuert bei Metaball → Cluster', () => {
     reportMotion(0.01);
-    ticks(10); // → Metaball; C→B und B→M-Übergänge bereits verbraucht
+    ticks(60); // → Metaball; C→B und B→M-Übergänge bereits verbraucht
     const calls = [];
     onPhaseTransition(p => calls.push(p));
     ticks(800); // stateFrames = 800 → Cluster; slot 0→1

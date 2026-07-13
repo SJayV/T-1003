@@ -46,7 +46,7 @@ T-1003/
     ├── vertexChunk.js          ← GLSL-Chunk: gemeinsamer Passthrough-Vertex-Shader
     ├── noiseChunk.js           ← GLSL-Chunk: perlin2D, worley2D
     ├── moodChunk.js            ← GLSL-Chunk: Farbpalette (MOOD_*), Phasengewichte (tMeta/Cluster/Burst), moodColor()
-    ├── raymarchChunk.js        ← GLSL-Chunk: shadeMetal, shadeGlass, shadeHit
+    ├── raymarchChunk.js        ← GLSL-Chunk: shadeMetaball, shadeCluster, shadeBurst, shadeHit
     └── simulationChunk.js      ← GLSL-Chunk: applySimulation (unified, visualPhase-blended)
 ```
 
@@ -143,8 +143,8 @@ $$\hat{d}(\mathbf{x}, t) = d(\mathbf{x}, t) + \beta \cdot \mathcal{N}(\mathbf{x}
 
 | Konstante | Semantik |
 |---|---|
-| `BURST_MIN_FRAMES` | Mindest-Burst-Dauer |
-| `BURST_MAX_FRAMES` | Max-Burst-Dauer (zufällig dazwischen) |
+| `BURST_MIN_FRAMES` | Mindest-Burst-Dauer (fixe Basis, 60 Frames) — bemessen, dass `visualPhase` bei `VISUAL_PHASE_RATE_BURST` auch bei minimaler Eingabe-Intensität spürbar in den Burst-Smoothstep-Bereich einschwingt (~78 % Annäherung ans Ziel), bevor die FSM zu Metaball wechselt, ohne die Reaktion sluggish wirken zu lassen |
+| `BURST_MAX_FRAMES` | Max-Burst-Dauer (100 Frames) — Basis + linear mit der erkannten Bewegungsgeschwindigkeit interpolierter Verstärker obendrauf, **kein Zufallsanteil** |
 | `METABALL_MIN_FRAMES` | Verbleibt in Metaball unabhängig von Input |
 | `METABALL_NO_MOTION_FRAMES` | Stille-Schwelle → Rückkehr zu Cluster |
 | `CLUSTER_COOLDOWN_FRAMES` | Sperrzeit nach Burst vor nächstem |
@@ -162,7 +162,7 @@ $$\hat{d}(\mathbf{x}, t) = d(\mathbf{x}, t) + \beta \cdot \mathcal{N}(\mathbf{x}
 
 **Metaball** — direktes Orbit-Update (nearest-phi):
 
-Pro Frame wird der nächste Punkt auf der Orbit-Ellipse zur aktuellen Ballposition bestimmt. Der Ball wird radial mit einer kleinen Lerp-Rate dorthin gezogen und gleichzeitig um einen Frame-Schritt tangential weitergeführt — kein Spring, kein Overshoot. Der Startwinkel $\phi_\text{rand} \sim \mathcal{U}[0, 2\pi)$ wird bei Programmstart gezogen, sodass jeder Run anders aussieht. Kein Noise in der Metaball-Phase.
+Pro Frame wird der nächste Punkt auf der Orbit-Ellipse zur aktuellen Ballposition bestimmt. Die radiale Annäherung an diesen Punkt ist geschwindigkeitsgleich mit dem tangentialen Orbit-Schritt (per `min()` überschwingungsfrei gekappt) — kein fixer, langsamer Kriechwert. Das ist bewusst so gewählt: ein aus dem Burst verstreuter Ball soll mit derselben Dringlichkeit zurückschnappen, mit der er anschließend orbitiert, statt sichtbar langsam anzukommen und erst danach auf Orbit-Tempo zu beschleunigen — letzteres läse sich als Zögern, nicht als das intendierte "Panik"-Verhalten des Übergangs. Der Startwinkel $\phi_\text{rand} \sim \mathcal{U}[0, 2\pi)$ wird bei Programmstart gezogen, sodass jeder Run anders aussieht. Kein Noise in der Metaball-Phase.
 
 $$\mathbf{c}_i^\text{orbit}(\phi) = \begin{pmatrix} r_i \cos\phi \\ r_i \sin\phi\,\sin\theta_i \\ r_i \sin\phi\,\cos\theta_i \cdot 0.28 \end{pmatrix}$$
 
@@ -173,7 +173,7 @@ $$\hat{\mathbf{c}}(t) = \frac{1}{n}\sum_{i=1}^n \mathbf{c}_i(t), \qquad \mathbf{
 
 Perlin-Noise-Störung auf $\mathbf{v}_i$ sorgt für organische, unregelmäßige Clusterbewegung.
 
-**Zielform / Linie in Cluster ⚠️ offen** (siehe Offene Punkte #4): Cluster zieht aktuell ausschließlich zum Massezentrum $\hat{\mathbf{c}}(t)$ und zum Ursprung — eine kompakte, formlose Masse. Geplant ist ein alternatives/zusätzliches Zielform-Regime (z. B. eine Linie oder andere Zielgeometrie statt eines Punkts), bei dem die Bälle stattdessen auf Punkte einer parametrisierten Kurve/Form gezogen werden. Architektonisch ist das eine reine Physik-Änderung innerhalb des bereits `clusterT`-gewichteten Zweigs in `applySimulation()` (`simulationChunk.js`) — der Attraktor-Term $k_1(\hat{\mathbf{c}} - \mathbf{c}_i)$ würde durch einen Zug auf den nächstgelegenen Punkt der Zielform ersetzt, analog zum bestehenden nearest-phi-Attraktor der Metaball-Phase. Shading, Environment und die SDF-Komposition (`map()` in `raymarchShader.js`) bleiben unverändert, da sie nur die (dann veränderten) Ballpositionen konsumieren, keine Kenntnis der Zielform benötigen.
+**Zielform / Linie in Cluster ⚠️ offen** (siehe Offene Punkte #4): Cluster zieht aktuell ausschließlich zum Massezentrum $\hat{\mathbf{c}}(t)$ — eine kompakte, formlose Masse. Die Physik ist inzwischen entlang genau dieser Erweiterung modularisiert: `_simulateCluster(inout vel, pos, target, weight)` in `simulationChunk.js` nimmt den Attraktionspunkt bereits als Parameter `target` (heute immer der Centroid) und besitzt die komplette Cluster-Physik (Anziehung + Rauschen) selbst. Ein alternatives Zielform-Regime (z. B. eine Linie) müsste nur den `target`-Wert berechnen (nächstgelegener Punkt auf der Zielkurve statt Centroid) und denselben Helfer aufrufen — `applySimulation()` selbst, Shading, Environment und die SDF-Komposition (`map()` in `raymarchShader.js`) bleiben unberührt.
 
 **Burst** — exponentiell abklingende Abstoßung (stark lokal, asymptotisch 0):
 $$\mathbf{v}_i(t) \mathrel{+}= \hat{\mathbf{d}}_i \cdot F_0 \cdot e^{-\lambda\|\mathbf{d}_i\|}, \qquad \mathbf{d}_i = \mathbf{c}_i - \hat{\mathbf{c}}$$
@@ -213,12 +213,12 @@ Alle Passes: Fullscreen Quad + OrthographicCamera → WebGLRenderTarget (außer 
 
 Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie Orbit-Parameter (Texel 3i+2). Die Physik wird **nicht** hart per `logicalPhase` umgeschaltet, sondern kontinuierlich über `visualPhase` gemischt (`applySimulation`):
 
-Die Physik wird über `visualPhase` kontinuierlich zwischen den drei Modi gemischt — kein harter Umschalter. Blend-Gewichte `metaT`, `clusterT`, `burstT` entsprechen den gleichen Smoothstep-Bereichen wie die Shading-Gewichte in `phase.js`, sind jedoch **bewusst ungegated** (kein `logicalPhase`-Guard): beim Burst→Metaball-Rückzug wird kurzzeitig Zentripetalkraft mitgewendet, um den Rückzug auf die Orbit-Ellipse zu glätten.
+Die Physik wird über `visualPhase` kontinuierlich zwischen den drei Modi gemischt — kein harter Umschalter. Blend-Gewichte `metaballBlend`, `clusterBlend`, `burstBlend` (lokale Variablen in `applySimulation`, benannt wie die gleichnamigen Shading-Uniforms) entsprechen den gleichen Smoothstep-Bereichen wie die Shading-Gewichte in `phase.js`, sind jedoch **bewusst ungegated** (kein `logicalPhase`-Guard): beim Burst→Metaball-Rückzug wird kurzzeitig Zentripetalkraft mitgewendet, um den Rückzug auf die Orbit-Ellipse zu glätten.
 
 **Positions-Update** (kombiniert):
-$$\Delta\mathbf{c}_i = \Delta\mathbf{c}^\text{orbit} \cdot \text{metaT} + \mathbf{v}_i \cdot (\text{clusterT} + \text{burstT})$$
+$$\Delta\mathbf{c}_i = \Delta\mathbf{c}^\text{orbit} \cdot \text{metaballBlend} + \mathbf{v}_i \cdot (\text{clusterBlend} + \text{burstBlend})$$
 
-**Kräfte**: Zentripetalkraft ist immer aktiv und baut $\mathbf{v}_i$ schon während der Metaball-Phase auf — beim Übergang zu Cluster ist so bereits Impuls in der richtigen Richtung vorhanden. Cluster-Noise und Burst-Abstoßung werden mit `clusterT` bzw. `burstT` gewichtet. Velocity-Decay wird phasenabhängig interpoliert (hoch bei Burst, niedrig bei Cluster). Nach dem Positions-Update wird `reflectBounds` aufgerufen.
+**Kräfte**: Zentripetalkraft ist immer aktiv und baut $\mathbf{v}_i$ schon während der Metaball-Phase auf — beim Übergang zu Cluster ist so bereits Impuls in der richtigen Richtung vorhanden. Cluster-Noise und Burst-Abstoßung werden mit `clusterBlend` bzw. `burstBlend` gewichtet. Velocity-Decay wird phasenabhängig interpoliert (hoch bei Burst, niedrig bei Cluster). Nach dem Positions-Update wird `reflectBounds` aufgerufen.
 
 ### Uniforms (CPU → Shader, pro Frame)
 
@@ -280,9 +280,13 @@ Phasengekoppelte Stimmung der Umgebung:
 
 | Parameter | Metaball | Cluster | Burst |
 |---|---|---|---|
-| Farbtemperatur | kühl-neutral | warm-diffus | harte Kontraste |
+| Farbtemperatur | neutral-grau | warm-diffus | harte Kontraste |
 | Helligkeit | mittel | niedrig, gläsern | hohe Highlights |
-| Direktivität | allseitig (Worley-Blobs) | weich, zentral (Top-Glow) | gerichtet, scharf (Key-Light + Worley) |
+| Direktivität | gerichtet, scharf (Key-Light + Worley) | weich, zentral (Top-Glow) | gerichtet, scharf (Key-Light + Worley) |
+
+Metaball und Burst teilen sich denselben Generator (`_envKeyLight` in `environmentShader.js`, Worley-Speckle + rotierendes Key-Light), unterschieden nur durch den Tint (`MOOD_METABALL_METAL` grau vs. `MOOD_BURST` orange) — Metaballs Umgebung liest sich damit als kühlere Variante desselben Wesens, nicht als eigenständige Stimmung. `AMBIENT_FLOOR` hält den Hintergrund zwischen Speckles/Key-Light über Schwarz, statt Farbtöne auf schwarzem Grund.
+
+**Env-Preset-Buttons und Shading-Blend:** `setEnvPreset(n)` (via `ui.js`) wählt nur, welche Umgebung `environmentShader.js` generiert — es überschreibt nicht direkt, welche Phase die *Ball-Oberflächen* zeigen (die folgen weiterhin `phase.js`s echtem FSM-Zustand). Damit ein gewählter Preset auch am Objekt sichtbar wird, überschreibt `main.js` (`resolvePhaseBlend`) die an das Haupt-Material gesendeten `metaballBlend`/`clusterBlend`/`burstBlend`-Werte auf `1`/`0`, wenn ein Preset ≠ Auto aktiv ist — sowohl Umgebung als auch Shading zeigen dann die volle, ungemischte Phase statt eines mit der echten (evtl. noch nicht vollständig eingeschwungenen) Blend-Gewichtung verdünnten Werts. Das behebt zugleich den "Preset wirkt dunkler als Auto"-Effekt: Auto zeigt bei nicht vollständig eingeschwungener Phase eine verdünnte Mischung, während der direkt gewählte Preset immer den vollen, ungemischten Wert zeigt.
 
 ### Audio (`audio.js`) ⚠️ offen
 - Phasengekoppelt über `onPhaseTransition`: niederfrequent (Metaball/Cluster) ↔ hochfrequent (Burst)
@@ -305,8 +309,8 @@ Phasengekoppelte Stimmung der Umgebung:
 - Shading-Übergänge: kontinuierlich über skalaren Phasenwert interpoliert
 
 ### Grafik
-- **Metallisch-reflektierend** (Metaball + Burst): Env-Map-Sampling, rauheitsabhängig; Reflexionen fremd und nicht verortbar. Metaball und Burst aktuell shading-identisch — geplante Trennung (silberner Metaball vs. andersfarbiger Burst, kein Rim-Light auf beiden) siehe Shading-Modul/Offene Punkte #5 ⚠️
-- **Transluzent-lumineszent** (Cluster): Fresnel, Streuung, angedeutete Materialdicke; inneres Leuchten; einziger Rim-Light-Träger nach geplanter Überarbeitung
+- **Metallisch-reflektierend** (Metaball + Burst): Env-Map-Sampling, rauheitsabhängig; Reflexionen fremd und nicht verortbar. Metaball und Burst shading-seitig getrennt: gleiche Technik (`_shadeReflective`), unterschiedlicher Tint (Metaball grau via `MOOD_METABALL_METAL`, Burst via `MOOD_BURST`) und Rauheit (Metaball 0.15, Burst 1.0 — maximal, diffuses Streulicht passend zur chaotischen Burst-Stimmung). Beide tragen ein deutlich schwächeres Rim-Light als Cluster (`REFLECTIVE_RIM_WEIGHT` vs. Clusters `RIM_WEIGHT`), gefärbt nach aktuellem `moodColor()`.
+- **Transluzent-lumineszent** (Cluster): Fresnel, Streuung, angedeutete Materialdicke; inneres Leuchten; primärer Rim-Light-Träger
 - Schwarzer Hintergrund; Skybox als Alternative ⚠️ offen
 - Abstrakte dynamische Environment-Map — keine erkennbaren Strukturen
 - **Bloom Post-Processing** (`bloomShader.js` + `gpuSetup.makeBloomSetup`): Hellste Bereiche extrahiert (Luma > threshold), 9-Tap-Gauß H+V geblurt, additiv überlagert; Intensität und Schwellenwert koppeln an `burstBlend` (mehr Leuchtkraft im Burst)
@@ -315,22 +319,15 @@ Phasengekoppelte Stimmung der Umgebung:
 
 Da `MeshPhysicalMaterial` mit Raymarching inkompatibel ist (es operiert auf rasterisierter Geometrie, nicht auf SDF-ausgewerteten impliziten Flächen), wird das Shading vollständig manuell nachimplementiert.
 
-**Aktueller Stand** — `shadeHit` mischt zwei Modi über `clusterBlend`; Metaball und Burst sind shading-seitig identisch (beide `shadeMetal`):
-
-| Modus | Umgesetzte Features |
-|---|---|
-| **Metallisch** (Metaball + Burst) | Env-Map-Sampling, rauheitsabhängige Unschärfe via Cone-Sampling (5 Taps), Schlick-Fresnel, Rim-Light |
-| **Transluzent** (Cluster) | map()-Materialdicken-Proxy, Fresnel-Rim, Rückstreuung, Specular 192er; kein Env-Map-Sampling, Rim-Light |
-
-**Geplante Überarbeitung ⚠️** (siehe Offene Punkte #5) — Env-Map-Sampling und Rim-Light werden pro Phase entkoppelt, statt an die bestehende Metall/Glas-Trennung gebunden zu sein:
+Eine Funktion pro Phase, `shadeHit` mischt alle drei gewichtet (immer 3-Wege, keine Early-Outs):
 
 | Phase | Env-Map-Sampling | Rim-Light | Farbe |
 |---|---|---|---|
-| **Metaball** | Ja (gleiche Technik wie Burst) | Nein | Silbern/neutral (F0 explizit) |
-| **Cluster** | Nein | Ja | Bestehende Cluster-Tönung (unverändert) |
-| **Burst** | Ja (gleiche Technik wie Metaball) | Nein | ⚠️ offen — muss sich farblich von Metaballs Silber abheben, konkrete Tönung nicht spezifiziert |
+| **Metaball** (`shadeMetaball`) | Ja (`_shadeReflective`, geteilt mit Burst) | Schwach (`REFLECTIVE_RIM_WEIGHT`, gefärbt nach `moodColor()`) | `MOOD_METABALL_METAL` — Platzhalter-Grau, zur individuellen Abstimmung vorgesehen |
+| **Cluster** (`shadeCluster`) | Nein | Stark (primärer Rim-Light-Träger, `RIM_WEIGHT`) | Bestehende Cluster-Tönung (unverändert) |
+| **Burst** (`shadeBurst`) | Ja (`_shadeReflective`, geteilt mit Metaball) | Schwach (`REFLECTIVE_RIM_WEIGHT`, gefärbt nach `moodColor()`) | `MOOD_BURST` (Rauheit 1.0, maximal) |
 
-Damit bleibt `shadeGlass` (Cluster) unverändert der einzige Rim-Light-Träger; `shadeMetal` verliert den `_rimLight`-Term für beide Metall-Nutzer und braucht einen Farbparameter, um Metaball/Burst zu differenzieren (aktuell identisches `F0 = vec3(0.92)` für beide).
+`shadeCluster` (vormals `shadeGlass`) bleibt der stärkste Rim-Light-Träger; Metaball/Burst tragen dasselbe `_rimLight()` (gefärbt nach `moodColor()`) nur deutlich schwächer gewichtet. `_shadeReflective(n, rd, NdotV, roughness, tint)` ist der interne, von Metaball und Burst geteilte Helfer — ein einzelner Tint-Parameter genügt, die Funktion leitet intern eine hellere Highlight-Variante für den direkten Specular-Term ab.
 
 Einziger öffentlicher Aufruf aus `main()` des Fragment-Shaders:
 
@@ -338,7 +335,7 @@ Einziger öffentlicher Aufruf aus `main()` des Fragment-Shaders:
 color = shadeHit(p, n, rd);
 ```
 
-`raymarchChunk.js` ist ein GLSL-Chunk, der in `raymarchShader.js` nach `map()` interpoliert wird (notwendig, da `shadeGlass` `map()` für einen Materialdicken-Proxy aufruft). Austausch des Materialmodells erfordert nur Änderungen in `raymarchChunk.js`.
+`raymarchChunk.js` ist ein GLSL-Chunk, der in `raymarchShader.js` nach `map()` interpoliert wird (notwendig, da `shadeCluster` `map()` für einen Materialdicken-Proxy aufruft). Austausch eines Materialmodells erfordert nur Änderungen in der jeweiligen Phasenfunktion.
 
 ### Audio
 - Phasengekoppelte Klangkulisse ⚠️ offen
@@ -354,7 +351,7 @@ color = shadeHit(p, n, rd);
 | Noise-Bibliothek (Perlin, Worley 2D) | ✅ |
 | Phasensystem (zeitgesteuert + externer Trigger + onPhaseTransition) | ✅ |
 | GPU-Simulation (1D-Textur RGBA32F, Ping-Pong, simulationShader.js) | ✅ |
-| Shading-Modul (raymarchChunk.js, shadeHit) | ✅ (Überarbeitung Metaball/Burst-Trennung + Rim-Light-Matrix geplant, #5) |
+| Shading-Modul (raymarchChunk.js, shadeHit, phasenweise: shadeMetaball/shadeCluster/shadeBurst) | ✅ |
 | Environment (dynamische Equirectangular-Env-Map, environmentShader.js) | ✅ |
 | Externes Eingabegerät (input.js) | ✅ |
 | Audio | ⚠️ geplant |
@@ -374,5 +371,4 @@ color = shadeHit(p, n, rd);
 | 1 | Audio | Web Audio API; drei synthetische Schichten: Metaball = tiefer Drone (Frequenz skaliert mit motionSpeed), Cluster = Subbass-Puls im Atemrhythmus, Burst = perkussiver Anschlag + Hochfrequenz-Rauschen über burstBlend; OscillatorNode + BiquadFilterNode, kein Asset-Loading |
 | 2 | Anwesenheitserkennung | input.js liefert nur Motion-Speed; zweite Schicht: Hintergrundmodell erkennt Präsenz ohne Bewegung → Kreatur reagiert auf bloße Anwesenheit (aufmerksam werden, ohne Burst zu triggern); psychologisch stärker als reiner Bewegungs-Trigger |
 | 3 | Facetracking | Konkrete Technik für #2: Gesichtserkennung statt/neben Frame-Differencing in `input.js`; macht "Beobachtung verändert das Beobachtete" wörtlich. Siehe Input & Interaktion → Facetracking. Offen: Bibliothek/Modell, Performance-Budget, Blickrichtung vs. reine Anwesenheit, Datenschutz |
-| 4 | Zielform / Linie in Cluster | Cluster-Attraktor zieht aktuell nur zu Massezentrum + Ursprung (formlose Masse). Neues Regime: Bälle werden auf eine parametrisierte Zielform (z. B. Linie) statt einen Punkt gezogen. Architektonisch eine reine Physik-Änderung im `clusterT`-Zweig von `applySimulation()` (`simulationChunk.js`); Shading/Environment/SDF-Komposition unberührt, da sie nur Ballpositionen konsumieren. Siehe Phasensystem → Cluster |
-| 5 | Shading-Matrix (Metaball/Burst-Trennung, Rim-Light) | Env-Map-Sampling und Rim-Light von der bestehenden Metall/Glas-Zweiteilung entkoppeln: Metaball = Env-Sample wie Burst, aber silbern, kein Rim-Light; Burst = Env-Sample wie Metaball, andere (noch offene) Farbe, kein Rim-Light; Cluster = kein Env-Sample, weiterhin Rim-Light (unverändert). Erfordert Farbparameter in `shadeMetal` (aktuell geteiltes `F0` für Metaball+Burst) und Entfernen von `_rimLight` aus `shadeMetal`. Siehe Shading-Modul |
+| 4 | Zielform / Linie in Cluster | Cluster-Attraktor zieht aktuell nur zum Massezentrum (formlose Masse). Erweiterungspunkt existiert bereits: `_simulateCluster(inout vel, pos, target, weight)` in `simulationChunk.js` besitzt die komplette Cluster-Physik selbst und nimmt den Attraktionspunkt als Parameter; ein neues Regime berechnet nur einen anderen `target` (z. B. nächster Punkt auf einer Linie). Shading/Environment/SDF-Komposition unberührt. Siehe Phasensystem → Cluster |
