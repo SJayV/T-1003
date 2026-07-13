@@ -1,142 +1,157 @@
-import { FRAME_TIME_STEP, CLUSTER_BLEND_START, CLUSTER_BLEND_END, BURST_BLEND_START, BURST_BLEND_END } from './constants.js';
+import { FRAME_TIME_STEP } from './constants.js';
 
-// BURST_MIN_FRAMES must be long enough that visualPhase (approaching its target
-// at VISUAL_PHASE_RATE_BURST per frame) gets most of the way there before the
-// FSM already moves on to Metaball — otherwise Burst can end before it was ever
-// visually distinguishable from a direct Cluster -> Metaball cut. At n=60 that's
-// ~78% closure toward the target, ~92% at n=100 — a good tradeoff of snappy vs.
-// reliably visible (full ~90%-at-minimum closure would need n~=91, feels sluggish).
-// BURST_MAX_FRAMES adds a motion-speed-interpolated amplifier on top, no randomness.
-const BURST_MIN_FRAMES          = 60;
-const BURST_MAX_FRAMES          = 100;
-const METABALL_MIN_FRAMES       = 800;
-const METABALL_NO_MOTION_FRAMES = 360;
-const CLUSTER_COOLDOWN_FRAMES   = 180;
-const BURST_TRIGGER_MIN_VISUAL_PHASE = 0.65;  // visualPhase must have recovered at least this far from Metaball before a new Burst can trigger
+// LEAD*sigma is the ramp-up time from "just triggered" (raw~0.011) to "fully weighted" (raw~1)
+// for any bump -- LEAD=3 balances a visibly gradual onset against dragging the ramp out.
+const LEAD = 3;
 
-const MOTION_SPEED_DECAY  = 0.97;   // exponential decay of motionSpeed per frame when silent
+const CLUSTER_SIGMA  = 0.6;    // seconds; Cluster's own bump width (rise on entry, decay once left)
+// Wide -- METABALL_HANDOFF_LEAD=0 (below) already pins the Burst->Metaball crossing to an exact
+// peak-to-peak 50/50 regardless of sigma, so widening this doesn't move that crossing point,
+// only how gradually Metaball's own weight decays into Cluster once it starts leaving.
+const METABALL_SIGMA = 3.0;
+// Wide -- Burst's own decay tail stretches well into Metaball's rise instead of handing off
+// quickly, giving the two time to visibly coexist rather than snapping over.
+const BURST_SIGMA    = 1.2;
 
-const VISUAL_PHASE_BURST_TARGET_THRESHOLD = 1.05;  // above this, target is a Burst level -> approach faster
-const VISUAL_PHASE_RATE_BURST   = 0.025;  // Burst arrives faster (energetic)
-const VISUAL_PHASE_RATE_DEFAULT = 0.007;  // other transitions are slow
+// BURST_HOLD is derived, not tuned directly: it must be >= LEAD*BURST_SIGMA so Burst's bump
+// has genuinely finished ramping (raw==1, not partway) by the moment hold ends. Combined with
+// METABALL_HANDOFF_LEAD=0 below, that makes the Burst->Metaball handoff a real peak-to-peak
+// crossing -- raw_burst==raw_metaball==1, an exact 50/50 split -- rather than an approximation.
+// Fixed, not motion-speed-scaled: the previous speed-interpolated span was barely noticeable
+// and made the bump harder to tune for no visible benefit.
+const BURST_HOLD        = LEAD * BURST_SIGMA;
+const METABALL_MIN_HOLD = 13.3;   // seconds; from old METABALL_MIN_FRAMES=800 @ ~60fps
+const METABALL_SILENCE_HOLD = 1.2; // seconds of continuous no-motion (post min-hold) before leaving
 
-const CLUSTER_GATE_PHASE_THRESHOLD = 0.5;   // logicalPhase >= this counts as "not Metaball" for the gate
-const CLUSTER_GATE_RATE            = 0.20;  // decays to near-zero within ~27 frames of entering Metaball
+// Metaball's activation lead when taking over from Burst is 0, not LEAD: its mu lands exactly at
+// the handoff instant, so raw_metaball starts at 1 (not the usual ~1% floor) precisely when
+// raw_burst is also still 1. From there Metaball's mu keeps tracking t_now (staying at raw==1)
+// while Burst's is frozen and decaying -- the weight ratio shifts from 50/50 toward Metaball
+// purely as a function of Burst's own decay, with no jump anywhere.
+const METABALL_HANDOFF_LEAD = 0;
+
+const CLUSTER_COOLDOWN = 0;    // seconds; no lockout for now -- the check lives inside _scheduleTick
+                                // (the only place _state is touched), so reinstating one later is a
+                                // one-constant change
+
+const MOTION_SPEED_DECAY = 0.97;   // exponential decay of motionSpeed per tick() call when silent
 
 const S_CLUSTER  = 0;
 const S_BURST    = 1;
 const S_METABALL = 2;
 
-let _state           = S_CLUSTER;
-let _stateFrames     = 0;
-let _noMotionFrames  = 0;
-let _cooldownFrames  = 0;
-let _burstDuration   = BURST_MIN_FRAMES;
-let _burstIntensity  = 0;
-let _motionThisFrame = false;
+// ── State A: scheduler-only. Read/written exclusively inside _scheduleTick. ────
+let _state                   = S_CLUSTER;
+let _lastBurstTrigger        = -Infinity;
+let _metaballActivationStart = 0;
+let _burstActivationStart    = 0;
 
-function _enterState(s) {
-  _state       = s;
-  _stateFrames = 0;
-  if (s === S_METABALL) _noMotionFrames = 0;
+// ── State B: bumps. Written by _scheduleTick, read-only in _evaluateWeights. ──
+let _bumps = {
+  cluster:  { mu: 0,         sigma: CLUSTER_SIGMA,  activated: true  },
+  metaball: { mu: -Infinity, sigma: METABALL_SIGMA, activated: false },
+  burst:    { mu: -Infinity, sigma: BURST_SIGMA,     activated: false },
+};
+
+function _activate(bump, t_now, lead = LEAD) {
+  bump.mu        = t_now + lead * bump.sigma;
+  bump.activated = true;
 }
 
-// In Cluster (cooldown elapsed): triggers Burst → Metaball.
-// In Metaball: resets the no-motion timer, extending stay.
+let _motionThisFrame = false;
+let _motionSpeed     = 0;
+
+// From input.js: sets the flags _scheduleTick consumes (and resets) on the next tick().
 export function reportMotion(speed) {
   _motionThisFrame = true;
-  _motionSpeed     = Math.max(0, Math.min(1, speed));
-  if (_state === S_CLUSTER && _cooldownFrames <= 0 && _visualPhase > BURST_TRIGGER_MIN_VISUAL_PHASE) {
-    _burstIntensity = _motionSpeed;
-    _burstDuration  = BURST_MIN_FRAMES
-      + Math.floor(_motionSpeed * (BURST_MAX_FRAMES - BURST_MIN_FRAMES));
-    _enterState(S_BURST);
-  }
+  _motionSpeed      = Math.max(0, Math.min(1, speed));
 }
-
-let _t = 0;
-export function getTime() { return _t; }
-
-export function getLogicalPhase() {
-  if (_state === S_METABALL) return 0.0;
-  if (_state === S_BURST)    return 1.0 + _burstIntensity;
-  return 1.0;  // S_CLUSTER
-}
-
-let _visualPhase        = 1.0;
-let _metaballBlend      = 0;
-let _clusterBlend       = 1;
-let _burstBlend         = 0;
-let _motionSpeed        = 0;
-let _clusterActivation  = 1.0;  // smooth gate: 1 in Cluster/Burst, lerps to 0 in Metaball
-
-function _ss(e0, e1, x) {
-  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
-  return t * t * (3 - 2 * t);
-}
-
-function _updateVisualPhase() {
-  const target = getLogicalPhase();
-  const rate = target > VISUAL_PHASE_BURST_TARGET_THRESHOLD ? VISUAL_PHASE_RATE_BURST : VISUAL_PHASE_RATE_DEFAULT;
-  _visualPhase += (target - _visualPhase) * rate;
-}
-
-function _updateBlends() {
-  const v = _visualPhase;
-  // Soft gate: decays at CLUSTER_GATE_RATE/frame → near-zero within ~27 frames of entering
-  // Metaball, before visualPhase descends from burst levels into the cluster smoothstep zone (v ≈ 1.0).
-  const gateTarget = getLogicalPhase() >= CLUSTER_GATE_PHASE_THRESHOLD ? 1.0 : 0.0;
-  _clusterActivation += (gateTarget - _clusterActivation) * CLUSTER_GATE_RATE;
-  _clusterBlend  = _ss(CLUSTER_BLEND_START, CLUSTER_BLEND_END, v) * (1 - _ss(BURST_BLEND_START, BURST_BLEND_END, v)) * _clusterActivation;
-  _burstBlend    = _ss(BURST_BLEND_START, BURST_BLEND_END, v);
-  _metaballBlend = Math.max(0, 1 - _clusterBlend - _burstBlend);
-}
-
-export function getVisualPhase()   { return _visualPhase; }
-export function getMetaballBlend() { return _metaballBlend; }
-export function getMotionSpeed()   { return _motionSpeed; }
-export function getClusterBlend()  { return _clusterBlend; }
-export function getBurstBlend()    { return _burstBlend; }
 
 const _listeners = [];
-let   _prevSlot  = 0;
-
-function _checkSlot(logicalPhase) {
-  const slot = Math.ceil(logicalPhase);
-  if (slot !== _prevSlot) {
-    _prevSlot = slot;
-    _listeners.forEach(fn => fn(logicalPhase));
-  }
-}
 
 export function onPhaseTransition(fn) {
   _listeners.push(fn);
 }
 
-export function tick() {
-  _t += FRAME_TIME_STEP;
-  _stateFrames++;
-  if (_cooldownFrames > 0) _cooldownFrames--;
+function _fireTransition() {
+  _listeners.forEach(fn => fn());
+}
 
-  if (_state === S_BURST) {
-    if (_stateFrames >= _burstDuration) {
-      _cooldownFrames = CLUSTER_COOLDOWN_FRAMES;
-      _enterState(S_METABALL);
+// Schedules bump activations from the current regime. This is the ONLY function in this
+// file that reads or writes _state -- everything downstream only ever sees _bumps.
+//
+// Each regime activates the next the INSTANT its own hold ends, never after an extra
+// "let it decay first" delay -- otherwise the incoming bump only competes against an
+// already-decayed outgoing one and the crossfade collapses into a snap rather than a blend.
+function _scheduleTick(t_now, motionDetected) {
+  if (_state === S_CLUSTER) {
+    if (motionDetected && (t_now - _lastBurstTrigger) > CLUSTER_COOLDOWN) {
+      _burstActivationStart = t_now;
+      _lastBurstTrigger = t_now;
+      _activate(_bumps.burst, t_now);
+      _state = S_BURST;
+      _fireTransition();
+    }
+  } else if (_state === S_BURST) {
+    if (t_now <= _burstActivationStart + BURST_HOLD) {
+      _bumps.burst.mu = Math.max(_bumps.burst.mu, t_now);
+    } // else: frozen, decay begins
+    if (t_now > _burstActivationStart + BURST_HOLD) {
+      _metaballActivationStart = t_now;
+      _activate(_bumps.metaball, t_now, METABALL_HANDOFF_LEAD);
+      _state = S_METABALL;
+      _fireTransition();
     }
   } else if (_state === S_METABALL) {
-    if (_motionThisFrame) {
-      _noMotionFrames = 0;
-    } else {
-      _noMotionFrames++;
-    }
-    if (_stateFrames >= METABALL_MIN_FRAMES && _noMotionFrames >= METABALL_NO_MOTION_FRAMES) {
-      _enterState(S_CLUSTER);
+    if (t_now <= _metaballActivationStart + METABALL_MIN_HOLD || motionDetected) {
+      _bumps.metaball.mu = Math.max(_bumps.metaball.mu, t_now);
+    } // else: frozen -- _bumps.metaball.mu now doubles as "time silence began"
+    const silenceDuration = t_now - _bumps.metaball.mu;
+    if (t_now > _metaballActivationStart + METABALL_MIN_HOLD && silenceDuration > METABALL_SILENCE_HOLD) {
+      _activate(_bumps.cluster, t_now);
+      _state = S_CLUSTER;
+      _fireTransition();
     }
   }
 
+  if (_state === S_CLUSTER) {
+    _bumps.cluster.mu = Math.max(_bumps.cluster.mu, t_now);
+  }
+}
+
+// Pure: takes only (t_now, bumps) -- _state is not a parameter and is therefore
+// structurally unreachable here. No consumer of getWeights() can ever see regime identity.
+function _evaluateWeights(t_now, bumps) {
+  const EPS = 1e-6;
+  const raw = {};
+  for (const key of ['cluster', 'metaball', 'burst']) {
+    const b = bumps[key];
+    raw[key] = b.activated ? Math.exp(-((t_now - b.mu) ** 2) / (2 * b.sigma * b.sigma)) : 0;
+  }
+  const sum = raw.cluster + raw.metaball + raw.burst + EPS;
+  return {
+    clusterWeight:  raw.cluster  / sum,
+    metaballWeight: raw.metaball / sum,
+    burstWeight:    raw.burst    / sum,
+  };
+}
+
+let _weights = { clusterWeight: 1, metaballWeight: 0, burstWeight: 0 };
+
+export function tick(t_now) {
+  const motionDetected = _motionThisFrame;
+  _scheduleTick(t_now, motionDetected);
+  _weights = _evaluateWeights(t_now, _bumps);
+
   if (!_motionThisFrame) _motionSpeed *= MOTION_SPEED_DECAY;
   _motionThisFrame = false;
-  _updateVisualPhase();
-  _updateBlends();
-  _checkSlot(getLogicalPhase());
+
+  _t += FRAME_TIME_STEP;
 }
+
+export function getWeights() { return _weights; }
+
+export function getMotionSpeed() { return _motionSpeed; }
+
+let _t = 0;
+export function getTime() { return _t; }

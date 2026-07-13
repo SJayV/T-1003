@@ -8,23 +8,18 @@ GLSL-Module sind Chunks (Template-Literal-Interpolation in JS), keine eigenstän
 ## JavaScript-Module
 
 ### `src/phase.js`
-Input-gesteuerter FSM (Cluster → Burst → Metaball → Cluster). Einzige autoritative Quelle für Phasenwerte und Blend-Gewichte.
+Kontinuierliches Gauß-Gewichtssystem. Einzige autoritative Quelle für Phasengewichte. Intern führt ein diskreter Zeiger `_state` (`S_CLUSTER`/`S_BURST`/`S_METABALL`) Buch — gelesen/geschrieben ausschließlich innerhalb der privaten `_scheduleTick`, nirgends exponiert.
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
-| `tick()` | — | — | `void` | — |
-| `getTime()` | — | — | `float` | [0, ∞) monoton — für Shader-Animationen |
-| `getLogicalPhase()` | — | — | `float` | 0.0=Metaball, 1.0=Cluster, 1.0+s=Burst |
-| `getVisualPhase()` | — | — | `float` | [0, 1.5] exp. Lerp zu `getLogicalPhase()`; Burst schneller als andere Übergänge |
-| `getMetaballBlend()` | — | — | `float` | [0,1] Blend-Gewicht Metaball |
-| `getClusterBlend()` | — | — | `float` | [0,1] Blend-Gewicht Cluster |
-| `getBurstBlend()` | — | — | `float` | [0,1] Blend-Gewicht Burst |
-| `getMotionSpeed()` | — | — | `float` | [0,1] Aktuell erkannte Bewegungsgeschwindigkeit; exponentiell abklingend ohne Bewegung |
-| `reportMotion(speed)` | `speed: float ∈ [0,1]` | Von `input.js`: löst Cluster→Burst aus (wenn Cooldown ≤ 0); in Metaball: setzt no-motion-Timer zurück; setzt intern `_motionSpeed = speed` | `void` | — |
-| `onPhaseTransition(fn)` | `fn: (logicalPhase: float) → void` | Feuert bei `Math.ceil(logicalPhase)` Wechsel | `void` | — |
+| `tick(t_now)` | `t_now: float` (Sekunden, z. B. `performance.now()/1000`) | Aktualisiert Bumps + Gewichte, feuert ggf. `onPhaseTransition`, dekrementiert `_motionSpeed` | `void` | — |
+| `getTime()` | — | — | `float` | [0, ∞) monoton, frame-getaktet — für Shader-Animationen; unabhängig von `t_now` |
+| `getWeights()` | — | — | `{ clusterWeight, metaballWeight, burstWeight }` | je [0,1], Summe = 1 — einziger Phasenidentitäts-Output |
+| `getMotionSpeed()` | — | — | `float` | [0,1] Aktuell erkannte Bewegungsgeschwindigkeit; exponentiell abklingend (×0.97/Tick) ohne Bewegung |
+| `reportMotion(speed)` | `speed: float ∈ [0,1]` | Von `input.js`: setzt intern `_motionThisFrame = true`, `_motionSpeed = speed` — von `tick()` ausgelesen und zurückgesetzt | `void` | — |
+| `onPhaseTransition(fn)` | `fn: () → void` | Feuert bei jedem Regime-Wechsel, ohne Argumente (kein Regime-Leck nach außen) | `void` | — |
 
-`tick()` einmal pro Frame: zählt State-Timer, führt FSM-Übergänge aus, aktualisiert `visualPhase`, Blend-Gewichte und gibt `_motionSpeed` exponentiellen Decay (ohne Bewegung).
-`reportMotion` setzt intern `_motionThisFrame = true` und `_motionSpeed = speed` — wird von `tick()` ausgelesen und zurückgesetzt.
+Bump-Konstanten (`LEAD`, `CLUSTER_SIGMA`/`METABALL_SIGMA`/`BURST_SIGMA`, `BURST_HOLD_MIN`/`MAX`, `METABALL_MIN_HOLD`/`SILENCE_HOLD`, `METABALL_HANDOFF_LEAD`, `CLUSTER_COOLDOWN`) stehen am Kopf der Datei, erklärt — siehe `requirements.md` → Phasensystem für die Bump-Mathematik und die Handoff-Mechanik (Burst→Metaball aktiviert mit kleinerem Lead als sonst, für mehr Überlappung ohne Bursts Haltedauer zu verändern).
 
 ---
 
@@ -34,7 +29,7 @@ GPU-Physiksimulation. Verwaltet 1D-Zustandstextur (RGBA32F, 36×1) und Ping-Pong
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
 | `initSimulation(renderer)` | `renderer: WebGLRenderer` | Wird intern für Sim-Pass-Render-Calls gespeichert | `void` | — |
-| `stepSimulation()` | — | Liest `logicalPhase`, `visualPhase`, `time`, `motionSpeed` direkt aus `phase.js`; steuert Physik-Blend und Burst-Intensität im Sim-Shader | `void` | — |
+| `stepSimulation()` | — | Liest `getWeights()`, `time`, `motionSpeed` direkt aus `phase.js`; setzt `clusterBlend`/`metaballBlend`/`burstBlend` (identisch zu den Shading-Uniforms) und `motionSpeed` auf dem Sim-Material | `void` | — |
 | `getUniformDefs()` | — | — | `{ stateTex: { value } }` | Uniform-Objekt für ShaderMaterial |
 | `applyStateToMaterial(material)` | `material: ShaderMaterial` | Setzt `stateTex` auf aktuelle Lesertextur | `void` | — |
 
@@ -43,15 +38,13 @@ Aufrufsequenz pro Frame: `stepSimulation` → `applyStateToMaterial` → Haupt-R
 ---
 
 ### `src/environment.js`
-Dynamische Equirectangular-Env-Map-Generierung aus synthetischem Shader (`environmentShader.js`), direkt als `envMap` gesampelt (keine PMREM-Prefilterung). Regeneriert alle 4 Frames und bei Phasenübergängen via `onPhaseTransition`.
+Dynamische Equirectangular-Env-Map-Generierung aus synthetischem Shader (`environmentShader.js`), direkt als `envMap` gesampelt (keine PMREM-Prefilterung). Regeneriert jeden Frame, ungedrosselt.
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
 | `initEnvMap(renderer)` | `renderer: WebGLRenderer` | Renderer für Equirectangular-Pass | `void` | — |
 | `getUniformDefs()` | — | — | `{ envMap: { value } }` | Einzelne Env-Map-Uniform |
-| `setEnvPreset(n)` | `n: int ∈ {0,2,3,4}` | 0=auto (phasengesteuert), 2=Metaball, 3=Cluster, 4=Burst; erzwingt Regenerierung | `void` | — |
-| `getEnvPreset()` | — | Aktuell gewählter Preset; von `main.js` gelesen, um die Shading-Blend-Uniforms des Haupt-Materials auf den Preset zu erzwingen (siehe `requirements.md` → Environment) | `int` | ∈ {0,2,3,4} |
-| `applyStateToMaterial(material)` | `material: ShaderMaterial` | Liest Blend-Gewichte und Zeit direkt aus `phase.js`; regeneriert periodisch + bei `onPhaseTransition` | `void` | — |
+| `applyStateToMaterial(material)` | `material: ShaderMaterial` | Liest `getWeights()` + Zeit direkt aus `phase.js`, setzt sie unverändert als Blend-Uniforms; regeneriert jeden Frame | `void` | — |
 
 ---
 
@@ -67,7 +60,7 @@ Stationäre Beobachter-Kamera (stub). Gibt Startposition vor; `updateCamera` und
 ---
 
 ### `src/input.js`
-Systemkamera → Bewegungserkennung → FSM + Kamera.
+Systemkamera → Bewegungserkennung → `phase.js` + Kamera.
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
@@ -98,26 +91,17 @@ Registriert sich bei `onPhaseTransition` für Klangwechsel an Schwellenwerten.
 
 ---
 
-### `src/ui.js`
-DOM-Event-Wiring für die Env-Preset-Buttons (`#env-ui` in `index.html`). Ruft `environment.setEnvPreset` direkt auf — keine Vermittlung durch `main.js`, analog zum `input.js` → `phase.js`-Muster.
-
-| Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
-|---|---|---|---|---|
-| `initUI()` | — | Bindet Click-Handler an alle `#env-ui button`-Elemente; togglet `.active`-Klasse und ruft `setEnvPreset(Number(btn.dataset.preset))` | `void` | — |
-
----
-
 ### `src/constants.js`
 Einzige Quelle für Konstanten, die in mehr als einer Datei benötigt werden — entweder zwei JS-Modulen, oder einem JS-Modul und einem GLSL-Chunk/Shader, der den Wert per Template-Interpolation in seinen Quelltext einsetzt (z. B. `` const int BALL_COUNT = ${BALL_COUNT}; ``). Konstanten, die nur an einer Stelle vorkommen, bleiben lokal in der jeweiligen Datei.
 
 | Export | Typ | Verwendet von |
 |---|---|---|
 | `balls` | `Array<{r0,orbitRadius,orbitSpeed,orbitInclination}>` (length 12) | `simulation.js` (`buildInitData`), `tests/balls.test.js`; `r0 ∈ (0,∞)` Basisradius; Startwinkel wird per `Math.random()*2π` in `buildInitData` gesetzt |
-| `BALL_COUNT` | `int` | `simulation.js`, `simulationChunk.js` |
+| `BALL_COUNT` | `int` | `simulation.js`, `positionChunk.js` |
 | `STATE_TEX_W` | `int` (= `BALL_COUNT * 3`) | `simulation.js`, `simulationShader.js` (`TEX_W`), `raymarchShader.js` (`loadBalls`) |
-| `ORBIT_Z_SQUASH` | `float` | `simulation.js` (`buildInitData`), `simulationChunk.js` (`orbitPoint`/`_orbitBasisE2`) |
-| `FRAME_TIME_STEP` | `float` | `phase.js` (`tick`), `simulation.js` (`buildInitData`), `simulationChunk.js` (`applySimulation`) |
-| `CLUSTER_BLEND_START`, `CLUSTER_BLEND_END`, `BURST_BLEND_START`, `BURST_BLEND_END` | `float` | `phase.js` (Shading-Blend), `simulationChunk.js` (Physik-Blend) — müssen identisch sein, damit beide Blends im Gleichschritt laufen |
+| `ORBIT_Z_SQUASH` | `float` | `simulation.js` (`buildInitData`), `positionChunk.js` (`orbitPoint`/`_orbitBasisE2`) |
+| `FRAME_TIME_STEP` | `float` | `phase.js` (`getTime`-Uhr, unabhängig von `tick(t_now)`), `simulation.js` (`buildInitData`), `positionChunk.js` (`applySimulation`) |
+| `CLUSTER_CYL_RADIUS`, `CLUSTER_CYL_HALF_HEIGHT` | `float` | `shapeChunk.js` (`clusterSDF`), `positionChunk.js` (`_clusterTarget`) — Shape und das Konvergenzziel der Bälle müssen identisch sein |
 | `glslFloat(n)` | `(number) => string` | Jede Stelle, die einen JS-Zahlenwert in einen GLSL-`float`-Kontext interpoliert. JS stringifiziert ganze Zahlen ohne Dezimalpunkt (`String(1.0) === '1'`), aber GLSL ES 1.00 verlangt einen Dezimalpunkt bei `float`-Literalen — `const float x = 1;` ist auf strikten Validatoren (z. B. ANGLE unter Windows) ein Typfehler und lässt das Shader-Programm nicht linken. Immer verwenden, nie den nackten JS-Wert interpolieren |
 
 ---
@@ -173,9 +157,8 @@ float d = dualOctaveNoise(p.xz * 1.8 + time * 0.02, 0.28, p.xy * 3.1 + time * 0.
 
 ---
 
-### `shaderChunks/moodChunk.js`
-Zentraler Stimmungs-Provider: Farbpalette und Phasengewichte. Von `raymarchChunk` und `environmentShader` gemeinsam genutzt — stellt sicher, dass Shading und Umgebung dieselben Übergänge und Farben verwenden.
-Deklariert eigene Uniforms — keine Voraussetzungen an den umschließenden Shader.
+### `shaderChunks/colorChunk.js`
+Alles, was aus den drei Phasengewichten eine Farbe macht — Ball-Oberflächenfarbe (`moodColor()`, von `surfaceChunk.js` konsumiert) und Himmelsfarbe (`blendEnvironment()`, von `environmentShader.js` konsumiert) sind dieselbe Art Berechnung, nur für unterschiedliche Fragmente. Deklariert eigene Uniforms (`metaballBlend`/`clusterBlend`/`burstBlend`). Voraussetzung: `worley2D`, `dualOctaveNoise` (`noiseChunk`) in Scope. **Kein** `envMap`-Sampling hier (siehe `surfaceChunk.js`) — dieser Chunk wird auch in `environmentShader.js` injiziert, das keine `envMap`-Uniform besitzt.
 
 | GLSL-Export | Typ | Semantik |
 |---|---|---|
@@ -183,14 +166,32 @@ Deklariert eigene Uniforms — keine Voraussetzungen an den umschließenden Shad
 | `MOOD_CLUSTER` | `const vec3` | Teal-Cyan |
 | `MOOD_BURST` | `const vec3` | Kräftiges Orange-Rot; dient auch als F0-Tint für `shadeBurst` |
 | `MOOD_METABALL_METAL` | `const vec3` | F0-Tint für `shadeMetaball`; Platzhalter-Grau, zur individuellen Abstimmung vorgesehen |
-| `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`; immer Summe = 1; `clusterBlend` zusätzlich durch `_clusterActivation` (Exp.-Gate) gedämpft — verhindert teal-Flash beim Burst→Metaball-Übergang |
-| `moodColor() → vec3` | `∈ [0,1]³` | Gewichteter Mix der drei Phasenfarben |
+| `metaballBlend, clusterBlend, burstBlend` | `uniform float` | Phasengewichte aus `phase.js`; immer Summe = 1 |
+| `moodColor() → vec3` | `∈ [0,1]³` | Gewichteter Mix der drei Phasenfarben — Ball-Oberflächentönung |
+| `envMetaball`/`envCluster`/`envBurst(dir, ...)` | `vec3` | Himmelsfarbe je Phase; Metaball/Burst teilen sich `_envKeyLight` (Worley-Speckle + rotierendes Key-Light), unterschieden nur durch Tint |
+| `blendEnvironment(uv) → vec3` | HDR | Nimmt die rohe Equirect-UV entgegen, berechnet Richtung/Sky-Rotation intern (`_uvToDir`) und liefert den immer-an 3-Wege-Blend der Himmelsfarben + Ambient-Noise; kein `envSelect`-Zweig — Presets wirken über erzwungene Blend-Uniforms (siehe `environment.js`); `environmentShader.js`s `main()` reduziert sich dadurch auf `uv` berechnen + diesen einen Aufruf |
 
 ---
 
-### `shaderChunks/raymarchChunk.js`
-Shading-Modell (Nachimplementierung von `MeshPhysicalMaterial` für Raymarching). Nur von `raymarchShader.js` verwendet.
-Voraussetzung: Uniforms `envMap` (sampler2D), `time` (float) deklariert; `map(vec3)`, `perlin2D`, `moodChunk` (und damit `clusterBlend`, `MOOD_*`, `moodColor()`) in Scope.
+### `shaderChunks/shapeChunk.js`
+SDF-Komposition **und** deren Auswertung (Normale, Raymarch-Loop) — nicht nur `map()`, damit `raymarchShader.js` selbst auf reine Plumbing/Kamera-Logik reduziert bleibt. Nur von `raymarchShader.js` verwendet. Voraussetzung: Globals `gC0..gC11`/`gRad0..gRad11` (von `loadBalls()` in `raymarchShader.js` befüllt — `gRad_i` ist der bereits in `positionChunk.js` modulierte Radius, direkt aus der Zustandstextur gelesen, hier nicht neu berechnet); Uniforms `time`, `clusterBlend`/`metaballBlend`/`burstBlend` (`colorChunk`); `perlin3D` (`noiseChunk`).
+
+| GLSL-Funktion | Input | Semantik | Output |
+|---|---|---|---|
+| `map(p)` | `p: vec3` | `clusterBlend·clusterSDF(p) + metaballBlend·metaballSDF(p) + burstBlend·burstSDF(p)` — zeitliche Überblendung, keine räumliche Vereinigung (siehe `requirements.md` → SDF-Komposition über Phasen) | `float` |
+| `clusterSDF(p)` | `p: vec3` | Analytischer Zylinder (`sdCappedCylinder`, keine Kappenrundung -- die Kappen liegen ohnehin außerhalb des sichtbaren Bilds); kein Rauschen, keine Balldaten | `float` |
+| `metaballSDF(p)` | `p: vec3` | `_ballUnion` (smin über 12 Bälle, `SMIN_K=0.35`) + eigenes `perlin3D`-Oberflächenrauschen | `float` |
+| `burstSDF(p)` | `p: vec3` | Wie `metaballSDF`, aber `SMIN_K=0.10` (enger fusioniert → liest sich "explodiert") | `float` |
+| `normal(p)` | `p: vec3` | Zentrale finite Differenzen auf `map()` | `vec3` |
+| `raymarch(ro, rd)` | `ro,rd: vec3` | Sphere-Tracing über `map()`; `stepSafety`-Faktor (aus `clusterBlend·(metaballBlend+burstBlend)`) dämpft die Schrittweite während einer echten Cross-Phase-Überblendung, kostet in eingeschwungenen Zuständen aber nichts | `float` (Distanz, `-1.0` bei Miss) |
+
+`radiusMod`/`loadRadii` leben **nicht** hier — die rauschmodulierten Radien werden im Sim-Pass berechnet und über die Zustandstextur transportiert (siehe `positionChunk.js` und die Uniform-Tabelle unter `raymarchShader.js`).
+
+---
+
+### `shaderChunks/surfaceChunk.js`
+Material-/Lichtantwort (Nachimplementierung von `MeshPhysicalMaterial` für Raymarching) — wie sich Metall/Glas unter Licht + Env-Map verhalten, nicht *welche* Farbe/Form etwas hat (siehe `colorChunk.js`/`shapeChunk.js`). Nur von `raymarchShader.js` verwendet.
+Voraussetzung: Uniform `envMap` (sampler2D); `map(vec3)` (`shapeChunk`) und `moodColor`/`MOOD_*`/`clusterBlend`|`metaballBlend`|`burstBlend` (`colorChunk`) in Scope.
 
 Benennung nach **Phase**: `shadeMetaball`/`shadeCluster`/`shadeBurst` sind austauschbare Implementierungen, je eine pro Phase; `shadeHit` mischt alle drei gewichtet nach `metaballBlend`/`clusterBlend`/`burstBlend` (immer 3-Wege, keine Early-Outs). Metaball und Burst teilen sich die interne `_shadeReflective`-Implementierung (Cook-Torrance + Env-Map-Sampling) und unterscheiden sich nur in Tint und Rauheit; Cluster trägt das stärkste Rim-Light, Metaball/Burst ein deutlich schwächeres (beide über `_rimLight()`, gefärbt nach `moodColor()`).
 
@@ -205,72 +206,61 @@ Interner Helfer `_shadeReflective(n, rd, NdotV, roughness, tint)`: Cook-Torrance
 
 ---
 
-### `shaderChunks/simulationChunk.js`
-Unified Physik-Blend. Alle drei Phasenmodi werden kontinuierlich per `visualPhase` gemischt — kein harter Umschalter. Eine `_simulate<Phase>`-Funktion pro Regime, benannt konsistent mit `shade<Phase>` in `raymarchChunk.js`; jede wendet ihr `weight` selbst an, sodass eine Verhaltensänderung (z. B. Clusters Zielform) nur die jeweilige Funktion betrifft. `applySimulation` komponiert sie nur noch. Tunable Kräfte/Decay-Raten sind file-level `const float` (SCREAMING_SNAKE_CASE), geteilt von allen Phasenfunktionen.
-Voraussetzung: Uniforms `stateTex`, `time`, `logicalPhase`, `visualPhase`, `motionSpeed` deklariert; `stateUV(int)` und `perlin2D` definiert.
+### `shaderChunks/positionChunk.js`
+Physik-Blend. Alle drei Phasenmodi werden kontinuierlich per `clusterBlend`/`metaballBlend`/`burstBlend` gemischt — kein harter Umschalter. Eine `_simulate<Phase>`-Funktion pro Regime, benannt konsistent mit `shade<Phase>` in `surfaceChunk.js` und `<phase>SDF` in `shapeChunk.js`; jede gibt ihren **rohen, ungewichteten** Beitrag zurück, `applySimulation` gewichtet und summiert zentral — dasselbe Muster wie `map()`/`shadeHit()` (bis vor kurzem wendete jede Funktion ihr Gewicht noch selbst an; jetzt konsistent über alle drei Achsen). Tunable Kräfte/Decay-Raten sind file-level `const float` (SCREAMING_SNAKE_CASE), geteilt von allen Phasenfunktionen. `radiusMod(c, r0)` lebt ebenfalls hier (nicht in `shapeChunk.js`) — läuft einmal pro Ball im Sim-Pass, Ergebnis wird in die Zustandstextur geschrieben statt pro Bildschirmpixel im Raymarch-Pass neu berechnet zu werden.
+Voraussetzung: Uniforms `stateTex`, `time`, `clusterBlend`/`metaballBlend`/`burstBlend`, `motionSpeed` deklariert; `stateUV(int)` und `perlin2D`/`dualOctaveNoise` (`noiseChunk`) definiert.
 
 | GLSL-Funktion | Input / Output | Semantik |
 |---|---|---|
 | `orbitPoint(orb, phi)` | `orb: vec4`, `phi: float` → `vec3` | 3D-Punkt auf Orbit-Ellipse bei Winkel phi |
 | `reflectBounds(inout pos, inout vel)` | `pos,vel: vec3` | Reflektiert pos/vel an Sichtbarkeitsgrenzen; verhindert, dass Balls bei Burst dauerhaft aus dem Bild fliegen |
-| `applySimulation(inout pos, inout vel, orb)` | `pos,vel: vec3`, `orb: vec4` | Leitet `metaballBlend`/`clusterBlend`/`burstBlend` aus `visualPhase` ab (lokale Variablen, benannt wie die gleichnamigen Shading-Uniforms); ruft `_simulateCluster`/`_simulateBurst` (lesen die Frame-Start-Position) dann `_simulateMetaball` (mutiert `pos`) auf; hält die immer-aktive Ursprungsanziehung `ORIGIN_PULL` (nicht phasengewichtet); ruft `reflectBounds` am Ende auf |
+| `radiusMod(c, r0)` | `c: vec3`, `r0: float` → `float` | Rauschmodulierter Radius; im Sim-Pass einmal pro Ball aufgerufen und ins Vel-Texel (`.w`) geschrieben (siehe `simulationShader.js`) |
+| `applySimulation(inout pos, inout vel, orb, ballIdx)` | `pos,vel: vec3`, `orb: vec4`, `ballIdx: int` | Zentripetalkraft + Ursprungsanziehung immer aktiv (nicht phasengewichtet); `_simulateCluster`/`_simulateBurst`/`_simulateMetaball` lesen alle dieselbe Frame-Start-Position und geben je einen rohen Delta zurück, hier gewichtet+summiert; ruft `reflectBounds` am Ende auf |
 
-Interne Phasenfunktionen: `_simulateMetaball(inout pos, orb, weight)` — mutiert `pos` direkt, gewichtet mit `weight` (metaballBlend); die radiale Annäherung an den nächsten Orbit-Punkt läuft über `ORBIT_SNAP_RATE`, empirisch so hoch wie möglich gewählt, ohne dass `_nearestOrbitPhi`s Näherungsfehler mit der Korrektur resoniert und den Ball dauerhaft festhält (verifiziert über alle 12 Bälle). `_simulateCluster(inout vel, pos, target, weight)` — Zug auf `target` (ungewichtet, bleibt während Metaball aktiv als Priming) + organisches Rauschen (gewichtet mit `weight`); `target` ist heute der Centroid — ein alternatives Zielform-Regime, z. B. eine Linie, würde denselben Helfer mit einem anderen `target` aufrufen, siehe `requirements.md` → Zielform/Linie in Cluster. `_simulateBurst(inout vel, pos, cen, weight)` — exponentiell abklingende Abstoßung vom Centroid, gewichtet mit `weight`.
-
-**Blend-Architektur (Simulation vs. Shading):**
-
-| | Shading (`phase.js` → Uniforms) | Simulation (`simulationChunk.js`) |
-|---|---|---|
-| Quelle | JS, einmal/Frame | GLSL, inline |
-| Smoothstep-Bereiche | identisch | identisch |
-| Gate | `× _clusterActivation` (JS, Exp.-Lerp) | keiner — gewollt für burst→metaball-Übergang |
-| Consumer | `moodChunk`, `environmentShader`, `raymarchShader` | `applySimulation` |
+Interne Phasenfunktionen (alle rein — lesen `pos`/`cen`/`orb`, mutieren nichts, geben den rohen Delta zurück): `_simulateMetaball(pos, orb) → vec3` — radiale Annäherung an den nächsten Orbit-Punkt über `ORBIT_SNAP_RATE`, empirisch so hoch wie möglich gewählt, ohne dass `_nearestOrbitPhi`s Näherungsfehler mit der Korrektur resoniert und den Ball dauerhaft festhält (verifiziert über alle 12 Bälle). `_simulateCluster(pos) → vec3` — nur das organische Rauschen; der Zug auf `_clusterTarget(ballIdx)` (Helix um den Cluster-Zylinder, siehe `requirements.md` → Phasensystem → Cluster) ist ungewichtet und läuft direkt in `applySimulation`. `_simulateBurst(pos, cen) → vec3` — exponentiell abklingende Abstoßung vom Centroid, Kraftstärke aus live gelesenem `motionSpeed`.
 
 ---
 
 ## Shader-Module (`shaders/`)
 
 ### `shaders/simulationShader.js`
-Sim-Pass-Shader. Intern von `simulation.js` verwendet. Interpoliert `simulationChunk`. Exportiert: `simulationVert`, `simulationFrag`.
+Sim-Pass-Shader. Intern von `simulation.js` verwendet. Interpoliert `positionChunk`. Exportiert: `simulationVert`, `simulationFrag`.
 
 | GLSL-Uniform | Typ | Bereich / Semantik |
 |---|---|---|
 | `stateTex` | `sampler2D` | RGBA32F 36×1 Eingangszustand |
-| `logicalPhase` | `float` | [0, 2] `getLogicalPhase()` — nur noch für Burst-Intensität (`logicalPhase − 1.0`) |
-| `visualPhase` | `float` | [0, 1.5] `getVisualPhase()` — steuert metaballBlend/clusterBlend/burstBlend Physik-Blend |
+| `clusterBlend, metaballBlend, burstBlend` | `float` | Aus `getWeights()`, identisch zu den Shading-Uniforms des Haupt-Materials |
 | `time` | `float` | [0, ∞) für Orbit- und Noise-Animationen |
-| `motionSpeed` | `float` | [0, 1] `getMotionSpeed()` — skaliert Orbit-Winkelgeschwindigkeit |
+| `motionSpeed` | `float` | [0, 1] `getMotionSpeed()` — skaliert Orbit-Winkelgeschwindigkeit und (live) Bursts Abstoßungsstärke |
 
 ---
 
 ### `shaders/environmentShader.js`
-Equirectangular-Umgebungsgenerator. Intern von `environment.js` verwendet. Interpoliert `noiseChunk` + `moodChunk`. Exportiert: `environmentVert`, `environmentFrag`.
+Equirectangular-Umgebungsgenerator. Intern von `environment.js` verwendet. Interpoliert `noiseChunk` + `colorChunk`. Exportiert: `environmentVert`, `environmentFrag`.
 
 | GLSL-Uniform | Typ | Bereich / Semantik |
 |---|---|---|
 | `time` | `float` | [0, ∞) Animation (Noise-Drift, Rotation) |
 | `resolution` | `vec2` | Rendertarget-Größe |
-| `envSelect` | `float` | 0=auto, 1=unbenutzt, 2=Metaball, 3=Cluster, 4=Burst — via `setEnvPreset()` |
-| `metaballBlend, clusterBlend, burstBlend` | `float` | Via `moodChunk`; steuern Farbtemperatur, Direktivität, Kontrast |
+| `metaballBlend, clusterBlend, burstBlend` | `float` | Via `colorChunk`, direkt aus `getWeights()` — steuern Farbtemperatur, Direktivität, Kontrast |
 
-`envMetaball(dir, rDir, cosR, sinR)` und `envBurst(dir, rDir, cosR, sinR)` teilen sich den internen Generator `_envKeyLight(dir, rDir, cosR, sinR, tint)` (Worley-Speckle + rotierendes Key-Light) und unterscheiden sich nur im Tint (`MOOD_METABALL_METAL` grau vs. `MOOD_BURST` orange) — Metaballs Environment liest sich damit als kühlere Variante von Bursts, nicht als eigenständige Technik. `envCluster(dir)` bleibt unabhängig (weicher Top-Glow).
+Eigener Code in dieser Datei: nur `main()` (`uv = gl_FragCoord.xy/resolution`, dann `blendEnvironment(uv)` aus `colorChunk`) — kein `uvToDir` mehr hier, das lebt jetzt in `colorChunk.js` neben `blendEnvironment`. Kein `envSelect`, kein Preset-Zweig.
 
 Output: HDR RGB-Farbe der Himmelskugel an der UV-Position (Equirectangular-Mapping).
 
 ---
 
 ### `shaders/raymarchShader.js`
-Haupt-Render-Pass. Interpoliert `noiseChunk` + `moodChunk` + `raymarchChunk`. Exportiert: `mainVert`, `mainFrag`.
+Haupt-Render-Pass. Interpoliert `noiseChunk` + `colorChunk` + `shapeChunk` + `surfaceChunk`, in dieser Reihenfolge (Farbe/Form vor der Oberflächenfunktion, die beide braucht). Exportiert: `mainVert`, `mainFrag`.
 
 | GLSL-Uniform | Typ | Bereich / Semantik |
 |---|---|---|
-| `stateTex` | `sampler2D` | Ball-Zustandstextur |
-| `envMap` | `sampler2D` | Equirectangular Env-Map (direkt gesampelt, keine PMREM-Textur) |
-| `visualPhase` | `float` | [0, 1.5] `getVisualPhase()` — Radius-Modulation |
-| `metaballBlend, clusterBlend, burstBlend` | `float` | Via `moodChunk`; steuern Shading-Blend und smin-k |
+| `stateTex` | `sampler2D` | Ball-Zustandstextur — `gRad_i` wird direkt aus dem Vel-Texel `.w` gelesen, nicht mehr per `radiusMod` in diesem Pass berechnet |
+| `envMap` | `sampler2D` | Equirectangular Env-Map (direkt gesampelt, keine PMREM-Textur) — nur von `surfaceChunk` gelesen |
+| `metaballBlend, clusterBlend, burstBlend` | `float` | Via `colorChunk`; steuern SDF-Komposition (`shapeChunk`) und Shading-Blend (`surfaceChunk`) |
 | `time`, `camPos`, `resolution` | — | Globale Szenenparameter |
 
-`main()`: `loadBalls()` → `raymarch()` → `shadeHit()`. Ball-Daten werden einmalig aus `stateTex` geladen; kein Texture-Read in Raymarch- oder Normal-Schleife.
+Eigener Code in dieser Datei: nur noch die Ball-Daten-Globals (`gC0..gC11`/`gRad0..gRad11`) + `loadBalls()` (Rohdaten-Plumbing, analog zu `readPos`/`readVel`/`readOrb` in `simulationShader.js` — zwei `texture2D`-Reads pro Ball: Position aus Texel `3i`, `gRad_i` aus Texel `3i+1`s `.w`) und `main()`: `loadBalls()` → `raymarch()` → `shadeHit()`. `normal()`/`raymarch()`/`loadRadii()` leben nicht mehr hier, sondern in `shapeChunk.js` (siehe dort) — dieser Shader ist auf Uniform-Deklaration, Rohdaten-Laden und die eine `main()`-Komposition reduziert. Ball-Daten werden einmalig pro Fragment geladen; kein Texture-Read in Raymarch- oder Normal-Schleife.
 
 ---
 

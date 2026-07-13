@@ -1,12 +1,8 @@
 import * as THREE from 'three';
 import { simulationVert, simulationFrag } from '../shaders/simulationShader.js';
 import { makeGpuSetup } from './gpuSetup.js';
-import { getLogicalPhase, getVisualPhase, getTime, getMotionSpeed } from './phase.js';
-import { balls, STATE_TEX_W, ORBIT_Z_SQUASH, FRAME_TIME_STEP } from './constants.js';
-
-const INIT_ANGULAR_RATE_SCALE = 3.0;   // approximates initial angular velocity for the analytic starting vector only;
-                                        // smaller than the runtime ORBIT_OMEGA_SCALE (18.0) in simulationChunk.js since
-                                        // the sim immediately corrects toward the nearest orbit point regardless
+import { getWeights, getTime, getMotionSpeed } from './phase.js';
+import { balls, STATE_TEX_W } from './constants.js';
 
 let _renderer   = null;
 let _readTarget  = null;
@@ -37,19 +33,19 @@ function _buildInitData() {
     const phi0 = Math.random() * Math.PI * 2;
     const r    = b.orbitRadius;
     const iSin = b.orbitInclination;
-    const iCos = Math.sqrt(Math.max(0, 1 - iSin * iSin));
-    const dPhi = b.orbitSpeed * INIT_ANGULAR_RATE_SCALE * FRAME_TIME_STEP;
 
-    // texel 3i:   pos on orbit, r0
-    data[t + 0] = r * Math.cos(phi0);
+    // texel 3i: pos, r0. Program starts in Cluster, so balls start collapsed onto the cylinder
+    // axis (x=z=0) with only height (from each ball's own orbit inclination) differing --
+    // not spread across their eventual orbit, which they only move onto once Metaball begins.
+    data[t + 0] = 0;
     data[t + 1] = r * Math.sin(phi0) * iSin;
-    data[t + 2] = r * Math.sin(phi0) * iCos * ORBIT_Z_SQUASH;
+    data[t + 2] = 0;
     data[t + 3] = b.r0;
-    // texel 3i+1: analytic orbit derivative as initial vel
-    data[t + 4] = -r * Math.sin(phi0)        * dPhi;
-    data[t + 5] =  r * Math.cos(phi0) * iSin * dPhi;
-    data[t + 6] =  r * Math.cos(phi0) * iCos * ORBIT_Z_SQUASH * dPhi;
-    data[t + 7] = 0.0;
+    // texel 3i+1: initial vel -- zero, since the ball isn't starting on its orbit to derive one from
+    data[t + 4] = 0;
+    data[t + 5] = 0;
+    data[t + 6] = 0;
+    data[t + 7] = 0;
     // texel 3i+2: orbit params (r, speed, phi0, inclination)
     data[t + 8]  = b.orbitRadius;
     data[t + 9]  = b.orbitSpeed;
@@ -69,11 +65,12 @@ export function initSimulation(renderer) {
 
   _simMat = new THREE.ShaderMaterial({
     uniforms: {
-      stateTex:     { value: _initTex },
-      time:         { value: 0.0 },
-      logicalPhase: { value: 0.0 },
-      visualPhase:  { value: 1.0 },
-      motionSpeed:  { value: 0.0 },
+      stateTex:      { value: _initTex },
+      time:          { value: 0.0 },
+      clusterBlend:  { value: 1.0 },
+      metaballBlend: { value: 0.0 },
+      burstBlend:    { value: 0.0 },
+      motionSpeed:   { value: 0.0 },
     },
     vertexShader:   simulationVert,
     fragmentShader: simulationFrag,
@@ -85,11 +82,13 @@ export function initSimulation(renderer) {
 }
 
 export function stepSimulation() {
-  _simMat.uniforms.stateTex.value     = _firstFrame ? _initTex : _readTarget.texture;
-  _simMat.uniforms.logicalPhase.value = getLogicalPhase();
-  _simMat.uniforms.visualPhase.value  = getVisualPhase();
-  _simMat.uniforms.time.value         = getTime();
-  _simMat.uniforms.motionSpeed.value  = getMotionSpeed();
+  const { clusterWeight, metaballWeight, burstWeight } = getWeights();
+  _simMat.uniforms.stateTex.value      = _firstFrame ? _initTex : _readTarget.texture;
+  _simMat.uniforms.clusterBlend.value  = clusterWeight;
+  _simMat.uniforms.metaballBlend.value = metaballWeight;
+  _simMat.uniforms.burstBlend.value    = burstWeight;
+  _simMat.uniforms.time.value          = getTime();
+  _simMat.uniforms.motionSpeed.value   = getMotionSpeed();
 
   _renderer.setRenderTarget(_writeTarget);
   _renderer.render(_simScene, _simCamera);

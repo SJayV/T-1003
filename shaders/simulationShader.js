@@ -1,6 +1,6 @@
-import { vertexChunk     } from '../shaderChunks/vertexChunk.js';
-import { noiseChunk      } from '../shaderChunks/noiseChunk.js';
-import { simulationChunk } from '../shaderChunks/simulationChunk.js';
+import { vertexChunk   } from '../shaderChunks/vertexChunk.js';
+import { noiseChunk    } from '../shaderChunks/noiseChunk.js';
+import { positionChunk } from '../shaderChunks/positionChunk.js';
 import { STATE_TEX_W, glslFloat } from '../src/constants.js';
 
 export const simulationVert = vertexChunk;
@@ -11,8 +11,9 @@ precision highp sampler2D;
 
 uniform sampler2D stateTex;
 uniform float     time;
-uniform float     logicalPhase;
-uniform float     visualPhase;
+uniform float     clusterBlend;
+uniform float     metaballBlend;
+uniform float     burstBlend;
 uniform float     motionSpeed;
 
 const float TEX_W = ${glslFloat(STATE_TEX_W)};
@@ -25,7 +26,7 @@ vec3  readVel(int b) { return texture2D(stateTex, stateUV(b * 3 + 1)).xyz; }
 vec4  readOrb(int b) { return texture2D(stateTex, stateUV(b * 3 + 2));     }
 
 ${noiseChunk}
-${simulationChunk}
+${positionChunk}
 
 void main() {
   int texelIdx = int(gl_FragCoord.x);
@@ -39,9 +40,12 @@ void main() {
   float r0 = readR0(ballIdx);
   vec4 orb = readOrb(ballIdx);
 
-  applySimulation(pos, vel, orb);
+  applySimulation(pos, vel, orb, ballIdx);
 
-  if (subIdx == 0) { gl_FragColor = vec4(pos, r0);  }
-  else             { gl_FragColor = vec4(vel, 0.0); }
+  // vel's texel .w channel is otherwise unused -- stash the radius here so the raymarch
+  // pass can read it straight from the state texture instead of recomputing radiusMod()
+  // (2 noise samples) for every screen pixel, every frame.
+  if (subIdx == 0) { gl_FragColor = vec4(pos, r0); }
+  else             { gl_FragColor = vec4(vel, radiusMod(pos, r0)); }
 }
 `;

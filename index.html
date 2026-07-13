@@ -6,19 +6,6 @@
 <style>
   body { margin: 0; overflow: hidden; background: black; }
   canvas { display: block; }
-  #env-ui {
-    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 8px; font-family: monospace; font-size: 11px;
-  }
-  #env-ui button {
-    background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.5);
-    border: 1px solid rgba(255,255,255,0.15); padding: 5px 12px;
-    cursor: pointer; letter-spacing: 0.08em; text-transform: uppercase;
-    transition: background 0.15s, color 0.15s;
-  }
-  #env-ui button:hover  { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.8); }
-  #env-ui button.active { background: rgba(255,255,255,0.20); color: #fff;
-                          border-color: rgba(255,255,255,0.45); }
 </style>
 <script type="importmap">
 {
@@ -30,14 +17,6 @@
 </script>
 </head>
 <body>
-
-
-<div id="env-ui">
-  <button class="active" data-preset="0">Auto</button>
-  <button data-preset="2">Metaball</button>
-  <button data-preset="3">Cluster</button>
-  <button data-preset="4">Burst</button>
-</div>
 <script type="module" src="main.js"></script>
 </body>
 </html>

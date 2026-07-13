@@ -1,9 +1,19 @@
-export const raymarchChunk = `
+// Public GLSL: shadeHit
+// Precondition: uniform envMap (sampler2D); map(vec3) and colorChunk's MOOD_*/
+// clusterBlend|metaballBlend|burstBlend in scope.
+
+export const surfaceChunk = `
 
 const vec3  KEY_LIGHT_DIR_RAW      = vec3(2.0, 2.5, 2.0);  // shared directional light, metal + glass (normalize at use site)
-const float ENV_CONE_SPREAD_SCALE = 0.6;  // roughness -> cone-sample spread; higher = blurrier reflections
 const float RIM_LIGHT_POWER     = 2.0;  // lower power = wider, lighter falloff
 const float RIM_LIGHT_INTENSITY = 2.2;
+
+// Shared across Metaball/Cluster/Burst -- one look, not a per-phase dial. Roughness is fixed
+// (not threaded through _D_GGX/_G_Smith/_envSampleLod as a parameter -- there's only ever one
+// value in use), so its cone-sample spread collapses into one precomputed constant too.
+const float SURFACE_ROUGHNESS  = 0.3;
+const float ENV_CONE_SPREAD    = 0.18;  // = SURFACE_ROUGHNESS * 0.6 (blur amount for the IBL cone sample)
+const float RIM_WEIGHT         = 0.5;
 
 vec2 _envUV(vec3 dir) {
   const float PI = 3.14159265;
@@ -17,10 +27,10 @@ vec3 _envSample(vec3 dir) {
 }
 
 // Cone-sampling approximation of roughness-blurred reflection (no PMREM/prefiltered mips).
-vec3 _envSampleLod(vec3 dir, float roughness) {
+vec3 _envSampleLod(vec3 dir) {
   vec3  right  = normalize(cross(dir, vec3(0.0, 1.0, 0.001)));
   vec3  up     = cross(right, dir);
-  float spread = roughness * ENV_CONE_SPREAD_SCALE;
+  float spread = ENV_CONE_SPREAD;
   vec3 sum  = _envSample(dir);
   sum += _envSample(normalize(dir + right * spread));
   sum += _envSample(normalize(dir - right * spread));
@@ -29,16 +39,16 @@ vec3 _envSampleLod(vec3 dir, float roughness) {
   return sum / 5.0;
 }
 
-// ── Cook-Torrance PBR helpers (metalness = 1, no diffuse) ─────────────────────
+// ── Cook-Torrance PBR helpers (metalness = 1, no diffuse), roughness = SURFACE_ROUGHNESS ──
 
-float _D_GGX(float roughness, float NdotH) {
-  float a2 = roughness * roughness * roughness * roughness;
+float _D_GGX(float NdotH) {
+  float a2 = SURFACE_ROUGHNESS * SURFACE_ROUGHNESS * SURFACE_ROUGHNESS * SURFACE_ROUGHNESS;
   float d  = NdotH * NdotH * (a2 - 1.0) + 1.0;
   return a2 / (3.14159265 * d * d);
 }
 
-float _G_Smith(float roughness, float NdotV, float NdotL) {
-  float k  = (roughness + 1.0); k = k * k / 8.0;
+float _G_Smith(float NdotV, float NdotL) {
+  float k  = (SURFACE_ROUGHNESS + 1.0); k = k * k / 8.0;
   float gV = NdotV / (NdotV * (1.0 - k) + k);
   float gL = NdotL / (NdotL * (1.0 - k) + k);
   return gV * gL;
@@ -48,20 +58,19 @@ vec3 _F_Schlick(vec3 F0, float cosTheta) {
   return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-vec3 _rimLight(float NdotV) {
-  return moodColor() * pow(1.0 - NdotV, RIM_LIGHT_POWER) * RIM_LIGHT_INTENSITY;
+vec3 _rimLight(vec3 tint, float NdotV) {
+  return tint * pow(1.0 - NdotV, RIM_LIGHT_POWER) * RIM_LIGHT_INTENSITY;
 }
 
 // ── reflective (shared by Metaball + Burst) ────────────────────────────────────
-// Cook-Torrance BRDF, metalness = 1: no diffuse, F0 = tint. Carries a much
-// fainter rim light than Cluster (its main rim-light role) — just enough to
-// read as the same creature, tinted by the current moodColor() like Cluster's.
-// Matches Three.js MeshStandardMaterial(metalness:1, roughness:r).
+// Cook-Torrance BRDF, metalness = 1: no diffuse, F0 = tint (each phase's own MOOD_METABALL/
+// MOOD_BURST from colorChunk.js). Matches Three.js MeshStandardMaterial(metalness:1,
+// roughness:r). Rim light uses colorChunk.js's MOOD_RIM -- shared between both phases,
+// independent of their (possibly different) surface tint.
 
-const float HIGHLIGHT_BRIGHTEN     = 1.15;  // derives the direct-specular tone from the base tint; IBL uses the base tone as-is
-const float REFLECTIVE_RIM_WEIGHT  = 0.35;  // fainter than Cluster's RIM_WEIGHT (0.65)
+const float HIGHLIGHT_BRIGHTEN = 1.15;  // derives the direct-specular tone from the base tint; IBL uses the base tone as-is
 
-vec3 _shadeReflective(vec3 n, vec3 rd, float NdotV, float roughness, vec3 tint) {
+vec3 _shadeReflective(vec3 n, vec3 rd, float NdotV, vec3 tint) {
   vec3 highlightTint = clamp(tint * HIGHLIGHT_BRIGHTEN, 0.0, 1.0);
 
   vec3  ld    = normalize(KEY_LIGHT_DIR_RAW);
@@ -72,34 +81,28 @@ vec3 _shadeReflective(vec3 n, vec3 rd, float NdotV, float roughness, vec3 tint) 
   float VdotH = max(dot(v, h),  0.0);
 
   // Direct light: Cook-Torrance specular BRDF
-  float D   = _D_GGX(roughness, NdotH);
-  float G   = _G_Smith(roughness, NdotV, NdotL);
+  float D   = _D_GGX(NdotH);
+  float G   = _G_Smith(NdotV, NdotL);
   vec3  F   = _F_Schlick(highlightTint, VdotH);
   vec3 spec = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
 
   // IBL: roughness-blurred reflection weighted by Fresnel
   vec3 F_ibl = _F_Schlick(tint, NdotV);
-  vec3 env   = _envSampleLod(reflect(rd, n), roughness);
+  vec3 env   = _envSampleLod(reflect(rd, n));
 
-  return spec * NdotL + env * F_ibl + _rimLight(NdotV) * REFLECTIVE_RIM_WEIGHT;
+  return spec * NdotL + env * F_ibl + _rimLight(MOOD_RIM, NdotV) * RIM_WEIGHT;
 }
-
-const float METABALL_ROUGHNESS = 0.15;
 
 vec3 shadeMetaball(vec3 n, vec3 rd, float NdotV) {
-  return _shadeReflective(n, rd, NdotV, METABALL_ROUGHNESS, MOOD_METABALL_METAL);
+  return _shadeReflective(n, rd, NdotV, MOOD_METABALL);
 }
 
-const float BURST_ROUGHNESS = 1.0;  // maximum — diffuse-like scatter, matches Burst's harsh/chaotic mood
-
 vec3 shadeBurst(vec3 n, vec3 rd, float NdotV) {
-  return _shadeReflective(n, rd, NdotV, BURST_ROUGHNESS, MOOD_BURST);
+  return _shadeReflective(n, rd, NdotV, MOOD_BURST);
 }
 
 // ── cluster ───────────────────────────────────────────────────────────────────
 // No env-map sampling: map()-thickness inner glow, Fresnel rim, backscatter.
-// Rim light is much stronger here than in _shadeReflective (RIM_WEIGHT vs.
-// REFLECTIVE_RIM_WEIGHT) — Cluster is the primary rim-light carrier.
 
 vec3 shadeCluster(vec3 p, vec3 n, vec3 rd, float NdotV) {
   const float SPECULAR_POWER        = 192.0;
@@ -113,7 +116,6 @@ vec3 shadeCluster(vec3 p, vec3 n, vec3 rd, float NdotV) {
   const float INNER_GLOW_WEIGHT     = 0.1;
   const float SPEC_WEIGHT           = 0.8;
   const float SCATTER_WEIGHT        = 0.25;
-  const float RIM_WEIGHT            = 0.65;
 
   vec3  ld        = normalize(KEY_LIGHT_DIR_RAW);
   float spec      = pow(max(dot(n, normalize(ld - rd)), 0.0), SPECULAR_POWER);
@@ -127,7 +129,7 @@ vec3 shadeCluster(vec3 p, vec3 n, vec3 rd, float NdotV) {
   color += MOOD_METABALL * innerGlow * INNER_GLOW_WEIGHT;
   color += spec * SPEC_WEIGHT;
   color += MOOD_CLUSTER  * scatter * SCATTER_WEIGHT;
-  color += _rimLight(NdotV) * RIM_WEIGHT;
+  color += _rimLight(MOOD_CLUSTER, NdotV) * RIM_WEIGHT;
   return color;
 }
 
