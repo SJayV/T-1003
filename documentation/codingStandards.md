@@ -15,11 +15,11 @@ Organized into three levels, from smallest to largest scope:
 | Scope | Convention | Example |
 |---|---|---|
 | JS private module-level symbols (vars + functions) | `_camelCase` | `_renderer`, `_firstFrame`, `_makeTarget`, `_enterState` |
-| JS public exports | `camelCase` | `initSimulation`, `getVisualPhase` |
+| JS public exports | `camelCase` | `initSimulation`, `getWeights` |
 | JS module constants | `SCREAMING_SNAKE_CASE` | `BALL_COUNT`, `BURST_MIN_FRAMES` |
 | GLSL internal helpers | `_camelCase` | `_envUV`, `_hash2`, `_computeCentroid` |
 | GLSL public chunk functions | `camelCase` | `orbitPoint`, `shadeHit`, `perlin2D` |
-| GLSL uniforms | `camelCase`, matches JS side | `visualPhase`, `burstBlend` |
+| GLSL uniforms | `camelCase`, matches JS side | `burstBlend`, `motionSpeed` |
 | GLSL tunable constants | `SCREAMING_SNAKE_CASE` | `ORBIT_SNAP_RATE`, `VEL_DECAY_BURST` |
 | Files | `camelCase.js` | `gpuSetup.js`, `noiseChunk.js` |
 
@@ -64,7 +64,7 @@ Stubs for planned modules (`audio.js`, `camera.js`) define the interface but lea
 
 ### Direct import of shared phase state
 
-Phase values (`visualPhase`, blend weights, `motionSpeed`) are read **directly from `phase.js`** inside each consuming module (`simulation.js`, `environment.js`, and the equivalent GLSL uniforms). They are not passed as function arguments through `main.js`. See [Architectural Styles](#architectural-styles) for the tradeoff this implies.
+Phase values (`getWeights()`, `motionSpeed`) are read **directly from `phase.js`** inside each consuming module (`simulation.js`, `environment.js`, and the equivalent GLSL uniforms). They are not passed as function arguments through `main.js`. See [Architectural Styles](#architectural-styles) for the tradeoff this implies.
 
 ### GPU fullscreen-quad factory
 

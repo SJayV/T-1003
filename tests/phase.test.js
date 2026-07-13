@@ -3,34 +3,61 @@ import { beforeEach, describe, it, expect, vi } from 'vitest';
 // phase.js has module-level mutable state.
 // vi.resetModules() + dynamic import gives each test a clean initial Cluster state.
 
-let tick, getTime, getLogicalPhase, getVisualPhase,
-    getMetaballBlend, getClusterBlend, getBurstBlend,
-    getMotionSpeed, reportMotion, onPhaseTransition;
+let tick, getTime, getWeights, getMotionSpeed, reportMotion, onPhaseTransition;
+
+let t;
+const DT = 0.05; // seconds per simulated tick -- fine enough that mu tracks t_now closely
+                  // near every regime-transition boundary tested below
+
+// Advances simulated time by `seconds`, calling tick(t) once per DT step -- mirrors
+// how main.js calls tick(performance.now()/1000) once per real animation frame.
+function advance(seconds) {
+  const steps = Math.max(1, Math.round(seconds / DT));
+  for (let i = 0; i < steps; i++) {
+    t += DT;
+    tick(t);
+  }
+}
 
 beforeEach(async () => {
   vi.resetModules();
   const m = await import('../src/phase.js');
-  ({ tick, getTime, getLogicalPhase, getVisualPhase,
-     getMetaballBlend, getClusterBlend, getBurstBlend,
-     getMotionSpeed, reportMotion, onPhaseTransition } = m);
+  ({ tick, getTime, getWeights, getMotionSpeed, reportMotion, onPhaseTransition } = m);
+  t = 0;
 });
 
-function ticks(n) { for (let i = 0; i < n; i++) tick(); }
-
-// Burst-Dauer ist deterministisch: BURST_MIN_FRAMES + floor(speed * (MAX - MIN))
-// speed=0.01 → 60 Frames (Minimum); speed=1.0 → 100 Frames (Maximum)
+// Burst-Hold ist ein fixer Wert (LEAD*BURST_SIGMA, ~3.0s) -- skaliert bewusst nicht mit
+// der Motion-Speed beim Trigger (siehe Test unten).
 
 // ═════════════════════════════════════════════════════════════════════════════
-// FSM — Zustände und Übergänge
+// Gewichte — Invariante und Startzustand
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('FSM: Startzustand', () => {
-  it('beginnt in Cluster: logicalPhase = 1.0', () => {
-    expect(getLogicalPhase()).toBe(1.0);
+describe('Gewichte: Invariante (Summe = 1, alle ≥ 0)', () => {
+  it('gilt im Startzustand, während Burst und während Metaball', () => {
+    const check = () => {
+      const { clusterWeight, metaballWeight, burstWeight } = getWeights();
+      // Loose precision: the eps divide-by-zero guard in _evaluateWeights becomes
+      // relatively more visible right when one bump has decayed and the next is
+      // still early in its slow ramp (e.g. mid Burst -> Metaball) -- still far
+      // tighter than anything visually perceptible in a blend weight.
+      expect(clusterWeight + metaballWeight + burstWeight).toBeCloseTo(1.0, 4);
+      expect(clusterWeight).toBeGreaterThanOrEqual(0);
+      expect(metaballWeight).toBeGreaterThanOrEqual(0);
+      expect(burstWeight).toBeGreaterThanOrEqual(0);
+    };
+    check();                        // Cluster (initial, vor dem ersten tick())
+    reportMotion(0.5); advance(0.3);
+    check();                        // Burst
+    advance(3.0);
+    check();                        // Metaball
   });
+});
 
-  it('visualPhase konvergiert bereits zu logicalPhase: = 1.0', () => {
-    expect(getVisualPhase()).toBe(1.0);
+describe('Gewichte: Startzustand', () => {
+  it('Cluster ist beim Programmstart voll gewichtet', () => {
+    const { clusterWeight } = getWeights();
+    expect(clusterWeight).toBeCloseTo(1.0, 2);
   });
 
   it('getTime startet bei 0', () => {
@@ -38,187 +65,110 @@ describe('FSM: Startzustand', () => {
   });
 });
 
-describe('FSM: Cluster → Burst', () => {
-  it('reportMotion löst Burst aus', () => {
+// ═════════════════════════════════════════════════════════════════════════════
+// Regime-Übergänge (intern per _state getrieben, nur über die Gewichte sichtbar)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('Cluster → Burst', () => {
+  it('reportMotion lässt burstWeight ansteigen', () => {
     reportMotion(0.5);
-    expect(getLogicalPhase()).toBeGreaterThan(1.0);
+    // Cluster (sigma 0.6s) decays fast enough on its own that burstWeight overtakes it
+    // well before Burst's own (wider, sigma 1.0s) ramp is anywhere near its peak.
+    advance(1.5);
+    expect(getWeights().burstWeight).toBeGreaterThan(0.5);
   });
 
-  it('logicalPhase = 1.0 + clamp(speed, 0, 1)', () => {
-    reportMotion(0.8);
-    expect(getLogicalPhase()).toBeCloseTo(1.8);
-  });
-
-  it('speed > 1 wird geklemmt: logicalPhase = 2.0', () => {
-    reportMotion(99);
-    expect(getLogicalPhase()).toBeCloseTo(2.0);
-  });
-
-  it('kein erneuter Burst-Trigger während Burst', () => {
+  it('kein erneuter Burst-Trigger während eines laufenden Bursts', () => {
     reportMotion(0.5);
-    const phase = getLogicalPhase();
-    reportMotion(1.0);
-    expect(getLogicalPhase()).toBe(phase);
+    advance(0.1);
+    const w1 = getWeights().burstWeight;
+    reportMotion(1.0); // während Burst -- darf keinen zweiten Trigger auslösen
+    advance(0.05);
+    // Ein zweiter Trigger würde mu erneut auf LEAD*sigma vorspringen lassen und
+    // burstWeight einbrechen lassen statt weiter Richtung 1 zu laufen.
+    expect(getWeights().burstWeight).toBeGreaterThanOrEqual(w1 - 0.05);
   });
 });
 
-describe('FSM: Burst-Dauer (Grenzen)', () => {
-  it('noch aktiv einen Tick vor BURST_MIN_FRAMES', () => {
-    reportMotion(0.01); // speed=0.01 → burstDuration = 60
-    ticks(59);          // stateFrames = 59 < 60
-    expect(getLogicalPhase()).toBeGreaterThan(1.0);
+describe('Burst → Metaball', () => {
+  it('metaballWeight übernimmt bald nach Ablauf der Hold-Dauer', () => {
+    reportMotion(0.01); // -> Hold (fix, ~3.6s)
+    advance(2.0);
+    expect(getWeights().burstWeight).toBeGreaterThan(0.5); // noch in Burst
+    // Metaball wird direkt bei Hold-Ende aktiviert (kein zusätzlicher Verzögerungs-Puffer) --
+    // Burst ist zu diesem Zeitpunkt noch nahe seinem Peak, daher überholt metaballWeight
+    // burstWeight rasch über Bursts eigene (breite) Abklingbreite.
+    advance(3.0);
+    expect(getWeights().metaballWeight).toBeGreaterThan(0.5);
   });
 
-  it('endet genau bei BURST_MIN_FRAMES (Minimum)', () => {
-    reportMotion(0.01);
-    ticks(60); // stateFrames = 60 → Metaball
-    expect(getLogicalPhase()).toBe(0.0);
-  });
-
-  it('noch aktiv einen Tick vor BURST_MAX_FRAMES', () => {
-    reportMotion(1.0); // speed=1.0 → burstDuration = 100
-    ticks(99);         // stateFrames = 99 < 100
-    expect(getLogicalPhase()).toBeGreaterThan(1.0);
-  });
-
-  it('endet genau bei BURST_MAX_FRAMES (Maximum)', () => {
-    reportMotion(1.0);
-    ticks(100); // stateFrames = 100 → Metaball
-    expect(getLogicalPhase()).toBe(0.0);
+  it('Burst-Hold-Dauer ist unabhängig von der Motion-Speed beim Trigger', () => {
+    reportMotion(1.0); // hohe Speed -- Hold-Dauer darf sich dadurch nicht verändern
+    advance(2.0); // gleicher Zeitpunkt wie im Minimum-Speed-Fall oben, gleiches Ergebnis erwartet
+    expect(getWeights().burstWeight).toBeGreaterThan(0.5);
   });
 });
 
-describe('FSM: Metaball-Verhalten', () => {
-  // Mit minimum burst (speed=0.01 → 60 Frames):
-  // Nach ticks(60): Metaball, stateFrames=0, noMotionFrames=1.
-  // Übergang: stateFrames >= 800 UND noMotionFrames >= 360.
-  // noMotionFrames wächst parallel (360 < 800) → bindend: stateFrames=800 bei Tick 860.
-
-  it('bleibt in Metaball einen Tick vor METABALL_MIN_FRAMES', () => {
+describe('Metaball → Cluster', () => {
+  it('bleibt in Metaball vor Ablauf der Mindestdauer, auch ohne Bewegung', () => {
     reportMotion(0.01);
-    ticks(859); // 60 Burst + 799 Metaball-stateFrames
-    expect(getLogicalPhase()).toBe(0.0);
+    advance(2.0); // -> Metaball
+    advance(10.0); // < METABALL_MIN_HOLD (13.3s) seit Metaball-Eintritt
+    expect(getWeights().metaballWeight).toBeGreaterThan(0.5);
   });
 
-  it('wechselt zu Cluster genau bei METABALL_MIN_FRAMES', () => {
+  it('kehrt nach Mindestdauer + kurzer Stille ohne Bewegung zu Cluster zurück', () => {
     reportMotion(0.01);
-    ticks(860); // stateFrames erreicht 800 → Cluster
-    expect(getLogicalPhase()).toBe(1.0);
+    advance(2.0); // noch in Burst (Hold ~3.6s)
+    // Mindestdauer (13.3s) + METABALL_SILENCE_HOLD (1.2s) ab Metaball-Eintritt (~3.6s nach
+    // Trigger) -- Cluster wird direkt bei Stille-Ablauf aktiviert, nicht erst nachdem Metaball
+    // selbst abgeklungen ist.
+    advance(18.0);
+    expect(getWeights().clusterWeight).toBeGreaterThan(0.5);
   });
 
-  it('reportMotion in Metaball löst keinen Burst aus', () => {
+  it('anhaltende Bewegung in Metaball verzögert die Rückkehr zu Cluster', () => {
     reportMotion(0.01);
-    ticks(60); // → Metaball
-    reportMotion(1.0);
-    expect(getLogicalPhase()).toBe(0.0);
-  });
-
-  it('reportMotion setzt noMotionFrames zurück und verzögert Rückkehr zu Cluster', () => {
-    // Tick 859: stateFrames=799, noMotionFrames=800.
-    // Motion → noMotionFrames auf 0 beim nächsten Tick.
-    // Tick 860: stateFrames=800 ok, noMotionFrames=0 < 360 → bleibt Metaball.
-    // Erst nach 360 weiteren stillen Ticks: beide Bedingungen erfüllt.
-    reportMotion(0.01);
-    ticks(859);
-    reportMotion(0.3);
-    tick();    // stateFrames=800, noMotionFrames=0
-    expect(getLogicalPhase()).toBe(0.0);
-    ticks(359); // noMotionFrames=359 < 360
-    expect(getLogicalPhase()).toBe(0.0);
-    tick();    // noMotionFrames=360 → Cluster
-    expect(getLogicalPhase()).toBe(1.0);
+    advance(2.0); // -> Metaball
+    for (let i = 0; i < 20; i++) { reportMotion(0.3); advance(1.0); } // 20s Bewegung
+    expect(getWeights().metaballWeight).toBeGreaterThan(0.5);
   });
 });
 
-describe('FSM: Cluster-Rückkehr-Guard (visualPhase)', () => {
-  // Burst wird nur ausgelöst wenn _visualPhase > 0.65.
-  // Nach vollständigem Metaball-Aufenthalt ist visualPhase ≈ 0 beim Rückeintritt in Cluster.
-  // Ein erneuter Burst ist blockiert bis die Kreatur visuell in Cluster ist.
-
-  it('kein Burst aus frischem Cluster (visualPhase < 0.65 nach Rückkehr)', () => {
+describe('kein Cooldown (bewusste Verhaltensänderung ggü. der alten FSM)', () => {
+  it('reportMotion unmittelbar nach einem vollen Zyklus löst sofort wieder Burst aus', () => {
     reportMotion(0.01);
-    ticks(860); // voller Zyklus; visualPhase ≈ 0 bei Rückeintritt
-    expect(getVisualPhase()).toBeLessThan(0.65);
-    reportMotion(1.0);
-    expect(getLogicalPhase()).toBe(1.0); // Cluster, kein Burst
+    advance(2.0);  // noch in Burst (Hold ~3.6s)
+    advance(18.0); // -> zurück zu Cluster
+    expect(getWeights().clusterWeight).toBeGreaterThan(0.5);
+
+    reportMotion(1.0); // keine Sperrzeit mehr -- muss unmittelbar greifen
+    advance(2.0); // Cluster deckt schnell wieder ab, auch bevor Burst voll gerampt ist
+    expect(getWeights().burstWeight).toBeGreaterThan(0.5);
   });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Blend-Gewichte
+// onPhaseTransition
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('Blend: Invariante (Summe = 1, alle ≥ 0)', () => {
-  it('Summe = 1 und alle Gewichte ≥ 0 in jedem Zustand', () => {
-    const check = () => {
-      const m = getMetaballBlend(), c = getClusterBlend(), b = getBurstBlend();
-      expect(m + c + b).toBeCloseTo(1.0);
-      expect(m).toBeGreaterThanOrEqual(0);
-      expect(c).toBeGreaterThanOrEqual(0);
-      expect(b).toBeGreaterThanOrEqual(0);
-    };
-    check();                       // Cluster (initial)
-    reportMotion(0.5); ticks(5);
-    check();                       // Burst
-    ticks(150);
-    check();                       // Metaball
-  });
-});
+describe('onPhaseTransition', () => {
+  it('feuert ohne Argumente genau dreimal pro vollem Zyklus', () => {
+    const calls = [];
+    onPhaseTransition((...args) => calls.push(args));
 
-describe('Blend: Konvergenz in stabilen Zuständen', () => {
-  it('clusterBlend → 1 im stabilen Cluster (Startzustand)', () => {
-    expect(getClusterBlend()).toBeCloseTo(1.0, 1);
-    expect(getMetaballBlend()).toBeCloseTo(0.0, 1);
-    expect(getBurstBlend()).toBeCloseTo(0.0, 1);
-  });
+    reportMotion(0.01);
+    advance(4.0);   // Cluster -> Burst -> Metaball (Burst holds ~3.6s, no extra delay)
+    advance(16.0);  // Metaball -> Cluster
 
-  it('metaballBlend → 1 und visualPhase → 0 nach langer Zeit in Metaball', () => {
-    reportMotion(0.5);
-    ticks(150 + 500); // → Metaball, dann exponentieller Abfall von visualPhase
-    expect(getVisualPhase()).toBeLessThan(0.1);
-    expect(getMetaballBlend()).toBeCloseTo(1.0, 1);
-    expect(getClusterBlend()).toBeCloseTo(0.0, 1);
-    expect(getBurstBlend()).toBeCloseTo(0.0, 1);
-  });
-
-  it('burstBlend > 0 während Burst', () => {
-    reportMotion(0.5);
-    ticks(20); // visualPhase überschreitet Burst-Smoothstep-Start
-    expect(getBurstBlend()).toBeGreaterThan(0);
-  });
-});
-
-describe('Blend: clusterActivation-Gate (Teal-Flash-Unterdrückung)', () => {
-  // Nach Burst→Metaball zerfällt _clusterActivation (Rate 0.20/Frame).
-  // Dies verhindert clusterBlend während visualPhase durch die Cluster-Smoothstep-Zone fällt.
-
-  it('clusterBlend < 0.15 direkt nach Eintritt in Metaball aus Burst', () => {
-    reportMotion(1.0);
-    ticks(110); // → Metaball (duration 100); Gate zerfällt, visualPhase noch erhöht
-    expect(getClusterBlend()).toBeLessThan(0.15);
+    expect(calls).toHaveLength(3);
+    expect(calls.every(args => args.length === 0)).toBe(true);
   });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Output-Parameter
 // ═════════════════════════════════════════════════════════════════════════════
-
-describe('visualPhase', () => {
-  it('nähert sich logicalPhase an (steigt bei Burst)', () => {
-    reportMotion(1.0); // logicalPhase → 2.0
-    ticks(20);
-    expect(getVisualPhase()).toBeGreaterThan(1.0);
-  });
-
-  it('bleibt stets im Bereich [0, 2]', () => {
-    reportMotion(1.0);
-    for (let i = 0; i < 110; i++) { // spans the Burst(100) -> Metaball transition
-      tick();
-      expect(getVisualPhase()).toBeGreaterThanOrEqual(0);
-      expect(getVisualPhase()).toBeLessThanOrEqual(2.0);
-    }
-  });
-});
 
 describe('motionSpeed', () => {
   it('wird auf den gemeldeten Wert gesetzt', () => {
@@ -232,58 +182,22 @@ describe('motionSpeed', () => {
     expect(getMotionSpeed()).toBeGreaterThanOrEqual(0);
   });
 
-  it('zerfällt exponentiell ohne reportMotion', () => {
+  it('zerfällt exponentiell ohne weiteres reportMotion', () => {
     reportMotion(1.0);
-    tick(); // _motionThisFrame-Flag verbraucht
+    advance(DT); // _motionThisFrame-Flag verbraucht
     const v0 = getMotionSpeed();
-    ticks(20);
+    advance(1.0);
     expect(getMotionSpeed()).toBeLessThan(v0);
     expect(getMotionSpeed()).toBeGreaterThan(0); // exponentiell: erreicht nie 0
-  });
-});
-
-describe('onPhaseTransition', () => {
-  // _prevSlot = 0; slot = Math.ceil(logicalPhase).
-  // Tick 1: slot 0→1 (Cluster). Burst-Eintritt: 1→2. Metaball-Eintritt: 2→0.
-
-  it('feuert bei Cluster → Burst', () => {
-    tick(); // initialen 0→1-Slot-Wechsel verbrauchen
-    const calls = [];
-    onPhaseTransition(p => calls.push(p));
-    reportMotion(0.5);
-    tick(); // slot 1→2 → feuert
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toBeCloseTo(1.5);
-  });
-
-  it('feuert bei Burst → Metaball', () => {
-    tick();
-    reportMotion(0.5);
-    tick(); // Burst-Eintritt feuert (vor Registrierung verbraucht)
-    const calls = [];
-    onPhaseTransition(p => calls.push(p));
-    ticks(90); // Burst (Dauer 80 bei speed=0.5) endet → Metaball, slot 2→0
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toBe(0.0);
-  });
-
-  it('feuert bei Metaball → Cluster', () => {
-    reportMotion(0.01);
-    ticks(60); // → Metaball; C→B und B→M-Übergänge bereits verbraucht
-    const calls = [];
-    onPhaseTransition(p => calls.push(p));
-    ticks(800); // stateFrames = 800 → Cluster; slot 0→1
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toBe(1.0);
   });
 });
 
 describe('getTime', () => {
   it('steigt monoton mit jedem Tick', () => {
     const t0 = getTime();
-    tick();
+    advance(DT);
     const t1 = getTime();
-    ticks(10);
+    advance(0.5);
     expect(t1).toBeGreaterThan(t0);
     expect(getTime()).toBeGreaterThan(t1);
   });

@@ -1,20 +1,16 @@
 import * as THREE from 'three';
-import { onPhaseTransition, getMetaballBlend, getClusterBlend, getBurstBlend, getTime } from './phase.js';
+import { getWeights, getTime } from './phase.js';
 import { environmentVert, environmentFrag } from '../shaders/environmentShader.js';
 import { makeGpuSetup } from './gpuSetup.js';
 
 const EQUIRECT_W     = 512;
 const EQUIRECT_H     = 256;
-const REGEN_INTERVAL = 4;
 
 let _renderer       = null;
 let _equirectTarget = null;
 let _equirectScene  = null;
 let _equirectCamera = null;
 let _equirectMat    = null;
-let _frameCount     = 0;
-let _needsRegen     = true;
-let _preset         = 0;
 
 export function initEnvMap(renderer) {
   _renderer = renderer;
@@ -35,7 +31,6 @@ export function initEnvMap(renderer) {
       metaballBlend: { value: 1.0 },
       clusterBlend:  { value: 0.0 },
       burstBlend:    { value: 0.0 },
-      envSelect:     { value: 0.0 },
     },
     vertexShader:   environmentVert,
     fragmentShader: environmentFrag,
@@ -43,40 +38,30 @@ export function initEnvMap(renderer) {
     depthWrite: false,
   });
   ({ scene: _equirectScene, camera: _equirectCamera } = makeGpuSetup(_equirectMat));
-
-  onPhaseTransition(() => { _needsRegen = true; });
 }
 
 function _regenerate() {
+  const { clusterWeight, metaballWeight, burstWeight } = getWeights();
   _equirectMat.uniforms.time.value          = getTime();
-  _equirectMat.uniforms.metaballBlend.value = getMetaballBlend();
-  _equirectMat.uniforms.clusterBlend.value  = getClusterBlend();
-  _equirectMat.uniforms.burstBlend.value    = getBurstBlend();
+  _equirectMat.uniforms.metaballBlend.value = metaballWeight;
+  _equirectMat.uniforms.clusterBlend.value  = clusterWeight;
+  _equirectMat.uniforms.burstBlend.value    = burstWeight;
 
   _renderer.setRenderTarget(_equirectTarget);
   _renderer.render(_equirectScene, _equirectCamera);
   _renderer.setRenderTarget(null);
 }
 
-export function setEnvPreset(n) {
-  _preset = n;
-  _equirectMat.uniforms.envSelect.value = n;
-  _needsRegen = true;
-}
-
-export function getEnvPreset() {
-  return _preset;
-}
-
 export function getUniformDefs() {
   return { envMap: { value: null } };
 }
 
+// Regenerated every frame, not throttled -- envMap feeds both the sky background and the
+// balls' own metallic reflections (surfaceChunk.js's _envSampleLod), so it has to track
+// clusterBlend/metaballBlend/burstBlend just as continuously as the ball's own shape/color do.
+// A throttled regen (the previous design: every 4th frame + on phase transitions) left the env
+// map stale in between, so it visibly stepped instead of blending during fast transitions.
 export function applyStateToMaterial(material) {
-  _frameCount++;
-  if (_needsRegen || _frameCount % REGEN_INTERVAL === 0) {
-    _regenerate();
-    _needsRegen = false;
-  }
+  _regenerate();
   material.uniforms.envMap.value = _equirectTarget.texture;
 }
