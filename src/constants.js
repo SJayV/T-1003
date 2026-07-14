@@ -5,11 +5,6 @@ export function glslFloat(n) {
   return Number.isInteger(n) ? `${n}.0` : `${n}`;
 }
 
-export function glslVec3([r, g, b]) {
-  return `vec3(${glslFloat(r)}, ${glslFloat(g)}, ${glslFloat(b)})`;
-}
-
-
 // ──── METABALL INITIAL STATE ────────────────────────────────────────────────────
 
 
@@ -55,18 +50,12 @@ export const CAMERA_START_POSITION = [-0.4, -0.2, 3.0];
 export const CLUSTER_CYL_CENTER_X   = 0.06;
 export const CLUSTER_CYL_CENTER_Y   = 0;
 export const CLUSTER_CYL_RADIUS      = 0.35;
-export const CLUSTER_CYL_HALF_HEIGHT = 1.5;
+export const CLUSTER_CYL_HALF_HEIGHT = 0.5;
+export const CLUSTER_CYL_ROTATION_Y = 0.4;
+export const CLUSTER_CYL_ROTATION_X = 0.5;
 
 export const CLUSTER_SPHERE_RADIUS   = 0.7;
+
 export const CLUSTER_BOX_HALF_EXTENT = 0.46;
 export const CLUSTER_BOX_ROTATION_Y = 0.4;
 export const CLUSTER_BOX_ROTATION_X = 0.5;
-
-
-// ──── PHASE COLORS ───────────────────────────────────────────────────────────────
-
-
-export const METABALL_COLOR = [0.32, 0.40, 0.48];
-export const CLUSTER_COLOR  = [0.21, 0.56, 0.69];
-export const BURST_COLOR    = [0.32, 0.40, 0.48];
-export const RIMLIGHT_COLOR = [0.18, 0.50, 0.60];

@@ -48,7 +48,7 @@ void main() {
   float r0 = readR0(ballIdx);
   vec4 orb = readOrb(ballIdx);
 
-  blendPosition(pos, vel, orb, ballIdx);
+  blendPosition(pos, vel, orb);
 
   if (subIdx == 0) { gl_FragColor = vec4(pos, r0); }
   else             { gl_FragColor = vec4(vel, radiusMod(pos, r0)); }

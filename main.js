@@ -2,13 +2,17 @@ import * as THREE from 'three';
 import { scene, camera, renderer }                                    from './src/renderer.js';
 import { tick, getTime, getWeights, getMotionSpeed }                  from './src/phase.js';
 import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
-import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState } from './src/environment.js';
+import {
+  getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState,
+  ENV_MAP_FILES, CLUSTER_ENV_MAP_DEFAULT, METABALL_ENV_MAP_DEFAULT,
+  setClusterEnvMapFile, setMetaballEnvMapFile,
+} from './src/environment.js';
 import { initCamera, updateCamera }                                   from './src/camera.js';
 import { initInput,  updateInput  }                                   from './src/input.js';
 import { initAudio,  updateAudio  }                                   from './src/audio.js';
 import { mainVert, buildMainFrag }                                    from './shaders/raymarchShader.js';
 import { CLUSTER_SHAPE_VARIANTS }                                     from './shaderChunks/shapeChunk.js';
-import { initClusterShapeUI }                                         from './src/clusterShapeUI.js';
+import { initClusterShapeUI, initClusterEnvMapUI, initMetaballEnvMapUI } from './src/ui.js';
 import { makeBloomSetup }                                             from './src/gpuSetup.js';
 import { brightExtractFrag, blurFrag, compositeFrag }                 from './shaders/bloomShader.js';
 
@@ -55,6 +59,8 @@ initClusterShapeUI(CLUSTER_SHAPE_VARIANTS, (variant) => {
   material.fragmentShader = buildMainFrag(variant);
   material.needsUpdate = true;
 });
+initClusterEnvMapUI(ENV_MAP_FILES, CLUSTER_ENV_MAP_DEFAULT, setClusterEnvMapFile);
+initMetaballEnvMapUI(ENV_MAP_FILES, METABALL_ENV_MAP_DEFAULT, setMetaballEnvMapFile);
 const bloom = makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeFrag });
 
 

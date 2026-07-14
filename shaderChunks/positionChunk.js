@@ -1,12 +1,9 @@
-import { BALL_COUNT, ORBIT_Z_SQUASH, FRAME_TIME_STEP, CLUSTER_CYL_RADIUS, CLUSTER_CYL_CENTER_X, CLUSTER_CYL_CENTER_Y, glslFloat } from '../src/constants.js';
+import { BALL_COUNT, ORBIT_Z_SQUASH, FRAME_TIME_STEP, glslFloat } from '../src/constants.js';
 
 export const positionChunk = `
 
 const int   BALL_COUNT     = ${BALL_COUNT};
 const float ORBIT_Z_SQUASH = ${glslFloat(ORBIT_Z_SQUASH)};
-
-const float CLUSTER_CYL_RADIUS = ${glslFloat(CLUSTER_CYL_RADIUS)};
-const vec3  CLUSTER_CENTER     = vec3(${glslFloat(CLUSTER_CYL_CENTER_X)}, ${glslFloat(CLUSTER_CYL_CENTER_Y)}, 0.0);
 
 
 // ──── CONSTANTS ───────────────────────────────────────────────────────────────────
@@ -17,7 +14,6 @@ const float ORBIT_SNAP_RATE    = 0.012;
 const float ORBIT_OMEGA_SCALE  = 18.0;
 const float ORBIT_OMEGA_MOTION = 9.0;
 
-const float CENTRIPETAL_PULL = 0.00016;
 const float ORIGIN_PULL      = 0.00006;
 
 const float CLUSTER_NOISE_FREQ    = 3.0;
@@ -49,15 +45,6 @@ vec3 _computeCentroid() {
   vec3 c = vec3(0.0);
   for (int i = 0; i < BALL_COUNT; i++) c += texture2D(stateTex, stateUV(i * 3)).xyz;
   return c / float(BALL_COUNT);
-}
-
-vec3 _clusterTarget(int ballIdx) {
-  const float TWO_PI = 6.28318530718;
-  const float HELIX_HALF_HEIGHT = 0.9;
-  float u   = (float(ballIdx) + 0.5) / float(BALL_COUNT);
-  float phi = u * TWO_PI;
-  float h   = mix(-HELIX_HALF_HEIGHT, HELIX_HALF_HEIGHT, u);
-  return CLUSTER_CENTER + vec3(CLUSTER_CYL_RADIUS * cos(phi), h, CLUSTER_CYL_RADIUS * sin(phi));
 }
 
 float _nearestOrbitPhi(vec3 pos, vec3 e2norm) {
@@ -141,12 +128,11 @@ vec3 _burstPosition(vec3 pos, vec3 cen) {
 // ──── WEIGHTED BLENDING ───────────────────────────────────────────────────────────
 
 
-void blendPosition(inout vec3 pos, inout vec3 vel, vec4 orb, int ballIdx) {
+void blendPosition(inout vec3 pos, inout vec3 vel, vec4 orb) {
   vec3 cen = _computeCentroid();
 
   float primeBlend = clusterBlend + burstBlend;
   vel -= pos * ORIGIN_PULL * primeBlend;
-  vel += (_clusterTarget(ballIdx) - pos) * CENTRIPETAL_PULL * primeBlend;
 
   vel += _clusterPosition(pos)    * clusterBlend
        + _burstPosition(pos, cen) * burstBlend;

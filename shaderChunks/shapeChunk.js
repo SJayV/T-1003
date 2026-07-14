@@ -1,6 +1,10 @@
 import {
   CLUSTER_CYL_RADIUS, CLUSTER_CYL_HALF_HEIGHT, CLUSTER_CYL_CENTER_X, CLUSTER_CYL_CENTER_Y,
-  CLUSTER_SPHERE_RADIUS, CLUSTER_BOX_HALF_EXTENT, CLUSTER_BOX_ROTATION_Y, CLUSTER_BOX_ROTATION_X, glslFloat,
+  CLUSTER_SPHERE_RADIUS,
+  CLUSTER_BOX_HALF_EXTENT,
+  CLUSTER_CYL_ROTATION_Y, CLUSTER_CYL_ROTATION_X,
+  CLUSTER_BOX_ROTATION_Y, CLUSTER_BOX_ROTATION_X,
+  glslFloat,
 } from '../src/constants.js';
 
 export const CLUSTER_SHAPE_VARIANTS = [
@@ -78,7 +82,16 @@ const vec3 CLUSTER_CENTER = vec3(${glslFloat(CLUSTER_CYL_CENTER_X)}, ${glslFloat
 float _clusterCylinder(vec3 p) {
   const float RADIUS      = ${glslFloat(CLUSTER_CYL_RADIUS)};
   const float HALF_HEIGHT = ${glslFloat(CLUSTER_CYL_HALF_HEIGHT)};
-  return sdCappedCylinder(p - CLUSTER_CENTER, RADIUS, HALF_HEIGHT);
+
+  const float ROTATION_Y  = ${glslFloat(CLUSTER_CYL_ROTATION_Y)};
+  const float ROTATION_X  = ${glslFloat(CLUSTER_CYL_ROTATION_X)};
+  float cy = cos(ROTATION_Y), sy = sin(ROTATION_Y);
+  float cx = cos(ROTATION_X), sx = sin(ROTATION_X);
+  vec3  pr = p - CLUSTER_CENTER;
+  pr.xz = mat2(cy, -sy, sy, cy) * pr.xz;
+  pr.yz = mat2(cx, -sx, sx, cx) * pr.yz;
+
+  return sdCappedCylinder(pr, RADIUS, HALF_HEIGHT);
 }
 
 float _clusterSphere(vec3 p) {
@@ -88,6 +101,7 @@ float _clusterSphere(vec3 p) {
 
 float _clusterBox(vec3 p) {
   const float HALF_EXTENT = ${glslFloat(CLUSTER_BOX_HALF_EXTENT)};
+
   const float ROTATION_Y  = ${glslFloat(CLUSTER_BOX_ROTATION_Y)};
   const float ROTATION_X  = ${glslFloat(CLUSTER_BOX_ROTATION_X)};
   float cy = cos(ROTATION_Y), sy = sin(ROTATION_Y);
@@ -95,6 +109,7 @@ float _clusterBox(vec3 p) {
   vec3  pr = p - CLUSTER_CENTER;
   pr.xz = mat2(cy, -sy, sy, cy) * pr.xz;
   pr.yz = mat2(cx, -sx, sx, cx) * pr.yz;
+
   return sdBox(pr, vec3(HALF_EXTENT));
 }
 
