@@ -31,24 +31,25 @@ T-1003/
 │   ├── simulation.js           ← Ping-Pong RenderTargets, Sim-Pass (GPU)
 │   ├── gpuSetup.js             ← Fullscreen-Quad-Factory (makeGpuSetup)
 │   ├── phase.js                ← Gauß-Gewichtsystem, getWeights()/MotionSpeed, reportMotion(), onPhaseTransition()
-│   ├── constants.js            ← Cross-Datei-Konstanten (BALL_COUNT, Cluster-Zylinder, Mood-Farben, ...) + Initialzustand der 12 Bälle + glslFloat()/glslVec3()
+│   ├── constants.js            ← Cross-Datei-Konstanten (BALL_COUNT, Cluster-Shape-Größen/-Rotationen, ...) + Initialzustand der 12 Bälle + glslFloat()
 │   ├── camera.js               ← statische Kamera (stub)
 │   ├── input.js                ← Webcam Frame-Differencing → reportMotion() → phase.js Gewichtssystem
 │   ├── audio.js                ← Phasengekoppelte Klangkulisse (Stub)
-│   ├── environment.js          ← dynamische Equirectangular-Env-Map-Generierung
-│   └── clusterShapeUI.js       ← Temporäre manuelle Auswahl der Cluster-Shape-Variante (siehe unten)
+│   ├── environment.js          ← lädt zwei HDRI-Dateien (RGBELoader) aus resources/, blendet sie zur `envMap`
+│   └── ui.js                   ← Temporäre manuelle Auswahl (Cluster-Shape-Variante, Cluster-/Metaball-Env-Map-Datei) — kollabierbare Sektionen, oben rechts
+├── resources/                   ← statische Assets: geladene `.hdr`-Equirectangular-Environment-Maps
 ├── shaders/
 │   ├── simulationShader.js     ← Physik-GLSL (Sim-Pass); interpoliert positionChunk
-│   ├── environmentShader.js    ← Equirectangular-GLSL; interpoliert noiseChunk + colorChunk
+│   ├── environmentShader.js    ← Equirectangular-GLSL; interpoliert noiseChunk + colorChunk; nimmt zwei geladene Source-Maps als Uniforms entgegen
 │   ├── raymarchShader.js       ← Rendering-GLSL; `buildMainFrag(clusterVariant)` interpoliert noiseChunk + colorChunk + shapeChunk(clusterVariant) + surfaceChunk
 │   └── bloomShader.js          ← Bloom Post-Processing (brightExtract, blur, composite Fragment-Shader)
 └── shaderChunks/
     ├── vertexChunk.js          ← GLSL-Chunk: gemeinsamer Passthrough-Vertex-Shader
     ├── noiseChunk.js           ← GLSL-Chunk: perlin2D, worley2D
-    ├── colorChunk.js           ← GLSL-Chunk: Farbpalette (MOOD_*), moodColor(), Himmelsfarbe (envCluster/envMetaball/envBurst, blendEnvironment(uv))
-    ├── shapeChunk.js           ← GLSL-Chunk-Factory: `shapeChunk(clusterVariant)`; clusterSDF/metaballSDF/burstSDF, map(), normal(), raymarch() — siehe Phasensystem → Cluster-Shape-Varianten
-    ├── surfaceChunk.js         ← GLSL-Chunk: shadeMetaball, shadeCluster, shadeBurst, shadeHit
-    └── positionChunk.js        ← GLSL-Chunk: applySimulation (gewichtet über clusterBlend/metaballBlend/burstBlend)
+    ├── colorChunk.js           ← GLSL-Chunk: Himmelsfarbe aus zwei gesampelten HDRI-Texturen (`_clusterEnvironment`/`_metaballEnvironment`/`_burstEnvironment`, `blendEnvironment(uv, clusterSourceMap, metaballSourceMap)`) — keine Farbkonstanten mehr
+    ├── shapeChunk.js           ← GLSL-Chunk-Factory: `shapeChunk(clusterVariant)`; `_clusterShape`/`_metaballShape`/`_burstShape`, `blendShape()`, `normal()`, `raymarch()` — siehe Phasensystem → Cluster-Shape-Varianten
+    ├── surfaceChunk.js         ← GLSL-Chunk: `_metaballShading`/`_clusterShading`/`_burstShading`, `blendShading()` — neutrales Metall (Metaball/Burst) + echte SDF-Glasbrechung (Cluster)
+    └── positionChunk.js        ← GLSL-Chunk: `blendPosition` (gewichtet über clusterBlend/metaballBlend/burstBlend)
 ```
 
 ### Modul-Interface-Prinzip
@@ -89,11 +90,11 @@ tick() / reportMotion(speed)
 
 - **n = 12 Metaballs** (experimentell anpassbar)
 - Jeder Ball i definiert durch Position **c**_i ∈ ℝ³, Basisradius r_i^0 ∈ ℝ, Geschwindigkeit **v**_i ∈ ℝ³
-- Metaball- und Burst-Phase komponieren ihre 12 Bälle jeweils via **smooth minimum (smin)** zu einem eigenen Teil-SDF (`metaballSDF`/`burstSDF` in `shapeChunk.js`, je ein eigener Verschmelzungsradius $k$):
+- Metaball- und Burst-Phase komponieren ihre 12 Bälle jeweils via **smooth minimum (smin)** zu einem eigenen Teil-SDF (`_metaballShape`/`_burstShape` in `shapeChunk.js`, je ein eigener Verschmelzungsradius $k$):
 
 $$d_\text{metaball/burst}(\mathbf{x}, t) = \operatorname{smin}_{i=1}^{n}\bigl(\|\mathbf{x} - \mathbf{c}_i\| - r_i(t),\; k_\text{metaball/burst}\bigr) + \beta \cdot \mathcal{N}(\mathbf{x}, t)$$
 
-Cluster hat kein eigenes Ball-SDF mehr — sein Teil-SDF ist ein analytischer Zylinder (siehe Phasensystem → Cluster). Die drei Teil-SDFs werden gewichtet über die Blend-Gewichte aus `phase.js` zum Gesamt-SDF summiert (siehe unten, „SDF-Komposition über Phasen").
+Cluster hat kein eigenes Ball-SDF mehr — sein Teil-SDF ist eine von neun analytischen Primitiv-Varianten (Zylinder/Kugel/Box/Torus/Kapsel/Pyramide, siehe Phasensystem → Cluster). Die drei Teil-SDFs werden gewichtet über die Blend-Gewichte aus `phase.js` zum Gesamt-SDF summiert (siehe unten, „SDF-Komposition über Phasen").
 
 - Rendering: **Raymarching** auf fullscreen Quad — keine explizite Geometrie
 - Normalenberechnung: zentrale finite Differenzen auf dem SDF
@@ -141,7 +142,7 @@ $\mu_i$ ist nie fallend (`mu = max(mu, t_now)`) und wird bei Aktivierung nicht a
 
 **Burst→Metaball als exakter 50/50-Übergang:** Cluster→Burst funktioniert von Natur aus gut (Burst aktiviert sofort bei Trigger, während Cluster noch nahe seinem Peak ist — die beiden Kurven kreuzen sich in der Mitte). Burst→Metaball braucht dafür zwei bewusste Entscheidungen: (1) `BURST_HOLD = LEAD·BURST_SIGMA` garantiert, dass `raw_burst` beim Hold-Ende bereits bei 1 angekommen ist, statt mittendrin abgeschnitten zu werden; (2) `METABALL_HANDOFF_LEAD = 0` setzt Metaballs `mu` exakt auf den Handoff-Zeitpunkt statt `LEAD·σ` in die Zukunft — `raw_metaball` startet damit ebenfalls bei 1, nicht beim üblichen ~1%-Boden. Im selben Moment sind beide Bumps auf ihrem Peak (1/1, exakt 50/50); ab da tracked Metaballs `mu` weiter mit `t_now` (bleibt bei 1), während Bursts `mu` einfriert und abklingt — die Gewichtsverteilung kippt rein durch Bursts eigenes Abklingen von 50/50 zu Metaball, ohne dass irgendwo gesprungen wird.
 
-Dasselbe gilt auf der Bewegungsseite: `positionChunk.js` dämpft `vel` während Burst gar nicht (Faktor `1.0`, siehe `applySimulation`s `VEL_DECAY_META`/`VEL_DECAY_CLUSTER`-Mix). Bursts `vel` soll beim Handoff noch echten Schwung tragen, statt schon auf ~0 ausgerollt zu sein — Metaballs eigene Orbit-Korrektur (`_simulateMetaball`/`_orbitTangentStep`) bleibt bewusst ein direktes, von `vel` unabhängiges Pos-Update (siehe unten), gerade damit sie mit Bursts Schwung interagiert statt ihn zu überschreiben.
+Dasselbe gilt auf der Bewegungsseite: `positionChunk.js` dämpft `vel` während Burst gar nicht (Faktor `1.0`, siehe `blendPosition`s `VEL_DECAY_META`/`VEL_DECAY_CLUSTER`-Mix). Bursts `vel` soll beim Handoff noch echten Schwung tragen, statt schon auf ~0 ausgerollt zu sein — Metaballs eigene Orbit-Korrektur (`_metaballPosition`/`_orbitTangentStep`) bleibt bewusst ein direktes, von `vel` unabhängiges Pos-Update (siehe unten), gerade damit sie mit Bursts Schwung interagiert statt ihn zu überschreiben.
 
 **Parameter (in `input.js`, unverändert):**
 
@@ -153,7 +154,7 @@ Dasselbe gilt auf der Bewegungsseite: `positionChunk.js` dämpft `vel` während 
 **Metaball** — direktes Orbit-Update, zwei unabhängige Terme (`positionChunk.js`):
 
 Pro Frame wird der nächste Punkt auf der Orbit-Ellipse zur aktuellen Ballposition bestimmt (`_phiOnOrbit`, projiziert `pos` auf die Orbit-Basisebene). Zwei Terme, beide direkt auf `pos` angewendet (gewichtet mit `metaballBlend`, **nicht** über `vel` akkumuliert — siehe unten):
-- **Radiale Rückholkraft** (`_simulateMetaball`): `(nearPt - pos) · ORBIT_SNAP_RATE`. Selbstlimitierend — geht gegen 0, sobald der Ball auf seinem Orbit ist. "Zurück in den Orbit, falls Burst ihn zu weit hinausgetragen hat" folgt daraus ohne Sonderfall.
+- **Radiale Rückholkraft** (`_metaballPosition`): `(nearPt - pos) · ORBIT_SNAP_RATE`. Selbstlimitierend — geht gegen 0, sobald der Ball auf seinem Orbit ist. "Zurück in den Orbit, falls Burst ihn zu weit hinausgetragen hat" folgt daraus ohne Sonderfall.
 - **Tangentialer Orbit-Schritt** (`_orbitTangentStep`): der Winkel-Fortschritt des Orbits selbst pro Tick, unabhängig vom radialen Term — läuft immer mit voller Stärke, sobald Metaball gewichtet ist, nicht erst nachdem der Ball radial aufgeholt hat.
 
 Beide Terme laufen **nicht** über `vel`: `vel` klingt nur wenige % pro Tick ab, eine Akkumulation dort würde sich jeden Frame aufsummieren statt sich auf die vorgesehene, selbstlimitierende Korrektur einzustellen — besonders der Tangential-Term, der nie gegen 0 geht (der Orbit schreitet immer weiter fort) und unbegrenzt aufschwingen würde. Der Burst→Metaball-Übergang wird stattdessen über die Gaußkurven-Überlappung und Bursts eigene, nie ganz auf 0 abklingende Kraft geglättet (siehe unten), nicht durch einen gemeinsamen Akkumulator der beiden Phasen.
@@ -164,58 +165,59 @@ $$\mathbf{c}_i^\text{orbit}(\phi) = \begin{pmatrix} r_i \cos\phi \\ r_i \sin\phi
 
 Die effektive Winkelgeschwindigkeit skaliert additiv mit `motionSpeed` — stärkere erkannte Bewegung beschleunigt alle Orbits.
 
-**Cluster** — Konvergenz zu einer Ziel-Form: Die Bälle werden nicht mehr zu einem formlosen Massezentrum gezogen, sondern jeweils zu einem eigenen Punkt auf einer einwindigen Helix um die (analytische) Cluster-Geometrie (`_clusterTarget(ballIdx)` in `positionChunk.js`, Radius aus `CLUSTER_CYL_RADIUS` in `constants.js` — die Helix ist immer um einen Zylinder gelegt, unabhängig davon, welche Shape-Variante gerade sichtbar ist, siehe „Cluster-Shape-Varianten" unten; die Helix-Höhe ist bewusst auf `HELIX_HALF_HEIGHT=0.9` gekappt, unabhängig von der viel größeren visuellen `CLUSTER_CYL_HALF_HEIGHT` selbst):
+**Cluster** — kein Ziel-Tracking der Ballpositionen mehr: Eine frühere Version zog jeden Ball zu einem eigenen Punkt auf einer Helix um die Cluster-Geometrie (`_clusterTarget(ballIdx)`); diese Funktion wurde ersatzlos entfernt (`_clusterPosition(pos)` in `positionChunk.js` liefert heute ausschließlich eine organische Perlin-Noise-Störung, keine Zielkraft):
 
-$$\mathbf{t}_i = \mathbf{c}_\text{cyl} + \Bigl(R\cos\phi_i,\; \text{lerp}(-H_\text{helix}, H_\text{helix}, u_i),\; R\sin\phi_i\Bigr), \qquad u_i = \tfrac{i+0.5}{n},\; \phi_i = 2\pi u_i$$
+$$\mathbf{v}_i(t) \mathrel{+}= \mathcal{N}_2(\mathbf{c}_i, t) \cdot \text{clusterBlend}, \qquad \mathbf{v}_i(t) \mathrel{-}= \mathbf{c}_i \cdot \text{ORIGIN\_PULL} \cdot (\text{clusterBlend} + \text{burstBlend})$$
 
-Diese Zielkraft ist **nicht** allein auf `clusterBlend` gewichtet, sondern auf `(clusterBlend + burstBlend)`, und zwar direkt auf Kraft-Ebene (vor der Akkumulation in `vel`, nicht erst bei der Anwendung auf `pos`): so lädt sie sich während Burst weiter auf `vel` auf (Cluster erbt so schon Schwung in die richtige Richtung), trägt aber ~0 zu `vel` bei, solange Metaball dominiert — sonst würde sich ungewichtet aufgeladene `vel` unbemerkt aufbauen und beim nächsten Cluster/Burst-Wechsel schlagartig in `pos` entladen ("floating around a point"-Regression, siehe Git-Historie).
+Die Bälle konvergieren also nur noch lose zum Ursprung (`ORIGIN_PULL`, gewichtet mit `clusterBlend + burstBlend`, aus demselben Grund direkt auf Kraft-Ebene statt erst bei der `pos`-Anwendung wie zuvor — siehe „floating around a point"-Regression in der Git-Historie), nicht mehr auf ein shape-spezifisches Zielmuster. Die tatsächliche *Form* im Cluster kommt weiterhin ausschließlich aus dem eigenständigen analytischen SDF (siehe SDF-Komposition unten) — die Ballpositionen selbst haben keine erkennbare Beziehung mehr zur sichtbaren Shape-Variante. Das ist eine bewusste, aber noch nicht abschließend bewertete Vereinfachung (siehe Offene Punkte) — sie hat gegenüber der Helix-Variante keine Regression im Rendering verursacht, weil die Form ohnehin nie aus der Ballanordnung kam, aber die Bälle selbst könnten dadurch optisch "durch" die Shape hindurch treiben, statt sie sichtbar zu konturieren.
 
-$$\mathbf{v}_i(t) \mathrel{+}= k_1(\mathbf{t}_i - \mathbf{c}_i) \cdot (\text{clusterBlend} + \text{burstBlend})$$
+`CLUSTER_CYL_CENTER_X`/`_Y` (`constants.js`, als `CLUSTER_CENTER` in `shapeChunk.js` zusammengesetzt) ist dadurch kein von der Physik gelesener Zielpunkt mehr, sondern ausschließlich das Zentrum, um das alle Cluster-SDF-Varianten (Zylinder/Kugel/Box/Torus/Kapsel/Pyramide) gebaut werden — ein rein empirisch bestimmter Wert für die Bildmitten-Zentrierung, **nicht** aus dem Kameramodell abgeleitet: sowohl `+CAMERA_START_POSITION.xy` als auch `-CAMERA_START_POSITION.xy` wurden probiert und überschossen die Bildmitte in entgegengesetzte Richtungen; der aktuelle Wert ist eine weitere empirische Korrektur danach.
 
-Perlin-Noise-Störung auf $\mathbf{v}_i$ sorgt weiterhin für organische, unregelmäßige Bewegung während der Konvergenz. Die tatsächliche *Form* im Cluster kommt aber nicht aus der Ballanordnung, sondern aus einem eigenständigen analytischen SDF (siehe SDF-Komposition unten) — die Helix-Zielpunkte sorgen nur dafür, dass die Bälle beim Einblenden visuell konvergieren, statt an einer beliebigen Stelle zu verschwinden; sie müssen dabei nicht die volle (Bild-überragende) Höhe der Zylinder-Zielform abdecken, da `reflectBounds` Bälle ohnehin auf `BY=1.0` begrenzt.
-
-**Kamera-Zentrierung:** Der Zielpunkt $\mathbf{c}_\text{cyl}$ liegt bei `CLUSTER_CYL_CENTER_X`/`_Y` (`constants.js`) — ein rein empirisch bestimmter Wert, **nicht** aus dem Kameramodell abgeleitet: sowohl `+CAMERA_START_POSITION.xy` als auch `-CAMERA_START_POSITION.xy` wurden probiert und überschossen die Bildmitte in entgegengesetzte Richtungen; der aktuelle Wert ist eine weitere empirische Korrektur danach.
-
-**Burst** — Abstoßung mit exponentiellem Nahbereich und konstantem Sockel (`_simulateBurst` in `positionChunk.js`, **nicht** asymptotisch auf 0 abklingend):
+**Burst** — Abstoßung mit exponentiellem Nahbereich und konstantem Sockel (`_burstPosition` in `positionChunk.js`, **nicht** asymptotisch auf 0 abklingend):
 $$\mathbf{v}_i(t) \mathrel{+}= \hat{\mathbf{d}}_i \cdot \bigl(F_\text{offset} + F_\text{peak} \cdot e^{-\lambda\|\mathbf{d}_i\|}\bigr), \qquad \mathbf{d}_i = \mathbf{c}_i - \hat{\mathbf{c}}, \quad F_\text{peak} = F_\text{base} + \text{motionSpeed}\cdot F_\text{scale}$$
 
 Nahe der Formation ist die Kraft am stärksten ($F_\text{offset}+F_\text{peak}$); mit wachsendem Abstand klingt sie exponentiell ab, aber nur bis zu einem konstanten Sockel $F_\text{offset}$ — die Bälle treiben also immer weiter nach außen, statt dass der Schub völlig ausläuft, sobald sie weit von der Formation entfernt sind. Diese Kraft wird jeden Frame ungedämpft in `vel` akkumuliert (siehe oben, `vel`-Decay `1.0` während Burst), daher sind $F_\text{base}$/$F_\text{scale}$ bewusst klein gehalten — die Akkumulation selbst erzeugt den Großteil der Bewegung. Balls, die die Sichtbarkeitsgrenzen überschreiten, werden reflektiert (`reflectBounds`).
 
 ### SDF-Komposition über Phasen
 
-Analog zu Farbe und Position ist auch die Form pro Phase eine eigenständige, in sich geschlossene SDF-Funktion (`clusterSDF`/`metaballSDF`/`burstSDF` in `shapeChunk.js`), gewichtet über dieselben drei Gewichte zum Gesamt-SDF summiert:
+Analog zu Farbe und Position ist auch die Form pro Phase eine eigenständige, in sich geschlossene SDF-Funktion (`_clusterShape`/`_metaballShape`/`_burstShape` in `shapeChunk.js`), über `blendShape(p)` gewichtet mit denselben drei Gewichten zum Gesamt-SDF summiert:
 
 $$d(\mathbf{x}, t) = w_\text{cluster}\cdot d_\text{cluster}(\mathbf{x}) + w_\text{metaball}\cdot d_\text{metaball}(\mathbf{x}, t) + w_\text{burst}\cdot d_\text{burst}(\mathbf{x}, t)$$
 
-`metaballSDF`/`burstSDF` bleiben je eine vollständige, in sich geschlossene Ballunion inklusive eigenem Oberflächenrauschen, nur mit unterschiedlichem Verschmelzungsradius $k$ (Metaball loser fusioniert, Burst enger — liest sich "explodiert" statt "verschmolzen"). `clusterSDF` ist komplexer und in einem eigenen Abschnitt unten beschrieben (Cluster-Shape-Varianten).
+`_metaballShape`/`_burstShape` bleiben je eine vollständige, in sich geschlossene Ballunion inklusive eigenem Oberflächenrauschen, nur mit unterschiedlichem Verschmelzungsradius $k$ (Metaball loser fusioniert, Burst enger — liest sich "explodiert" statt "verschmolzen"). `_clusterShape` ist komplexer und in einem eigenen Abschnitt unten beschrieben (Cluster-Shape-Varianten).
 
-Diese phasenübergreifende Summe ist eine **zeitliche Überblendung** (Gewichte laufen stetig gegen 0/1), keine räumliche Vereinigung: Ein `smin`/`min` über die drei Teil-SDFs wäre falsch, da `clusterSDF` überall im Raum definiert ist und so als geisterhaft "durchscheinende" feste Geometrie sichtbar würde, selbst wenn `clusterWeight ≈ 0`. `smin` bleibt exakt dort, wo es hingehört: innerhalb von `metaballSDF`/`burstSDF`, zur Verschmelzung der 12 gleichzeitig präsenten Bälle. `raymarch()` mildert das inhärente Risiko einer linearen SDF-Überblendung (kein exaktes Abstandsfeld während einer echten Überblendung) mit einem adaptiven, auf den Überblend-Gewichten basierenden konservativen Schrittfaktor, der im (dominanten) eingeschwungenen Zustand keine Kosten verursacht.
+Diese phasenübergreifende Summe ist eine **zeitliche Überblendung** (Gewichte laufen stetig gegen 0/1), keine räumliche Vereinigung: Ein `smin`/`min` über die drei Teil-SDFs wäre falsch, da `_clusterShape` überall im Raum definiert ist und so als geisterhaft "durchscheinende" feste Geometrie sichtbar würde, selbst wenn `clusterWeight ≈ 0`. `smin` bleibt exakt dort, wo es hingehört: innerhalb von `_metaballShape`/`_burstShape`, zur Verschmelzung der 12 gleichzeitig präsenten Bälle. `raymarch()` mildert das inhärente Risiko einer linearen SDF-Überblendung (kein exaktes Abstandsfeld während einer echten Überblendung) mit einem adaptiven, auf den Überblend-Gewichten basierenden konservativen Schrittfaktor, der im (dominanten) eingeschwungenen Zustand keine Kosten verursacht.
 
 ### Cluster-Shape-Varianten (`shapeChunk.js`)
 
-`clusterSDF` ist keine einzelne feste Form mehr, sondern eine von sechs möglichen Kombinationen aus **Form** (Zylinder/Kugel/Box, alle um `CLUSTER_CENTER` zentriert, Größe fix aus `constants.js`: `CLUSTER_CYL_RADIUS`/`_HALF_HEIGHT`, `CLUSTER_SPHERE_RADIUS`, `CLUSTER_BOX_HALF_EXTENT` + `_ROTATION_X`/`_Y` für die feste Verkippung der Box) × **Modus** (voll / mit der Ballunion geschnitten):
+`_clusterShape` ist keine einzelne feste Form mehr, sondern eine von neun möglichen Varianten. Sechs davon sind Kombinationen aus **Form** (Zylinder/Kugel/Box, alle um `CLUSTER_CENTER` zentriert, Größe fix aus `constants.js`: `CLUSTER_CYL_RADIUS`/`_HALF_HEIGHT`, `CLUSTER_SPHERE_RADIUS`, `CLUSTER_BOX_HALF_EXTENT` + `_ROTATION_X`/`_Y`) × **Modus** (voll / mit der Ballunion geschnitten); drei weitere Formen (Torus, Kapsel, Pyramide) existieren bislang nur als **Full**-Variante:
 
 ```
 clusterCylinderFull / clusterCylinderIntersect
 clusterSphereFull   / clusterSphereIntersect
 clusterBoxFull       / clusterBoxIntersect
+clusterTorusFull
+clusterCapsuleFull
+clusterPyramidFull
 ```
 
-Jede der sechs ist eine explizite, nicht-verzweigende Funktion, die nur die Helfer `_clusterCylinder`/`_clusterSphere`/`_clusterBox` und `_clusterIntersect` komponiert. `clusterSDF(p)` selbst ist ein Einzeiler, der auf genau eine dieser sechs aliast — welche, entscheidet `shapeChunk(clusterVariant)` **beim Shader-Zusammenbau** (ein JS-String, der in den generierten GLSL-Quelltext eingesetzt wird), nicht ein Laufzeit-Branch. Ändern der Variante bedeutet: `raymarchShader.js`s `buildMainFrag(clusterVariant)` neu aufrufen und `material.fragmentShader`/`needsUpdate` setzen (siehe `main.js`).
+Jede ist eine explizite, nicht-verzweigende Funktion, die nur ihren Form-Helfer (`_clusterCylinder`/`_clusterSphere`/`_clusterBox`/`_clusterTorus`/`_clusterCapsule`/`_clusterPyramid`) und — bei den ersten drei — `_clusterIntersect` komponiert. `_clusterShape(p)` selbst ist ein Einzeiler, der auf genau eine dieser neun aliast — welche, entscheidet `shapeChunk(clusterVariant)` **beim Shader-Zusammenbau** (ein JS-String, der in den generierten GLSL-Quelltext eingesetzt wird), nicht ein Laufzeit-Branch. Ändern der Variante bedeutet: `raymarchShader.js`s `buildMainFrag(clusterVariant)` neu aufrufen und `material.fragmentShader`/`needsUpdate` setzen (siehe `main.js`).
 
-**Intersect-Varianten** (`_clusterIntersect(shapeD, p)`): Schnittmenge (`max`, nicht `min`) aus Form und der (rauschperturbierten) Ballunion — die Bälle wirken dadurch von der Form "abgeschnitten", statt als separate Blob-Wolke neben ihr zu schweben. Die Schnittmenge selbst blendet ein, während Metaball ausblendet (`1 - metaballBlend`, nicht `clusterBlend`):
+**Primitiv-Helfer** (`_sdCappedCylinder`, `_sdSphere`, `_sdBox`, `_sdTorus`, `_sdCapsule`, `_sdPyramid`) sind reine, wiederverwendbare Distanzfunktionen ohne Cluster-Bezug; `_sdSphere` wird zusätzlich von `_foldBall`/`_ballUnion` für die 12 Metaball-Kugeln verwendet (vorher gab es dafür eine separate, redundante `sphere(p,c,r)`-Funktion mit Center-Parameter — inzwischen vereinheitlicht: der Aufrufer übersetzt `p` selbst). Die vier rotierten Formen (Zylinder, Box, Torus, Kapsel, Pyramide) teilen sich einen gemeinsamen Rotations-Helfer `_rotateYX(p, ry, rx)` statt die Sinus/Kosinus-Matrixmultiplikation pro Form zu duplizieren.
+
+**Pyramide — abweichend von der kanonischen Formel:** Die naheliegende geschlossene Pyramiden-SDF (iq, Faltung über die Diagonale via `p.xz = (p.z>p.x) ? p.zx : p.xz`) erzeugt eine sichtbare Knick-Naht entlang beider Bodendiagonalen — der Abstandswert bleibt stetig, aber der Gradient (und damit die per finiten Differenzen berechnete Normale) nicht, was die eigentlich flache Grundfläche wie in Dreiecke zerschnitten aussehen lässt. `_sdPyramid` ist deshalb stattdessen als Schnittmenge (`max`) dreier Halbraum-Ebenen (zwei über `abs(p.x)`/`abs(p.z)` gefaltete Seitenflächen + eine Bodenebene `-p.y`) implementiert — jede Fläche ist dadurch eine echte, knickfreie Ebene; Kanten entstehen nur dort, wo die Pyramide tatsächlich welche hat.
+
+**Intersect-Varianten** (`_clusterIntersect(shapeD, p)`, nur für Zylinder/Kugel/Box): Schnittmenge (`max`, nicht `min`) aus Form und der (rauschperturbierten) Ballunion — die Bälle wirken dadurch von der Form "abgeschnitten", statt als separate Blob-Wolke neben ihr zu schweben. Die Schnittmenge selbst blendet ein, während Metaball ausblendet (`1 - metaballBlend`, nicht `clusterBlend`):
 
 $$d_\text{intersect}(\mathbf{x}) = \text{mix}\bigl(d_\text{ball}(\mathbf{x}),\; \max(d_\text{shape}(\mathbf{x}), d_\text{ball}(\mathbf{x})),\; 1-\text{metaballBlend}\bigr)$$
 
-Bei `metaballBlend≈1` liefert das exakt die (ungeschnittene) Ballunion — identisch zu `metaballSDF`, `clusterSDF` verzerrt also nichts, solange Metaball dominiert. Bei `metaballBlend≈0` ist es die echte Schnittmenge mit der Form in ihrer wahren Zielgröße.
+Bei `metaballBlend≈1` liefert das exakt die (ungeschnittene) Ballunion — identisch zu `_metaballShape`, `_clusterShape` verzerrt also nichts, solange Metaball dominiert. Bei `metaballBlend≈0` ist es die echte Schnittmenge mit der Form in ihrer wahren Zielgröße.
 
-**Wichtig — Form-Größe bleibt immer fix, nur die Schnittmenge blendet:** Eine frühere Version interpolierte stattdessen den Radius/die Ausdehnung der Form selbst zwischen einem großen (die Ballbahnen umschließenden) und dem finalen Wert — das war ein Fehler: mitten in der Überblendung (wenn `metaballBlend` und `clusterBlend` beide relevant sind) hatte die Form dann einen überdimensionierten Zwischen-Radius, der von `clusterBlend` sichtbar ins Gesamtbild gemischt wurde — eine reale, falsch dimensionierte Aufblähung, kein Rendering-Artefakt. Die Positions-Konvergenz der Bälle (Helix, oben) litt nicht darunter, da sie über eine Kraft (einen Versatz reduzierend) statt eine Form-Größe läuft.
+**Wichtig — Form-Größe bleibt immer fix, nur die Schnittmenge blendet:** Eine frühere Version interpolierte stattdessen den Radius/die Ausdehnung der Form selbst zwischen einem großen (die Ballbahnen umschließenden) und dem finalen Wert — das war ein Fehler: mitten in der Überblendung (wenn `metaballBlend` und `clusterBlend` beide relevant sind) hatte die Form dann einen überdimensionierten Zwischen-Radius, der von `clusterBlend` sichtbar ins Gesamtbild gemischt wurde — eine reale, falsch dimensionierte Aufblähung, kein Rendering-Artefakt.
 
-**Full-Varianten** brauchen diesen Mechanismus gar nicht — sie referenzieren keine Bälle, sind immer ihre feste Zielgröße, und werden allein durch `clusterBlend`s eigenes Gewicht ein-/ausgeblendet, genau wie `metaballSDF`/`burstSDF`.
+**Full-Varianten** (alle neun Formen als Grundform, aber nur Zylinder/Kugel/Box/Torus/Kapsel/Pyramide *ausschließlich* als Full) brauchen den Intersect-Mechanismus gar nicht — sie referenzieren keine Bälle, sind immer ihre feste Zielgröße, und werden allein durch `clusterBlend`s eigenes Gewicht ein-/ausgeblendet, genau wie `_metaballShape`/`_burstShape`.
 
-**Bekannte Einschränkung:** Die Helix-Zielpunkte der Bälle (`_clusterTarget`, oben) sind immer um den *Zylinder* gelegt, unabhängig von der gewählten Shape-Variante — bei Kugel/Box-Intersect-Varianten passt die Ballverteilung also nicht notwendigerweise zur sichtbaren Form (z. B. könnte die schlanke, hohe Helix bei einer flacheren Kugel/Box stark wegschneiden). Für Full-Varianten irrelevant, da dort keine Bälle einfließen.
-
-**UI (temporär):** `src/clusterShapeUI.js` baut sechs Buttons direkt per DOM-API (kein `index.html`-Markup zu pflegen) und ruft bei Klick `buildMainFrag(variant)` + `material.needsUpdate=true` in `main.js` auf. Geplant: Ersatz durch eine zufällige Auswahl bei jedem Cluster-Eintritt (`phase.js`s `onPhaseTransition`) statt manueller UI.
+**UI (temporär):** `src/ui.js`s `initClusterShapeUI(variants, onSelect)` baut die Buttons für `CLUSTER_SHAPE_VARIANTS` direkt per DOM-API (kein `index.html`-Markup zu pflegen), in einer kollabierbaren Sektion oben rechts (siehe `initClusterEnvMapUI`/`initMetaballEnvMapUI`-Pendants für die Environment-Maps, Environment-Abschnitt unten). Klick ruft `buildMainFrag(variant)` + `material.needsUpdate=true` in `main.js` auf. Geplant: Ersatz durch eine zufällige Auswahl bei jedem Cluster-Eintritt (`phase.js`s `onPhaseTransition`) statt manueller UI.
 
 ---
 
@@ -250,14 +252,14 @@ Alle Passes: Fullscreen Quad + OrthographicCamera → WebGLRenderTarget (außer 
 
 ### Physik- und Phasendynamik (GPU, `positionChunk.js`)
 
-Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie Orbit-Parameter (Texel 3i+2). Die Physik wird **nicht** hart umgeschaltet, sondern kontinuierlich über dieselben drei Gewichte gemischt, die auch das Shading treibt (`applySimulation` liest `clusterBlend`/`metaballBlend`/`burstBlend` direkt als Uniforms — keine eigene, parallele Gewichtsberechnung mehr auf der GPU-Seite, da das frühere `_clusterActivation`-Gate mit dem Bump-basierten System entfällt).
+Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie Orbit-Parameter (Texel 3i+2). Die Physik wird **nicht** hart umgeschaltet, sondern kontinuierlich über dieselben drei Gewichte gemischt, die auch das Shading treibt (`blendPosition` liest `clusterBlend`/`metaballBlend`/`burstBlend` direkt als Uniforms — keine eigene, parallele Gewichtsberechnung mehr auf der GPU-Seite, da das frühere `_clusterActivation`-Gate mit dem Bump-basierten System entfällt).
 
 **Positions-Update** (kombiniert):
 $$\Delta\mathbf{c}_i = \Delta\mathbf{c}^\text{orbit} \cdot \text{metaballBlend} + \mathbf{v}_i \cdot (\text{clusterBlend} + \text{burstBlend})$$
 
 **Kräfte**: Zentripetalkraft + Ursprungsanziehung sind mit `(clusterBlend+burstBlend)` gewichtet — direkt auf Kraft-Ebene, bevor sie in `vel` akkumulieren, nicht erst bei der `pos`-Anwendung. Dadurch laden sie sich während Burst weiter auf `vel` auf (Cluster erbt so Impuls in Richtung Helix-Ziel, siehe Phasensystem → Cluster), tragen aber ~0 zu `vel` bei, solange Metaball dominiert. Cluster-Noise und Burst-Abstoßung werden mit `clusterBlend` bzw. `burstBlend` gewichtet. Burst liest seine Kraftstärke live aus `motionSpeed`, nicht aus einer bei Trigger eingefrorenen Intensität, und klingt mit wachsendem Abstand nur bis zu einem konstanten Sockel ab (nicht auf 0). Velocity-Decay wird phasenabhängig interpoliert (`VEL_DECAY_META`/`VEL_DECAY_CLUSTER`, `mix`-Kette; während Burst keine Dämpfung, Faktor `1.0`). Nach dem Positions-Update wird `reflectBounds` aufgerufen.
 
-`_simulateCluster`/`_simulateBurst`/`_simulateMetaball` geben jeweils ihren rohen, ungewichteten Beitrag zurück; `applySimulation` gewichtet und summiert sie zentral — dasselbe Muster wie `map()` (`shapeChunk.js`) und `shadeHit()` (`surfaceChunk.js`), nicht mehr "jede Funktion wendet ihr Gewicht selbst an".
+`_clusterPosition`/`_burstPosition`/`_metaballPosition` geben jeweils ihren rohen, ungewichteten Beitrag zurück; `blendPosition` gewichtet und summiert sie zentral — dasselbe Muster wie `blendShape()` (`shapeChunk.js`) und `blendShading()` (`surfaceChunk.js`), nicht mehr "jede Funktion wendet ihr Gewicht selbst an".
 
 ### Uniforms (CPU → Shader, pro Frame)
 
@@ -269,7 +271,7 @@ $$\Delta\mathbf{c}_i = \Delta\mathbf{c}^\text{orbit} \cdot \text{metaballBlend} 
 | `camPos` | renderer.js | Kameraposition |
 | `resolution` | renderer.js | Viewport-Größe |
 | `stateTex` | simulation.js | Ball-Zustandstextur (RGBA32F, 36×1) |
-| `envMap` | environment.js | Equirectangular Environment-Map (dynamisch regeneriert, direkt gesampelt, keine PMREM-Prefilterung) |
+| `envMap` | environment.js | Equirectangular Environment-Map, jeden Frame aus zwei geladenen HDRI-Dateien neu zusammengesetzt (direkt gesampelt, keine PMREM-Prefilterung) — siehe Environment unten |
 
 ---
 
@@ -303,26 +305,21 @@ Konkrete Umsetzung der bereits geplanten Anwesenheitserkennung (Offene Punkt #2,
 
 ### Environment (`environment.js`)
 
-Eine einzelne dynamische Equirectangular-Textur wird kontinuierlich aus einem GPU-seitigen Shader regeneriert und direkt (ohne PMREM-Prefilterung) als `envMap` gesampelt:
+Die Umgebung ist keine rein prozedurale Textur mehr, sondern eine jeden Frame neu zusammengesetzte Equirectangular-Textur aus zwei **geladenen** HDRI-Dateien (`resources/*.hdr`, per `THREE.RGBELoader` aus `three/addons/`), die je nach Phase unterschiedlich gewichtet einfließen:
 
 ```
-environmentShader.js  →  WebGLRenderTarget (HalfFloat, Equirectangular)
-                      →  material.uniforms.envMap
+resources/*.hdr (RGBELoader)  →  clusterSourceMap / metaballSourceMap (sampler2D-Uniforms auf dem internen Env-Material)
+environmentShader.js           →  WebGLRenderTarget (HalfFloat, Equirectangular)
+                                →  material.uniforms.envMap
 ```
 
-`environmentShader.js` erzeugt abstrakte, nicht-gegenständliche Umgebungen parameterisiert durch `metaballBlend/clusterBlend/burstBlend` und `time` (Worley-Blobs, Perlin-Ambient, gerichtetes Licht). Regenerierung periodisch + bei Phasenübergängen (via `onPhaseTransition`). Rauheitsabhängige Unschärfe der Reflexion wird beim Sampling im Shader approximiert (`_envSampleLod`, Cone-Sampling — siehe `surfaceChunk.js`), nicht durch Mip-Level einer vorgefilterten Textur.
+`ENV_MAP_FILES` (`environment.js`) listet alle in `resources/` verfügbaren Dateien — da eine statische Seite ohne Server das Verzeichnis nicht zur Laufzeit auslesen kann, muss diese Liste händisch gepflegt werden, sobald eine neue Datei hinzukommt. `CLUSTER_ENV_MAP_DEFAULT`/`METABALL_ENV_MAP_DEFAULT` legen die Standardauswahl pro Rolle fest; `setClusterEnvMapFile`/`setMetaballEnvMapFile` laden bei Bedarf eine andere Datei aus derselben Liste nach. **Wichtig:** `THREE.DataTexture` (was `RGBELoader` liefert) hat standardmäßig `flipY = false`, im Unterschied zu gewöhnlichen Bild-Texturen (`flipY = true`) — die Equirectangular-UV-Konvention in `colorChunk.js` erwartet Letzteres, daher wird `flipY` nach dem Laden explizit auf `true` gesetzt (sonst erscheint die Himmelskugel vertikal gespiegelt).
 
-Phasengekoppelte Stimmung der Umgebung:
+`colorChunk.js`s `blendEnvironment(uv, clusterSourceMap, metaballSourceMap)` sampelt beide Texturen mit derselben Equirectangular-Projektion und mischt sie gewichtet — die Cluster-Phase liest ausschließlich `clusterSourceMap`, Metaball **und** Burst teilen sich `metaballSourceMap`. Beide Quellen bekommen je einen festen Belichtungs-Multiplikator (`CLUSTER_ENV_EXPOSURE`, `METABALL_ENV_EXPOSURE`), da die geladenen Referenzdateien dunkler wirkten als gewünscht — reiner Helligkeitsausgleich, keine kreative Tönung. Die frühere prozedurale Ambient-Schicht (Worley-Speckle + rotierendes Key-Light, `_envKeyLight`/`_worleyContrast`, plus ein additiver Phasenfarben-Tint) ist vollständig entfernt, nicht nur deaktiviert; die einzige Differenzierung zwischen den drei Phasen ist, welche der beiden geladenen Dateien (und mit welcher Gewichtung) an einem gegebenen Punkt der Himmelskugel einfließt.
 
-| Parameter | Metaball | Cluster | Burst |
-|---|---|---|---|
-| Farbtemperatur | neutral-grau | warm-diffus | harte Kontraste |
-| Helligkeit | mittel | niedrig, gläsern | hohe Highlights |
-| Direktivität | gerichtet, scharf (Key-Light + Worley) | weich, zentral (Top-Glow) | gerichtet, scharf (Key-Light + Worley) |
+Da alle drei Phasen in **eine** gemeinsame `envMap`-Textur gewichtet einfließen (statt getrennt gesampelt zu werden), ist eine echte Isolation zwischen den beiden Quellbildern während einer Überblendung nicht gegeben: Bei relevanten Zwischen-Gewichten (z. B. Cluster→Burst) enthält das Ergebnis an jedem Pixel einen Mix aus beiden geladenen Bildern — Clusters Glasbrechung (siehe Shading-Modul) sampelt in diesem Moment also nicht rein `clusterSourceMap`, sondern die bereits gemischte Textur. Das ist konsistent mit dem Rest des Systems (nirgends wird hart umgeschaltet, siehe SDF-Komposition oben), aber explizit erwähnenswert, falls eine strikte Trennung gewünscht wird — das würde eine zweite, getrennt gesampelte Uniform statt der gemeinsamen `envMap` erfordern.
 
-Metaball und Burst teilen sich denselben Generator (`_envKeyLight` in `colorChunk.js`, Worley-Speckle + rotierendes Key-Light), unterschieden nur durch den Tint (`MOOD_METABALL` vs. `MOOD_BURST`, je eine eigene, nach der Phase benannte Konstante) — Metaballs Umgebung liest sich damit als kühlere Variante desselben Wesens, nicht als eigenständige Stimmung. `AMBIENT_FLOOR` hält den Hintergrund zwischen Speckles/Key-Light über Schwarz, statt Farbtöne auf schwarzem Grund.
-
-`environmentShader.js`s `main()` blendet immer alle drei Phasenfarben gewichtet (`blendEnvironment()` aus `colorChunk.js`, kein `envSelect`-Codepfad) — genau wie `shadeHit()`/`moodColor()` für die Ball-Oberflächen. Keine Preset-UI (mehr): `environment.js` setzt seine Blend-Uniforms immer direkt aus `getWeights()`.
+**UI (temporär):** `src/ui.js`s `initClusterEnvMapUI`/`initMetaballEnvMapUI` bauen je eine kollabierbare Sektion ("CLUSTER ENVIRONMENT"/"METABALL ENVIRONMENT") mit einem Button pro Datei aus `ENV_MAP_FILES`, oben rechts neben der Shape-Auswahl (siehe Cluster-Shape-Varianten oben) — alle drei Sektionen teilen sich ein gemeinsames, lazy erzeugtes Panel-Element.
 
 ### Audio (`audio.js`) ⚠️ offen
 - Phasengekoppelt über `onPhaseTransition`: niederfrequent (Metaball/Cluster) ↔ hochfrequent (Burst)
@@ -340,38 +337,40 @@ Metaball und Burst teilen sich denselben Generator (`_envKeyLight` in `colorChun
 
 ### Animation
 - Metaball-Phase: zirkulärer Drift, zeitweiliges Verschwinden/Auftauchen einzelner Segmente
-- Cluster-Phase: Bälle konvergieren auf eine Helix um die Cluster-Zielform; die Form selbst kommt aus einem eigenständigen SDF (Zylinder/Kugel/Box × voll/geschnitten, sechs Varianten), nicht aus der Ballanordnung (siehe Phasensystem → Cluster, Cluster-Shape-Varianten)
+- Cluster-Phase: Bälle driften nur noch lose zum Ursprung (keine formbezogene Zielkraft mehr, siehe Phasensystem → Cluster); die sichtbare Form kommt weiterhin ausschließlich aus einem eigenständigen SDF (Zylinder/Kugel/Box × voll/geschnitten + Torus/Kapsel/Pyramide nur voll, neun Varianten), nicht aus der Ballanordnung (siehe Cluster-Shape-Varianten)
 - Burst-Phase: schlagartige Auflösung, Zerstreuung in alle Richtungen
 - Shading-Übergänge: kontinuierlich über skalaren Phasenwert interpoliert
 
 ### Grafik
-- **Metallisch-reflektierend** (Metaball + Burst): Env-Map-Sampling; Reflexionen fremd und nicht verortbar. Metaball und Burst shading-seitig getrennt nur durch ihren Tint (`MOOD_METABALL` bzw. `MOOD_BURST`, `colorChunk.js`/`constants.js`) — Rauheit (`SURFACE_ROUGHNESS`) und Rim-Light-Tint (`MOOD_RIM`) sind jetzt eine gemeinsame Konstante für beide Phasen, kein separater Wert pro Phase mehr.
-- **Transluzent-lumineszent** (Cluster): Fresnel, Streuung, angedeutete Materialdicke; inneres Leuchten; primärer Rim-Light-Träger
+- **Metallisch-reflektierend, neutral** (Metaball + Burst): Env-Map-Sampling gegen ein festes, ungefärbtes `METAL_F0 = vec3(0.95)` (kein Phasen-Tint mehr) bei sehr niedriger Rauheit (`SURFACE_ROUGHNESS = 0.05`, nahezu Spiegel) — Metaball und Burst sind shading-seitig inzwischen **identisch**; sie unterscheiden sich nur noch über ihre SDF-Fusionsenge (`SMIN_K`) und Physik, nicht mehr über Farbe/Rauheit/Rim-Light (Rim-Light wurde als eigenständiger Effekt ganz entfernt).
+- **Transluzent-lumineszent, echte Glasbrechung** (Cluster): kein Farbton-/Rim-Light-Ansatz mehr, sondern ein tatsächlicher, kurzer SDF-Raymarch durch das Cluster-Volumen (`_clusterTraceInterior`) mit Snell'scher Brechung beim Ein- und Austritt und Beer-Lambert-Absorption entlang des Innenwegs; Ergebnis wird Fresnel-gewichtet mit einer reinen Spiegelreflexion gemischt. Nur ein sehr dunkler, kaum wahrnehmbarer Tint (`GLASS_TINT_COLOR`) bleibt als Absorptions-Bodenfarbe für sehr lange Innenwege.
 - Schwarzer Hintergrund; Skybox als Alternative ⚠️ offen
-- Abstrakte dynamische Environment-Map — keine erkennbaren Strukturen
+- **Geladene, nicht mehr rein prozedurale Environment-Map** (`resources/*.hdr`) — steht in Spannung zum ursprünglichen Anspruch "keine erkennbaren Strukturen" (siehe Environment oben); bewusste Entscheidung, um überhaupt harte, richtungsabhängige Reflexionsmerkmale zu bekommen, die die vorherige rein prozedurale Himmelskugel nicht lieferte
 - **Bloom Post-Processing** (`bloomShader.js` + `gpuSetup.makeBloomSetup`): Hellste Bereiche extrahiert (Luma > threshold), 9-Tap-Gauß H+V geblurt, additiv überlagert; Intensität und Schwellenwert koppeln an `burstBlend` (mehr Leuchtkraft im Burst)
 
 ### Shading-Modul (`surfaceChunk.js`)
 
-Da `MeshPhysicalMaterial` mit Raymarching inkompatibel ist (es operiert auf rasterisierter Geometrie, nicht auf SDF-ausgewerteten impliziten Flächen), wird das Shading vollständig manuell nachimplementiert.
+Da `MeshPhysicalMaterial` mit Raymarching inkompatibel ist (es operiert auf rasterisierter Geometrie, nicht auf SDF-ausgewerteten impliziten Flächen), wird das Shading vollständig manuell nachimplementiert. Keine Farbkonstanten mehr in diesem Modul — die einzige Farbquelle ist die gesampelte Environment-Map (siehe Environment oben).
 
-Eine Funktion pro Phase, `shadeHit` mischt alle drei gewichtet (immer 3-Wege, keine Early-Outs):
+Eine Funktion pro Phase, `blendShading` mischt alle drei gewichtet (immer 3-Wege, keine Early-Outs):
 
-| Phase | Env-Map-Sampling | Rim-Light | Farbe |
-|---|---|---|---|
-| **Metaball** (`shadeMetaball`) | Ja (`_shadeReflective`, geteilt mit Burst) | `RIM_WEIGHT` · `MOOD_RIM` (gemeinsam mit Burst) | `MOOD_METABALL` |
-| **Cluster** (`shadeCluster`) | Nein | `RIM_WEIGHT` · `MOOD_CLUSTER` | Bestehende Cluster-Tönung (unverändert) |
-| **Burst** (`shadeBurst`) | Ja (`_shadeReflective`, geteilt mit Metaball) | `RIM_WEIGHT` · `MOOD_RIM` (gemeinsam mit Metaball) | `MOOD_BURST` |
+| Phase | Ansatz | Helfer |
+|---|---|---|
+| **Metaball** (`_metaballShading`) | Neutrales Metall, Cook-Torrance + Env-Map-Reflexion | `_shadeReflective` (geteilt mit Burst) |
+| **Burst** (`_burstShading`) | Identisch zu Metaball | `_shadeReflective` (geteilt mit Metaball) |
+| **Cluster** (`_clusterShading`) | Echte SDF-Glasbrechung: Fresnel-Mix aus Spiegelreflexion und einem kurzen Innen-Raymarch | `_clusterNormal`/`_clusterTraceInterior`/`_clusterRefractedColor` |
 
-`RIM_WEIGHT` und `SURFACE_ROUGHNESS` sind eine einzige, geteilte Konstante für alle drei Phasen (nicht mehr pro Phase unterschiedlich abgestimmt) — nur der Rim-Light-*Tint* unterscheidet sich (`MOOD_RIM` für die reflektive Gruppe Metaball/Burst, `MOOD_CLUSTER` für Cluster). `_shadeReflective(n, rd, NdotV, tint)` ist der interne, von Metaball und Burst geteilte Helfer — ein einzelner Tint-Parameter genügt, die Funktion leitet intern eine hellere Highlight-Variante für den direkten Specular-Term ab; Rauheit ist keine Funktionsparameter mehr, sondern direkt die Konstante `SURFACE_ROUGHNESS`.
+`_shadeReflective(n, rd, NdotV)` (kein Tint-Parameter mehr) verwendet ein festes `METAL_F0 = vec3(0.95)` sowohl für den direkten Cook-Torrance-Specular-Term als auch für die roughness-bewusste Fresnel-Gewichtung (`_fresnelSchlickRoughness`) des Env-Map-Samples; `SURFACE_ROUGHNESS = 0.05` (nahezu Spiegel) ist eine einzelne, von beiden Phasen geteilte Konstante. Kein Rim-Light-Term mehr (früher `_rimLight`/`RIM_WEIGHT`/`RIMLIGHT_COLOR`, ersatzlos entfernt, da er die Env-Map-Reflexion mit einer unkorrelierten Farbe überdeckte).
+
+`_clusterShading(p, n, rd, NdotV)` ignoriert das übergebene, geblendete `n` und berechnet stattdessen seine eigene Normale (`_clusterNormal`, Gradient von `_clusterShape` an `p`) — der Trefferpunkt `p` kommt vom Raymarch über `blendShape` (die 3-Phasen-Summe), nicht über `_clusterShape` allein, weshalb `p` nicht notwendigerweise exakt auf `_clusterShape`s eigener Nullmenge liegt; die Cluster-eigene Normale zu verwenden umgeht diese Inkonsistenz für die Schattierung, löst sie aber nicht grundsätzlich (offener Punkt). `_clusterTraceInterior(p, rd)` marschiert bis zu `GLASS_TRACE_STEPS` Schritte durch `_clusterShape`s Inneres (Snell'sche Brechung beim Eintritt via `1.0/GLASS_IOR`, beim Austritt via `GLASS_IOR`), `_clusterRefractedColor` mischt das austretende Env-Map-Sample exponentiell mit `GLASS_TINT_COLOR` nach Weglänge (Beer-Lambert, `GLASS_ABSORPTION`). Das Endergebnis ist ein Fresnel-Mix (`_fresnelFactor`, `GLASS_FRESNEL_POWER`) aus dieser gebrochenen Farbe und einer reinen Spiegelreflexion derselben Env-Map.
 
 Einziger öffentlicher Aufruf aus `main()` des Fragment-Shaders:
 
 ```glsl
-color = shadeHit(p, n, rd);
+color = blendShading(p, n, rd);
 ```
 
-`surfaceChunk.js` ist ein GLSL-Chunk, der in `raymarchShader.js` nach `shapeChunk` (und damit nach `map()`) interpoliert wird (notwendig, da `shadeCluster` `map()` für einen Materialdicken-Proxy aufruft). Austausch eines Materialmodells erfordert nur Änderungen in der jeweiligen Phasenfunktion.
+`surfaceChunk.js` ist ein GLSL-Chunk, der in `raymarchShader.js` nach `shapeChunk` (und damit nach `blendShape`/`_clusterShape`) interpoliert wird (notwendig, da `_clusterShading` `_clusterShape` für Normale und Glas-Raymarch direkt aufruft). Austausch eines Materialmodells erfordert nur Änderungen in der jeweiligen Phasenfunktion.
 
 ### Audio
 - Phasengekoppelte Klangkulisse ⚠️ offen
@@ -387,18 +386,22 @@ color = shadeHit(p, n, rd);
 | Noise-Bibliothek (Perlin, Worley 2D) | ✅ |
 | Phasensystem (Gauß-Gewichtssystem, externer Trigger, onPhaseTransition) | ✅ |
 | GPU-Simulation (1D-Textur RGBA32F, Ping-Pong, simulationShader.js) | ✅ |
-| Shading-Modul (surfaceChunk.js, shadeHit, phasenweise: shadeMetaball/shadeCluster/shadeBurst) | ✅ |
+| Shading-Modul (surfaceChunk.js, blendShading, phasenweise: _metaballShading/_clusterShading/_burstShading) | ✅ |
 | Environment (dynamische Equirectangular-Env-Map, immer 3-Wege-Blend, environmentShader.js) | ✅ |
 | Externes Eingabegerät (input.js) | ✅ |
 | Audio | ⚠️ geplant |
 | Anwesenheitserkennung (Presence vs. Motion) | ⚠️ geplant |
 | Facetracking | ⚠️ geplant (#3) |
 | Cluster-Zielform (analytisch, eigenständiges SDF) | ✅ |
-| Cluster-Shape-Varianten (Zylinder/Kugel/Box × voll/geschnitten, manuelle UI) | ✅ (UI temporär, Zufallsauswahl geplant) |
+| Cluster-Shape-Varianten (Zylinder/Kugel/Box × voll/geschnitten + Torus/Kapsel/Pyramide nur voll, manuelle UI) | ✅ (UI temporär, Zufallsauswahl geplant) |
 | Bewegungsparameter (experimentell) | ✅ |
 | Bloom Post-Processing | ✅ |
-| SDF-Komposition über Phasen (clusterSDF/metaballSDF/burstSDF, gewichtet) | ✅ |
+| SDF-Komposition über Phasen (`_clusterShape`/`_metaballShape`/`_burstShape`, gewichtet) | ✅ |
 | Feinabstimmung Bump-Konstanten (`LEAD`, `*_SIGMA`, `BURST_HOLD`, `METABALL_SILENCE_HOLD`) | ✅ |
+| Echte SDF-Glasbrechung (Cluster, `_clusterTraceInterior`) | ✅ |
+| Neutrales Metall-Shading ohne Phasen-Tint (Metaball/Burst) | ✅ |
+| Geladene HDRI-Environment-Maps (`resources/*.hdr`, getrennt für Cluster vs. Metaball/Burst) | ✅ |
+| Konsolidierte UI (`src/ui.js`, kollabierbare Sektionen oben rechts) | ✅ |
 
 ---
 
@@ -409,5 +412,7 @@ color = shadeHit(p, n, rd);
 | 1 | Audio | Web Audio API; drei synthetische Schichten: Metaball = tiefer Drone (Frequenz skaliert mit motionSpeed), Cluster = Subbass-Puls im Atemrhythmus, Burst = perkussiver Anschlag + Hochfrequenz-Rauschen über burstBlend; OscillatorNode + BiquadFilterNode, kein Asset-Loading |
 | 2 | Anwesenheitserkennung | input.js liefert nur Motion-Speed; zweite Schicht: Hintergrundmodell erkennt Präsenz ohne Bewegung → Kreatur reagiert auf bloße Anwesenheit (aufmerksam werden, ohne Burst zu triggern); psychologisch stärker als reiner Bewegungs-Trigger |
 | 3 | Facetracking | Konkrete Technik für #2: Gesichtserkennung statt/neben Frame-Differencing in `input.js`; macht "Beobachtung verändert das Beobachtete" wörtlich. Siehe Input & Interaktion → Facetracking. Offen: Bibliothek/Modell, Performance-Budget, Blickrichtung vs. reine Anwesenheit, Datenschutz |
-| 4 | Cluster-Shape-Zufallsauswahl | `src/clusterShapeUI.js`s manuelle Buttons sollen durch eine zufällige Auswahl unter den sechs `CLUSTER_SHAPE_VARIANTS` ersetzt werden, einmal pro Cluster-Eintritt (Hook: `phase.js`s `onPhaseTransition`), statt bei jedem Klick |
-| 5 | Helix-Ziel je Shape-Variante | `_clusterTarget` (`positionChunk.js`) legt die Ball-Helix immer um den Zylinder, unabhängig von der sichtbaren Shape-Variante — bei Kugel/Box-Intersect kann das die Bälle stark wegschneiden. Müsste ggf. pro Shape-Familie ein eigenes Zielmuster bekommen |
+| 4 | Cluster-Shape-/Env-Map-Zufallsauswahl | `src/ui.js`s manuelle Buttons (Shape **und** die beiden Env-Map-Dateien) sollen durch eine zufällige Auswahl ersetzt werden, einmal pro Cluster-Eintritt (Hook: `phase.js`s `onPhaseTransition`), statt manueller Klicks |
+| 5 | Ballpositionen ohne Bezug zur Cluster-Form | Seit Entfernung von `_clusterTarget` (siehe Phasensystem → Cluster) haben die 12 Ballpositionen während Cluster keine erkennbare Beziehung mehr zur sichtbaren `_clusterShape`-Geometrie (nur noch Ursprungs-Pull + Noise) — noch nicht bewertet, ob/wie eine Form-bezogene Zielkraft wieder eingeführt werden soll, jetzt wo es neun statt einer Shape-Variante gibt |
+| 6 | Trefferpunkt-Konsistenz bei der Cluster-Glasbrechung | `_clusterShading`s Trefferpunkt `p` stammt vom Raymarch über `blendShape` (3-Phasen-Summe), nicht über `_clusterShape` allein — `p` liegt daher nicht notwendigerweise exakt auf `_clusterShape`s eigener Oberfläche. Aktuell umgangen, indem nur die Cluster-eigene Normale an `p` verwendet wird (siehe Shading-Modul); eine Korrektur des Eintrittspunkts selbst auf die wahre `_clusterShape`-Oberfläche steht noch aus |
+| 7 | Fehlende Isolation der beiden Env-Map-Quellen während Überblendungen | `envMap` ist eine einzige, aus `clusterSourceMap`/`metaballSourceMap` gewichtet zusammengesetzte Textur (siehe Environment oben) — bei relevanten Zwischen-Gewichten sampelt jede Phase auch einen Rest der anderen Quelle. Für eine strikte Trennung wäre eine zweite, getrennt gesampelte `envMap`-Uniform nötig |

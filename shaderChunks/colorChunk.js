@@ -30,10 +30,11 @@ vec3 _sampleEquirect(vec3 dir, sampler2D sourceMap) {
 // ──── PHASE ENVIRONMENT ─────────────────────────────────────────────────────────────
 
 
-const float METABALL_ENV_EXPOSURE = 1.0;
+const float CLUSTER_ENV_EXPOSURE = 2.5;
+const float METABALL_ENV_EXPOSURE = 3.0;
 
 vec3 _clusterEnvironment(vec3 dir, sampler2D sourceMap) {
-  return _sampleEquirect(dir, sourceMap);
+  return _sampleEquirect(dir, sourceMap) * CLUSTER_ENV_EXPOSURE;
 }
 
 vec3 _metaballEnvironment(vec3 rDir, sampler2D sourceMap) {

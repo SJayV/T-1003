@@ -7,10 +7,12 @@ import { makeGpuSetup } from './gpuSetup.js';
 export const ENV_MAP_FILES = [
   'neonStudio.hdr',
   'nightSky.hdr',
+  'lightStudio.hdr',
+  'aquarium.hdr',
 ];
 
 export const CLUSTER_ENV_MAP_DEFAULT  = 'neonStudio.hdr';
-export const METABALL_ENV_MAP_DEFAULT = 'nightSky.hdr';
+export const METABALL_ENV_MAP_DEFAULT = 'lightStudio.hdr';
 
 const EQUIRECT_W = 512;
 const EQUIRECT_H = 256;
