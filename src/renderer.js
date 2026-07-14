@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 
+
+// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
+
+
 const CAMERA_FOV_DEG   = 60;
 const CAMERA_NEAR      = 0.1;
 const CAMERA_FAR       = 100;
