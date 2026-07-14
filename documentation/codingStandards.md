@@ -18,7 +18,7 @@ Organized into three levels, from smallest to largest scope:
 | JS public exports | `camelCase` | `initSimulation`, `getWeights` |
 | JS module constants | `SCREAMING_SNAKE_CASE` | `BALL_COUNT`, `CLUSTER_CYL_RADIUS` |
 | GLSL internal helpers | `_camelCase` | `_envUV`, `_hash2`, `_computeCentroid` |
-| GLSL public chunk functions | `camelCase` | `orbitPoint`, `shadeHit`, `perlin2D` |
+| GLSL public chunk functions | `camelCase` | `orbitPoint`, `blendShading`, `perlin2D` |
 | GLSL uniforms | `camelCase`, matches JS side | `burstBlend`, `motionSpeed` |
 | GLSL tunable constants | `SCREAMING_SNAKE_CASE` | `ORBIT_SNAP_RATE`, `BURST_FORCE_OFFSET` |
 | Files | `camelCase.js` | `gpuSetup.js`, `noiseChunk.js` |
@@ -76,7 +76,7 @@ Render target types: `FloatType` for simulation state; `HalfFloatType` for post-
 
 Chunk files (`shaderChunks/`) export a template-literal string injected via `${chunk}` into the enclosing shader. The chunk assumes the uniform declarations and helper functions of that shader are already in scope. Since chunks are concatenated into one GLSL compilation unit, top-level `const` names declared by one chunk must not collide with names declared by another chunk or shader in the same file — check before adding a new global constant.
 
-Most chunks export the string directly as a constant. One exception: `shapeChunk.js` exports a **function** (`shapeChunk(clusterVariant)`) instead, because one of its top-level functions (`clusterSDF`) needs to alias to a different implementation depending on a choice made at shader-assembly time (which of six Cluster shape combinations to compile in) — a JS-level parameter, not a runtime GLSL branch. Reach for this factory-function shape only when a chunk genuinely needs an assembly-time choice; a plain string constant is the default.
+Most chunks export the string directly as a constant. One exception: `shapeChunk.js` exports a **function** (`shapeChunk(clusterVariant)`) instead, because one of its top-level functions (`_clusterShape`) needs to alias to a different implementation depending on a choice made at shader-assembly time (which of nine Cluster shape combinations to compile in) — a JS-level parameter, not a runtime GLSL branch. Reach for this factory-function shape only when a chunk genuinely needs an assembly-time choice; a plain string constant is the default.
 
 Document required preconditions (uniforms, functions) at the top of each chunk string.
 
@@ -90,7 +90,7 @@ Document required preconditions (uniforms, functions) at the top of each chunk s
 
 When the same computation appears more than once, extract it — but the *scope* of the extraction should match the scope of the duplication:
 
-- **Duplicated only within one file** (e.g. `_envSample` used solely by `_envSampleLod` inside `surfaceChunk.js`, or the `pow(clamp(1-w*scale,0,1),contrast)` shape used twice inside `environmentShader.js`): a `_camelCase` internal helper defined in that same file, next to its callers.
+- **Duplicated only within one file** (e.g. `_envSample` used solely by `_envSampleLod` inside `surfaceChunk.js`, or `_rotateYX(p, ry, rx)` in `shapeChunk.js`, factored out once the same two-axis rotation matrix math started appearing in more than one Cluster shape helper): a `_camelCase` internal helper defined in that same file, next to its callers.
 - **Duplicated across files/chunks** (e.g. `perlin2D`, or `dualOctaveNoise`, the "two weighted perlin octaves" shape shared by `raymarchShader.js` and `environmentShader.js`): a public `camelCase` function added to the relevant shared chunk (`noiseChunk.js` for noise primitives) so every consumer imports the one definition instead of re-deriving it.
 
 Not every superficially similar expression is worth extracting — if two call sites only *look* alike but don't share an invariant that could drift out of sync, and a shared helper would need as many parameters as the inline expression has terms, leaving them inline is the better call.

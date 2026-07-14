@@ -59,3 +59,18 @@ export const CLUSTER_SPHERE_RADIUS   = 0.7;
 export const CLUSTER_BOX_HALF_EXTENT = 0.46;
 export const CLUSTER_BOX_ROTATION_Y = 0.4;
 export const CLUSTER_BOX_ROTATION_X = 0.5;
+
+export const CLUSTER_TORUS_RING_RADIUS = 0.5;
+export const CLUSTER_TORUS_TUBE_RADIUS = 0.18;
+export const CLUSTER_TORUS_ROTATION_Y  = -0.3;
+export const CLUSTER_TORUS_ROTATION_X  = 0.8;
+
+export const CLUSTER_CAPSULE_HALF_LENGTH = 0.35;
+export const CLUSTER_CAPSULE_RADIUS      = 0.38;
+export const CLUSTER_CAPSULE_ROTATION_Y  = -0.4;
+export const CLUSTER_CAPSULE_ROTATION_X  = 0.5;
+
+export const CLUSTER_PYRAMID_SCALE      = 1.1;
+export const CLUSTER_PYRAMID_HEIGHT     = 0.9;
+export const CLUSTER_PYRAMID_ROTATION_Y = 0.6;
+export const CLUSTER_PYRAMID_ROTATION_X = -0.3;
