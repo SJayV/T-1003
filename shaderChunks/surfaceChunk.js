@@ -5,12 +5,9 @@ export const surfaceChunk = `
 
 
 const vec3  KEY_LIGHT_DIR_RAW      = vec3(2.0, 2.5, 2.0);
-const float RIM_LIGHT_POWER     = 2.0;
-const float RIM_LIGHT_INTENSITY = 2.2;
 
-const float SURFACE_ROUGHNESS  = 0.3;
+const float SURFACE_ROUGHNESS  = 0.05;
 const float ENV_CONE_SPREAD    = 0.18;
-const float RIM_WEIGHT         = 0.5;
 
 
 // ──── HELPER FUNCTIONS - ENVIRONMENT MAPPING ─────────────────────────────────────
@@ -60,8 +57,12 @@ vec3 _F_Schlick(vec3 F0, float cosTheta) {
   return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-vec3 _rimLight(vec3 tint, float NdotV) {
-  return tint * pow(1.0 - NdotV, RIM_LIGHT_POWER) * RIM_LIGHT_INTENSITY;
+vec3 _fresnelSchlickRoughness(vec3 F0, float cosTheta, float roughness) {
+  return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+float _fresnelFactor(float NdotV, float power) {
+  return pow(1.0 - NdotV, power);
 }
 
 
@@ -69,9 +70,10 @@ vec3 _rimLight(vec3 tint, float NdotV) {
 
 
 const float HIGHLIGHT_BRIGHTEN = 1.15;
+const vec3  METAL_F0           = vec3(0.95);
 
-vec3 _shadeReflective(vec3 n, vec3 rd, float NdotV, vec3 tint) {
-  vec3 highlightTint = clamp(tint * HIGHLIGHT_BRIGHTEN, 0.0, 1.0);
+vec3 _shadeReflective(vec3 n, vec3 rd, float NdotV) {
+  vec3 highlightF0 = clamp(METAL_F0 * HIGHLIGHT_BRIGHTEN, 0.0, 1.0);
 
   vec3  ld    = normalize(KEY_LIGHT_DIR_RAW);
   vec3  v     = -rd;
@@ -82,13 +84,61 @@ vec3 _shadeReflective(vec3 n, vec3 rd, float NdotV, vec3 tint) {
 
   float D   = _D_GGX(NdotH);
   float G   = _G_Smith(NdotV, NdotL);
-  vec3  F   = _F_Schlick(highlightTint, VdotH);
+  vec3  F   = _F_Schlick(highlightF0, VdotH);
   vec3 spec = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
 
-  vec3 F_ibl = _F_Schlick(tint, NdotV);
+  vec3 F_ibl = _fresnelSchlickRoughness(METAL_F0, NdotV, SURFACE_ROUGHNESS);
   vec3 env   = _envSampleLod(reflect(rd, n));
 
-  return spec * NdotL + env * F_ibl + _rimLight(RIMLIGHT_COLOR, NdotV) * RIM_WEIGHT;
+  return spec * NdotL + env * F_ibl;
+}
+
+
+// ──── HELPER FUNCTIONS - GLASS SHADING ────────────────────────────────────────────
+
+
+const float GLASS_IOR            = 1.35;
+const float GLASS_ABSORPTION     = 0.6;
+const int   GLASS_TRACE_STEPS    = 20;
+const float GLASS_TRACE_EPSILON  = 0.002;
+const float GLASS_TRACE_MAX_DIST = 3.0;
+const vec3  GLASS_TINT_COLOR     = vec3(0.06, 0.1, 0.15);
+const float GLASS_FRESNEL_POWER  = 2.5;
+
+struct GlassExit { vec3 pos; vec3 normal; float dist; };
+
+vec3 _clusterNormal(vec3 p) {
+  vec2 e = vec2(0.001, 0.0);
+  return normalize(vec3(
+    _clusterShape(p + e.xyy) - _clusterShape(p - e.xyy),
+    _clusterShape(p + e.yxy) - _clusterShape(p - e.yxy),
+    _clusterShape(p + e.yyx) - _clusterShape(p - e.yyx)
+  ));
+}
+
+GlassExit _clusterTraceInterior(vec3 p, vec3 rd) {
+  float t = GLASS_TRACE_EPSILON * 2.0;
+  for (int i = 0; i < GLASS_TRACE_STEPS; i++) {
+    float d = _clusterShape(p + rd * t);
+    if (d > 0.0) break;
+    t += max(-d, GLASS_TRACE_EPSILON);
+    if (t > GLASS_TRACE_MAX_DIST) break;
+  }
+  vec3 exitPos = p + rd * t;
+  return GlassExit(exitPos, _clusterNormal(exitPos), t);
+}
+
+vec3 _clusterRefractedColor(vec3 p, vec3 n, vec3 rd) {
+  vec3 rIn = refract(rd, n, 1.0 / GLASS_IOR);
+  if (dot(rIn, rIn) < 0.0001) return _envSampleLod(reflect(rd, n));
+
+  GlassExit ex = _clusterTraceInterior(p - n * GLASS_TRACE_EPSILON, rIn);
+  vec3 rOut = refract(rIn, -ex.normal, GLASS_IOR);
+  if (dot(rOut, rOut) < 0.0001) rOut = rIn;
+
+  vec3  transmitted = _envSampleLod(rOut);
+  float absorb      = exp(-ex.dist * GLASS_ABSORPTION);
+  return mix(GLASS_TINT_COLOR, transmitted, absorb);
 }
 
 
@@ -96,49 +146,30 @@ vec3 _shadeReflective(vec3 n, vec3 rd, float NdotV, vec3 tint) {
 
 
 vec3 _metaballShading(vec3 n, vec3 rd, float NdotV) {
-  return _shadeReflective(n, rd, NdotV, METABALL_COLOR);
+  return _shadeReflective(n, rd, NdotV);
 }
 
 vec3 _clusterShading(vec3 p, vec3 n, vec3 rd, float NdotV) {
-  const float SPECULAR_POWER        = 192.0;
-  const float THICKNESS_SAMPLE_OFFSET = 0.08;
-  const float INNER_GLOW_RANGE_START  = 0.0;
-  const float INNER_GLOW_RANGE_END    = 0.15;
-  const float INNER_GLOW_INTENSITY    = 1.2;
-  const float FRESNEL_POWER         = 2.5;
-  const float SCATTER_POWER         = 2.0;
-  const float FRESNEL_WEIGHT        = 0.3;
-  const float INNER_GLOW_WEIGHT     = 0.1;
-  const float SPEC_WEIGHT           = 0.8;
-  const float SCATTER_WEIGHT        = 0.25;
+  vec3  cn      = _clusterNormal(p);
+  float cNdotV  = max(dot(cn, -rd), 0.0);
+  float fresnel = _fresnelFactor(cNdotV, GLASS_FRESNEL_POWER);
 
-  vec3  ld        = normalize(KEY_LIGHT_DIR_RAW);
-  float spec      = pow(max(dot(n, normalize(ld - rd)), 0.0), SPECULAR_POWER);
-  float thickness = clamp(-blendShape(p - n * THICKNESS_SAMPLE_OFFSET), 0.0, 1.0);
-  float innerGlow = smoothstep(INNER_GLOW_RANGE_START, INNER_GLOW_RANGE_END, thickness) * INNER_GLOW_INTENSITY;
-  float fresnel   = pow(1.0 - NdotV, FRESNEL_POWER);
-  float scatter   = pow(max(dot(-ld, n), 0.0), SCATTER_POWER);
-
-  vec3 color = vec3(0.0);
-  color += CLUSTER_COLOR  * fresnel * FRESNEL_WEIGHT;
-  color += METABALL_COLOR * innerGlow * INNER_GLOW_WEIGHT;
-  color += spec * SPEC_WEIGHT;
-  color += CLUSTER_COLOR  * scatter * SCATTER_WEIGHT;
-  color += _rimLight(CLUSTER_COLOR, NdotV) * RIM_WEIGHT;
-  return color;
+  vec3 reflected = _envSampleLod(reflect(rd, cn));
+  vec3 refracted = _clusterRefractedColor(p, cn, rd);
+  return mix(refracted, reflected, fresnel);
 }
 
 vec3 _burstShading(vec3 n, vec3 rd, float NdotV) {
-  return _shadeReflective(n, rd, NdotV, BURST_COLOR);
+  return _shadeReflective(n, rd, NdotV);
 }
 
 
 // ──── WEIGHTED BLENDING ───────────────────────────────────────────────────────────────
 
 
-vec3 shadeHit(vec3 p, vec3 n, vec3 rd) {
+vec3 blendShading(vec3 p, vec3 n, vec3 rd) {
   float NdotV = max(dot(n, -rd), 0.0);
-  return _metaballShading(n, rd, NdotV) * metaballBlend
+  return _metaballShading(n, rd, NdotV)   * metaballBlend
        + _clusterShading(p, n, rd, NdotV) * clusterBlend
        + _burstShading(n, rd, NdotV)      * burstBlend;
 }

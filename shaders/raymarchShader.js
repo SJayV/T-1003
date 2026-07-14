@@ -64,7 +64,7 @@ void main() {
   vec3 color = vec3(0.0);
   if (hit > 0.0) {
     vec3 p = ro + rd * hit;
-    color  = shadeHit(p, normal(p), rd);
+    color  = blendShading(p, normal(p), rd);
   }
 
   gl_FragColor = vec4(color, 1.0);
