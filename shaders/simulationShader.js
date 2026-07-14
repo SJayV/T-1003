@@ -18,6 +18,10 @@ uniform float     motionSpeed;
 
 const float TEX_W = ${glslFloat(STATE_TEX_W)};
 
+
+// ──── HELPER FUNCTIONS - STATE TEXTURE ACCESS ────────────────────────────────────
+
+
 vec2 stateUV(int i) { return vec2((float(i) + 0.5) / TEX_W, 0.5); }
 
 vec3  readPos(int b) { return texture2D(stateTex, stateUV(b * 3    )).xyz; }
@@ -27,6 +31,10 @@ vec4  readOrb(int b) { return texture2D(stateTex, stateUV(b * 3 + 2));     }
 
 ${noiseChunk}
 ${positionChunk}
+
+
+// ──── ENTRY POINT ─────────────────────────────────────────────────────────────────
+
 
 void main() {
   int texelIdx = int(gl_FragCoord.x);
@@ -40,11 +48,8 @@ void main() {
   float r0 = readR0(ballIdx);
   vec4 orb = readOrb(ballIdx);
 
-  applySimulation(pos, vel, orb, ballIdx);
+  blendPosition(pos, vel, orb, ballIdx);
 
-  // vel's texel .w channel is otherwise unused -- stash the radius here so the raymarch
-  // pass can read it straight from the state texture instead of recomputing radiusMod()
-  // (2 noise samples) for every screen pixel, every frame.
   if (subIdx == 0) { gl_FragColor = vec4(pos, r0); }
   else             { gl_FragColor = vec4(vel, radiusMod(pos, r0)); }
 }

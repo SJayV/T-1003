@@ -1,18 +1,12 @@
 export const noiseChunk = `
 
-// Hash/fade magic numbers below (127.1, 311.7, 43758.5453..., the 6t^5-15t^4+10t^3 fade
-// curve) are standard arbitrary decorrelation constants from the classic Perlin-noise
-// hashing idiom, not tunable design parameters — intentionally left unnamed.
+
+// ──── 2D PERLIN NOISE ─────────────────────────────────────────────────────────────
+
 
 vec2  _fade(vec2 t)  { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
 float _hash1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
 vec2  _grad(vec2 p)  { float h = _hash1(p) * 6.2831853; return vec2(cos(h), sin(h)); }
-
-vec2 _hash2(vec2 p) {
-  p = fract(p * vec2(127.1, 311.7));
-  p += dot(p, p + 19.19);
-  return fract(vec2(p.x * p.y, p.x + p.y));
-}
 
 float perlin2D(vec2 p) {
   vec2 i = floor(p); vec2 f = fract(p); vec2 u = _fade(f);
@@ -22,6 +16,10 @@ float perlin2D(vec2 p) {
   float d = dot(_grad(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
+
+
+// ──── 3D PERLIN NOISE ─────────────────────────────────────────────────────────────
+
 
 vec3 _fade3(vec3 t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
 
@@ -53,6 +51,16 @@ float perlin3D(vec3 p) {
   );
 }
 
+
+// ──── WORLEY NOISE ────────────────────────────────────────────────────────────────
+
+
+vec2 _hash2(vec2 p) {
+  p = fract(p * vec2(127.1, 311.7));
+  p += dot(p, p + 19.19);
+  return fract(vec2(p.x * p.y, p.x + p.y));
+}
+
 float worley2D(vec2 p) {
   vec2  cell = floor(p);
   float minD = 1e10;
@@ -65,10 +73,10 @@ float worley2D(vec2 p) {
   return minD;
 }
 
-// Weighted sum of two perlin2D octaves sampled on (typically) different planes —
-// the "two perlin samples combined" shape recurring across raymarchShader.js's
-// radiusMod() and environmentShader.js's main(). Callers keep their own
-// frequency/time-scale constants inline; only the combine step is shared.
+
+// ──── COMBINED NOISE ──────────────────────────────────────────────────────────────
+
+
 float dualOctaveNoise(vec2 sampleA, float weightA, vec2 sampleB, float weightB) {
   return perlin2D(sampleA) * weightA + perlin2D(sampleB) * weightB;
 }

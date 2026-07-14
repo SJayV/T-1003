@@ -1,11 +1,4 @@
-// Public GLSL: MOOD_*, moodColor, blendEnvironment
-// Everything that outputs a color from the three phase weights -- ball surface tint
-// (moodColor, consumed by surfaceChunk.js) and sky color (blendEnvironment, consumed
-// by environmentShader.js) are the same kind of thing, just different fragments.
-// Declares own uniforms (metaballBlend, clusterBlend, burstBlend). Preconditions:
-// worley2D, dualOctaveNoise (noiseChunk) in scope.
-
-import { MOOD_METABALL, MOOD_CLUSTER, MOOD_BURST, MOOD_RIM, glslVec3 } from '../src/constants.js';
+import { METABALL_COLOR, CLUSTER_COLOR, BURST_COLOR, RIMLIGHT_COLOR, glslVec3 } from '../src/constants.js';
 
 export const colorChunk = `
 
@@ -13,32 +6,20 @@ uniform float metaballBlend;
 uniform float clusterBlend;
 uniform float burstBlend;
 
-// Each phase's own mood/envMap color, named directly after its phase -- ambient sky tint
-// (moodColor() below) and env-map "key light" tint (envMetaball/envBurst below). Metaball and
-// Burst also use these directly as their Cook-Torrance F0 surface tint in surfaceChunk.js's
-// _shadeReflective -- no separate "metal" constant needed.
-const vec3 MOOD_METABALL = ${glslVec3(MOOD_METABALL)};
-const vec3 MOOD_CLUSTER  = ${glslVec3(MOOD_CLUSTER)};
-const vec3 MOOD_BURST    = ${glslVec3(MOOD_BURST)};
 
-// Rim light tint for Metaball and Burst (surfaceChunk.js's _shadeReflective) -- one shared
-// constant so their rim light is identical by construction. Cluster uses MOOD_CLUSTER for its
-// own rim call in shadeCluster instead, since it isn't part of this pairing.
-const vec3 MOOD_RIM = ${glslVec3(MOOD_RIM)};
+// ──── PHASE COLORS ────────────────────────────────────────────────────────────────
 
-// Cross-phase blend of each phase's mood color, for blendEnvironment()'s ambient sky tint below.
-// Per-phase shading functions read MOOD_METABALL/MOOD_CLUSTER/MOOD_BURST directly instead --
-// shadeHit() already weights each of their full return values by the same three weights, so
-// blending again inside would double up the weighting.
-vec3 moodColor() {
-  return MOOD_METABALL * metaballBlend
-       + MOOD_CLUSTER  * clusterBlend
-       + MOOD_BURST    * burstBlend;
-}
 
-// Equirectangular UV -> world direction. Only environmentShader.js needs this, but it's
-// small and purely a function of colorChunk's own inputs -- kept local to blendEnvironment's
-// call graph rather than duplicated in that shader file.
+const vec3 METABALL_COLOR = ${glslVec3(METABALL_COLOR)};
+const vec3 CLUSTER_COLOR  = ${glslVec3(CLUSTER_COLOR)};
+const vec3 BURST_COLOR    = ${glslVec3(BURST_COLOR)};
+
+const vec3 RIMLIGHT_COLOR = ${glslVec3(RIMLIGHT_COLOR)};
+
+
+// ──── HELPER FUNCTIONS - EQUIRECTANGULAR PROJECTION ─────────────────────────────────────
+
+
 vec3 _uvToDir(vec2 uv) {
   const float PI = 3.14159265;
   float phi   = (uv.x - 0.5) * 2.0 * PI;
@@ -47,15 +28,14 @@ vec3 _uvToDir(vec2 uv) {
   return vec3(cosT * cos(phi), sin(theta), cosT * sin(phi));
 }
 
-// Remaps a worley distance into a high-contrast [0,1] band.
 float _worleyContrast(float w, float scale, float contrast) {
   return pow(clamp(1.0 - w * scale, 0.0, 1.0), contrast);
 }
 
-// Worley-speckled directional "key light", tinted by tint. Shared by Metaball and
-// Burst's sky color. AMBIENT_FLOOR keeps the background above black between
-// speckles/key light, so Burst reads as tinted orange throughout rather than
-// orange highlights on black.
+
+// ──── HELPER FUNCTIONS - KEY LIGHT ───────────────────────────────────────────────
+
+
 vec3 _envKeyLight(vec3 dir, vec3 rDir, float cosR, float sinR, vec3 tint) {
   const float WORLEY_FREQ     = 3.5;
   const float WORLEY_TIME     = 0.11;
@@ -76,11 +56,15 @@ vec3 _envKeyLight(vec3 dir, vec3 rDir, float cosR, float sinR, vec3 tint) {
   return tint * (AMBIENT_FLOOR + bB * WORLEY_WEIGHT + key * KEY_WEIGHT);
 }
 
-vec3 envMetaball(vec3 dir, vec3 rDir, float cosR, float sinR) {
-  return _envKeyLight(dir, rDir, cosR, sinR, MOOD_METABALL);
+
+// ──── PHASE ENVIRONMENT ─────────────────────────────────────────────────────────────
+
+
+vec3 _metaballEnvironment(vec3 dir, vec3 rDir, float cosR, float sinR) {
+  return _envKeyLight(dir, rDir, cosR, sinR, METABALL_COLOR);
 }
 
-vec3 envCluster(vec3 dir) {
+vec3 _clusterEnvironment(vec3 dir) {
   const float GRAD_LOW      = -0.4;
   const float GRAD_HIGH     = 1.0;
   const float GRAD_Y_WEIGHT = 0.75;
@@ -88,18 +72,23 @@ vec3 envCluster(vec3 dir) {
   const float BRIGHTNESS    = 0.55;
 
   float grad = smoothstep(GRAD_LOW, GRAD_HIGH, dir.y * GRAD_Y_WEIGHT + dir.z * GRAD_Z_WEIGHT);
-  return MOOD_CLUSTER * grad * BRIGHTNESS;
+  return CLUSTER_COLOR * grad * BRIGHTNESS;
 }
 
-vec3 envBurst(vec3 dir, vec3 rDir, float cosR, float sinR) {
-  return _envKeyLight(dir, rDir, cosR, sinR, MOOD_BURST);
+vec3 _burstEnvironment(vec3 dir, vec3 rDir, float cosR, float sinR) {
+  return _envKeyLight(dir, rDir, cosR, sinR, BURST_COLOR);
 }
 
-// Always-on 3-way blend of the per-phase sky colors -- no hard switch, mirroring
-// moodColor()/shadeHit(). Preset overrides are applied by forcing these uniforms
-// to 0/1 before this shader runs (see src/environment.js), not by branching here.
-// Takes the raw equirectangular uv (environmentShader.js's only job is computing that
-// from gl_FragCoord/resolution) and owns the rest -- direction, sky rotation, blend.
+
+// ──── WEIGHTED BLENDING ───────────────────────────────────────────────────────────
+
+
+vec3 blendColor() {
+  return METABALL_COLOR * metaballBlend
+       + CLUSTER_COLOR  * clusterBlend
+       + BURST_COLOR    * burstBlend;
+}
+
 vec3 blendEnvironment(vec2 uv) {
   const float ROTATION_SPEED = 0.018;
   const float AMBIENT_METABALL_WEIGHT = 0.35;
@@ -121,14 +110,14 @@ vec3 blendEnvironment(vec2 uv) {
   vec3  rDir = vec3(dir.x * cosR - dir.z * sinR, dir.y, dir.x * sinR + dir.z * cosR);
 
   float ambientScale = metaballBlend * AMBIENT_METABALL_WEIGHT + clusterBlend * AMBIENT_CLUSTER_WEIGHT + burstBlend * AMBIENT_BURST_WEIGHT;
-  vec3 base = moodColor() * ambientScale;
+  vec3 base = blendColor() * ambientScale;
   float amb = dualOctaveNoise(rDir.xz * AMBIENT_NOISE_FREQ_1 + time * AMBIENT_NOISE_TIME_1, AMBIENT_NOISE_WEIGHT_1,
                               rDir.yz * AMBIENT_NOISE_FREQ_2 + time * AMBIENT_NOISE_TIME_2, AMBIENT_NOISE_WEIGHT_2) * 0.5 + 0.5;
   float noiseFloor = mix(AMBIENT_NOISE_FLOOR_MIN, AMBIENT_NOISE_FLOOR_MAX, metaballBlend);
   base *= noiseFloor + (1.0 - noiseFloor) * amb;
-  base += envMetaball(dir, rDir, cosR, sinR) * metaballBlend;
-  base += envCluster(dir)                    * clusterBlend;
-  base += envBurst(dir, rDir, cosR, sinR)    * burstBlend;
+  base += _metaballEnvironment(dir, rDir, cosR, sinR) * metaballBlend
+        + _clusterEnvironment(dir)                    * clusterBlend
+        + _burstEnvironment(dir, rDir, cosR, sinR)    * burstBlend;
   return base;
 }
 `;

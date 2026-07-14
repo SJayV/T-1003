@@ -1,6 +1,9 @@
 import { reportMotion }           from './phase.js';
 import { onInput as cameraInput } from './camera.js';
 
+// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
+
+
 const INPUT_SPEED_THRESHOLD  = 0.20;
 const INPUT_PERSIST_FRAMES   = 2;
 const INPUT_SENSITIVITY      = 20;
@@ -8,12 +11,20 @@ const INPUT_PIXEL_THRESHOLD  = 10;
 const CANVAS_W               = 80;
 const CANVAS_H               = 60;
 
+
+// ──── MODULE STATE ────────────────────────────────────────────────────────────────
+
+
 let _video        = null;
 let _canvas       = null;
 let _ctx          = null;
 let _prevPixels   = null;
 let _persistCount = 0;
 let _ready        = false;
+
+
+// ──── PUBLIC INTERFACE ────────────────────────────────────────────────────────────
+
 
 export function initInput() {
   _canvas = document.createElement('canvas');
@@ -38,7 +49,6 @@ export function initInput() {
 export function updateInput() {
   if (!_ready || _video.readyState < 2) return;
 
-  // Draw mirrored frame at reduced resolution
   _ctx.save();
   _ctx.scale(-1, 1);
   _ctx.drawImage(_video, -CANVAS_W, 0, CANVAS_W, CANVAS_H);
@@ -47,8 +57,6 @@ export function updateInput() {
   const pixels = _ctx.getImageData(0, 0, CANVAS_W, CANVAS_H).data;
 
   if (_prevPixels) {
-    // Thresholded mean absolute diff — values below INPUT_PIXEL_THRESHOLD per
-    // channel are treated as noise and ignored.
     let diff = 0;
     const n = CANVAS_W * CANVAS_H;
     for (let i = 0; i < pixels.length; i += 4) {
@@ -56,7 +64,6 @@ export function updateInput() {
             + Math.max(0, Math.abs(pixels[i+1] - _prevPixels[i+1]) - INPUT_PIXEL_THRESHOLD)
             + Math.max(0, Math.abs(pixels[i+2] - _prevPixels[i+2]) - INPUT_PIXEL_THRESHOLD);
     }
-    // Normalise: max possible thresholded diff per pixel = 3*(255-threshold)
     const speed = Math.min(1, (diff / (n * 3 * (255 - INPUT_PIXEL_THRESHOLD))) * INPUT_SENSITIVITY);
 
     if (speed > INPUT_SPEED_THRESHOLD) {

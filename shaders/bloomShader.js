@@ -1,10 +1,13 @@
+// ──── BRIGHT-PASS EXTRACTION ───────────────────────────────────────────────────────
+
+
 export const brightExtractFrag = `
 precision highp float;
 uniform sampler2D mainTex;
 uniform vec2      resolution;
 uniform float     threshold;
 void main() {
-  const vec3  LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);  // Rec. 709 perceptual luminance
+  const vec3  LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
   vec2  uv    = gl_FragCoord.xy / resolution;
   vec3  color = texture2D(mainTex, uv).rgb;
   float luma  = dot(color, LUMA_WEIGHTS);
@@ -13,7 +16,10 @@ void main() {
 }
 `;
 
-// 9-tap separable Gaussian kernel (sigma tuned for bloom softness), normalized to sum to 1.
+
+// ──── GAUSSIAN BLUR ────────────────────────────────────────────────────────────────
+
+
 export const blurFrag = `
 precision highp float;
 uniform sampler2D blurTex;
@@ -35,6 +41,10 @@ void main() {
   gl_FragColor = sum;
 }
 `;
+
+
+// ──── COMPOSITE ────────────────────────────────────────────────────────────────────
+
 
 export const compositeFrag = `
 precision highp float;

@@ -4,6 +4,10 @@ import { makeGpuSetup } from './gpuSetup.js';
 import { getWeights, getTime, getMotionSpeed } from './phase.js';
 import { balls, STATE_TEX_W } from './constants.js';
 
+
+// ──── MODULE STATE ────────────────────────────────────────────────────────────────
+
+
 let _renderer   = null;
 let _readTarget  = null;
 let _writeTarget = null;
@@ -12,6 +16,10 @@ let _simCamera   = null;
 let _simMat      = null;
 let _initTex     = null;
 let _firstFrame  = true;
+
+
+// ──── HELPER FUNCTIONS - INITIALIZATION ──────────────────────────────
+
 
 function _makeTarget() {
   return new THREE.WebGLRenderTarget(STATE_TEX_W, 1, {
@@ -34,19 +42,14 @@ function _buildInitData() {
     const r    = b.orbitRadius;
     const iSin = b.orbitInclination;
 
-    // texel 3i: pos, r0. Program starts in Cluster, so balls start collapsed onto the cylinder
-    // axis (x=z=0) with only height (from each ball's own orbit inclination) differing --
-    // not spread across their eventual orbit, which they only move onto once Metaball begins.
     data[t + 0] = 0;
     data[t + 1] = r * Math.sin(phi0) * iSin;
     data[t + 2] = 0;
     data[t + 3] = b.r0;
-    // texel 3i+1: initial vel -- zero, since the ball isn't starting on its orbit to derive one from
     data[t + 4] = 0;
     data[t + 5] = 0;
     data[t + 6] = 0;
     data[t + 7] = 0;
-    // texel 3i+2: orbit params (r, speed, phi0, inclination)
     data[t + 8]  = b.orbitRadius;
     data[t + 9]  = b.orbitSpeed;
     data[t + 10] = phi0;
@@ -54,6 +57,10 @@ function _buildInitData() {
   });
   return data;
 }
+
+
+// ──── PUBLIC INTERFACE ────────────────────────────────────────────────────────────
+
 
 export function initSimulation(renderer) {
   _renderer   = renderer;

@@ -7,7 +7,8 @@ import { STATE_TEX_W, glslFloat } from '../src/constants.js';
 
 export const mainVert = vertexChunk;
 
-export const mainFrag = `
+export function buildMainFrag(clusterVariant) {
+  return `
 precision highp float;
 precision highp sampler2D;
 
@@ -17,11 +18,10 @@ uniform vec3      camPos;
 uniform sampler2D envMap;
 uniform sampler2D stateTex;
 
-// loadBalls() populates these from stateTex once per fragment; shapeChunk's map() and
-// everything it calls read them -- no texture access inside the raymarch loop or normal().
-// gRad_i is read straight from the state texture's vel-texel .w channel -- the sim pass
-// (positionChunk.js) already computed the noise-modulated radius once per ball there,
-// so this pass never recomputes it per screen pixel.
+
+// ──── HELPER FUNCTIONS - STATE TEXTURE UNPACKING ─────────────────────────────────
+
+
 vec3  gC0,  gC1,  gC2,  gC3,  gC4,  gC5,  gC6,  gC7,  gC8,  gC9,  gC10, gC11;
 float gRad0, gRad1, gRad2, gRad3, gRad4, gRad5, gRad6, gRad7, gRad8, gRad9, gRad10, gRad11;
 
@@ -43,10 +43,13 @@ void loadBalls() {
 
 ${noiseChunk}
 ${colorChunk}
-${shapeChunk}
+${shapeChunk(clusterVariant)}
 
-// Injected after map()/raymarch() (shapeChunk) so shadeCluster can call map() for the thickness proxy.
 ${surfaceChunk}
+
+
+// ──── ENTRY POINT ─────────────────────────────────────────────────────────────────
+
 
 void main() {
   const float CAMERA_FOCAL_LENGTH = 1.5;
@@ -67,3 +70,4 @@ void main() {
   gl_FragColor = vec4(color, 1.0);
 }
 `;
+}

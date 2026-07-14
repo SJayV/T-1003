@@ -1,19 +1,20 @@
-// Public GLSL: shadeHit
-// Precondition: uniform envMap (sampler2D); map(vec3) and colorChunk's MOOD_*/
-// clusterBlend|metaballBlend|burstBlend in scope.
-
 export const surfaceChunk = `
 
-const vec3  KEY_LIGHT_DIR_RAW      = vec3(2.0, 2.5, 2.0);  // shared directional light, metal + glass (normalize at use site)
-const float RIM_LIGHT_POWER     = 2.0;  // lower power = wider, lighter falloff
+
+// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
+
+
+const vec3  KEY_LIGHT_DIR_RAW      = vec3(2.0, 2.5, 2.0);
+const float RIM_LIGHT_POWER     = 2.0;
 const float RIM_LIGHT_INTENSITY = 2.2;
 
-// Shared across Metaball/Cluster/Burst -- one look, not a per-phase dial. Roughness is fixed
-// (not threaded through _D_GGX/_G_Smith/_envSampleLod as a parameter -- there's only ever one
-// value in use), so its cone-sample spread collapses into one precomputed constant too.
 const float SURFACE_ROUGHNESS  = 0.3;
-const float ENV_CONE_SPREAD    = 0.18;  // = SURFACE_ROUGHNESS * 0.6 (blur amount for the IBL cone sample)
+const float ENV_CONE_SPREAD    = 0.18;
 const float RIM_WEIGHT         = 0.5;
+
+
+// ──── HELPER FUNCTIONS - ENVIRONMENT MAPPING ─────────────────────────────────────
+
 
 vec2 _envUV(vec3 dir) {
   const float PI = 3.14159265;
@@ -26,7 +27,6 @@ vec3 _envSample(vec3 dir) {
   return raw / (raw + 1.0);
 }
 
-// Cone-sampling approximation of roughness-blurred reflection (no PMREM/prefiltered mips).
 vec3 _envSampleLod(vec3 dir) {
   vec3  right  = normalize(cross(dir, vec3(0.0, 1.0, 0.001)));
   vec3  up     = cross(right, dir);
@@ -39,7 +39,9 @@ vec3 _envSampleLod(vec3 dir) {
   return sum / 5.0;
 }
 
-// ── Cook-Torrance PBR helpers (metalness = 1, no diffuse), roughness = SURFACE_ROUGHNESS ──
+
+// ──── HELPER FUNCTIONS - COOK-TORRANCE PBR ───────────────────────────────────
+
 
 float _D_GGX(float NdotH) {
   float a2 = SURFACE_ROUGHNESS * SURFACE_ROUGHNESS * SURFACE_ROUGHNESS * SURFACE_ROUGHNESS;
@@ -62,13 +64,11 @@ vec3 _rimLight(vec3 tint, float NdotV) {
   return tint * pow(1.0 - NdotV, RIM_LIGHT_POWER) * RIM_LIGHT_INTENSITY;
 }
 
-// ── reflective (shared by Metaball + Burst) ────────────────────────────────────
-// Cook-Torrance BRDF, metalness = 1: no diffuse, F0 = tint (each phase's own MOOD_METABALL/
-// MOOD_BURST from colorChunk.js). Matches Three.js MeshStandardMaterial(metalness:1,
-// roughness:r). Rim light uses colorChunk.js's MOOD_RIM -- shared between both phases,
-// independent of their (possibly different) surface tint.
 
-const float HIGHLIGHT_BRIGHTEN = 1.15;  // derives the direct-specular tone from the base tint; IBL uses the base tone as-is
+// ──── HELPER FUNCTIONS - REFLECTIVE SHADING ──────────────────────────────────
+
+
+const float HIGHLIGHT_BRIGHTEN = 1.15;
 
 vec3 _shadeReflective(vec3 n, vec3 rd, float NdotV, vec3 tint) {
   vec3 highlightTint = clamp(tint * HIGHLIGHT_BRIGHTEN, 0.0, 1.0);
@@ -80,31 +80,26 @@ vec3 _shadeReflective(vec3 n, vec3 rd, float NdotV, vec3 tint) {
   float NdotH = max(dot(n, h),  0.0);
   float VdotH = max(dot(v, h),  0.0);
 
-  // Direct light: Cook-Torrance specular BRDF
   float D   = _D_GGX(NdotH);
   float G   = _G_Smith(NdotV, NdotL);
   vec3  F   = _F_Schlick(highlightTint, VdotH);
   vec3 spec = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
 
-  // IBL: roughness-blurred reflection weighted by Fresnel
   vec3 F_ibl = _F_Schlick(tint, NdotV);
   vec3 env   = _envSampleLod(reflect(rd, n));
 
-  return spec * NdotL + env * F_ibl + _rimLight(MOOD_RIM, NdotV) * RIM_WEIGHT;
+  return spec * NdotL + env * F_ibl + _rimLight(RIMLIGHT_COLOR, NdotV) * RIM_WEIGHT;
 }
 
-vec3 shadeMetaball(vec3 n, vec3 rd, float NdotV) {
-  return _shadeReflective(n, rd, NdotV, MOOD_METABALL);
+
+// ──── PHASE SHADING ───────────────────────────────────────────────────────────────────
+
+
+vec3 _metaballShading(vec3 n, vec3 rd, float NdotV) {
+  return _shadeReflective(n, rd, NdotV, METABALL_COLOR);
 }
 
-vec3 shadeBurst(vec3 n, vec3 rd, float NdotV) {
-  return _shadeReflective(n, rd, NdotV, MOOD_BURST);
-}
-
-// ── cluster ───────────────────────────────────────────────────────────────────
-// No env-map sampling: map()-thickness inner glow, Fresnel rim, backscatter.
-
-vec3 shadeCluster(vec3 p, vec3 n, vec3 rd, float NdotV) {
+vec3 _clusterShading(vec3 p, vec3 n, vec3 rd, float NdotV) {
   const float SPECULAR_POWER        = 192.0;
   const float THICKNESS_SAMPLE_OFFSET = 0.08;
   const float INNER_GLOW_RANGE_START  = 0.0;
@@ -119,25 +114,32 @@ vec3 shadeCluster(vec3 p, vec3 n, vec3 rd, float NdotV) {
 
   vec3  ld        = normalize(KEY_LIGHT_DIR_RAW);
   float spec      = pow(max(dot(n, normalize(ld - rd)), 0.0), SPECULAR_POWER);
-  float thickness = clamp(-map(p - n * THICKNESS_SAMPLE_OFFSET), 0.0, 1.0);
+  float thickness = clamp(-blendShape(p - n * THICKNESS_SAMPLE_OFFSET), 0.0, 1.0);
   float innerGlow = smoothstep(INNER_GLOW_RANGE_START, INNER_GLOW_RANGE_END, thickness) * INNER_GLOW_INTENSITY;
   float fresnel   = pow(1.0 - NdotV, FRESNEL_POWER);
   float scatter   = pow(max(dot(-ld, n), 0.0), SCATTER_POWER);
 
   vec3 color = vec3(0.0);
-  color += MOOD_CLUSTER  * fresnel * FRESNEL_WEIGHT;
-  color += MOOD_METABALL * innerGlow * INNER_GLOW_WEIGHT;
+  color += CLUSTER_COLOR  * fresnel * FRESNEL_WEIGHT;
+  color += METABALL_COLOR * innerGlow * INNER_GLOW_WEIGHT;
   color += spec * SPEC_WEIGHT;
-  color += MOOD_CLUSTER  * scatter * SCATTER_WEIGHT;
-  color += _rimLight(MOOD_CLUSTER, NdotV) * RIM_WEIGHT;
+  color += CLUSTER_COLOR  * scatter * SCATTER_WEIGHT;
+  color += _rimLight(CLUSTER_COLOR, NdotV) * RIM_WEIGHT;
   return color;
 }
 
-// Always a full 3-way blend, no early-out branches (no hard switches, ever).
+vec3 _burstShading(vec3 n, vec3 rd, float NdotV) {
+  return _shadeReflective(n, rd, NdotV, BURST_COLOR);
+}
+
+
+// ──── WEIGHTED BLENDING ───────────────────────────────────────────────────────────────
+
+
 vec3 shadeHit(vec3 p, vec3 n, vec3 rd) {
   float NdotV = max(dot(n, -rd), 0.0);
-  return shadeMetaball(n, rd, NdotV)   * metaballBlend
-       + shadeCluster(p, n, rd, NdotV) * clusterBlend
-       + shadeBurst(n, rd, NdotV)      * burstBlend;
+  return _metaballShading(n, rd, NdotV) * metaballBlend
+       + _clusterShading(p, n, rd, NdotV) * clusterBlend
+       + _burstShading(n, rd, NdotV)      * burstBlend;
 }
 `;

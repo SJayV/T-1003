@@ -1,8 +1,15 @@
 import * as THREE from 'three';
 import { vertexChunk } from '../shaderChunks/vertexChunk.js';
 
+// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
+
+
 const DEFAULT_BLOOM_INTENSITY = 1.5;
 const DEFAULT_BLOOM_THRESHOLD = 0.6;
+
+
+// ──── FULLSCREEN QUAD FACTORY ──────────────────────────────────────────────────────
+
 
 export function makeGpuSetup(material) {
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -10,6 +17,10 @@ export function makeGpuSetup(material) {
   scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
   return { scene, camera };
 }
+
+
+// ──── BLOOM PIPELINE ───────────────────────────────────────────────────────────────
+
 
 export function makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeFrag }) {
   const W  = renderer.domElement.width;

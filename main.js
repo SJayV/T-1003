@@ -6,14 +6,23 @@ import { getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnv
 import { initCamera, updateCamera }                                   from './src/camera.js';
 import { initInput,  updateInput  }                                   from './src/input.js';
 import { initAudio,  updateAudio  }                                   from './src/audio.js';
-import { mainVert, mainFrag }                                         from './shaders/raymarchShader.js';
+import { mainVert, buildMainFrag }                                    from './shaders/raymarchShader.js';
+import { CLUSTER_SHAPE_VARIANTS }                                     from './shaderChunks/shapeChunk.js';
+import { initClusterShapeUI }                                         from './src/clusterShapeUI.js';
 import { makeBloomSetup }                                             from './src/gpuSetup.js';
 import { brightExtractFrag, blurFrag, compositeFrag }                 from './shaders/bloomShader.js';
+
+// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
+
 
 const BLOOM_INTENSITY_BASE        = 1.2;
 const BLOOM_INTENSITY_BURST_BOOST = 1.5;
 const BLOOM_THRESHOLD_BASE        = 0.65;
 const BLOOM_THRESHOLD_BURST_DROP  = 0.25;
+
+
+// ──── MATERIAL & UNIFORMS SETUP ───────────────────────────────────────────────────
+
 
 const material = new THREE.ShaderMaterial({
   uniforms: {
@@ -28,8 +37,12 @@ const material = new THREE.ShaderMaterial({
     ...envDefs(),
   },
   vertexShader:   mainVert,
-  fragmentShader: mainFrag,
+  fragmentShader: buildMainFrag(CLUSTER_SHAPE_VARIANTS[0]),
 });
+
+
+// ──── SCENE & MODULE INITIALIZATION ───────────────────────────────────────────────
+
 
 scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
 
@@ -38,7 +51,15 @@ initCamera(camera);
 initInput();
 initAudio();
 initSimulation(renderer);
+initClusterShapeUI(CLUSTER_SHAPE_VARIANTS, (variant) => {
+  material.fragmentShader = buildMainFrag(variant);
+  material.needsUpdate = true;
+});
 const bloom = makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeFrag });
+
+
+// ──── ANIMATION LOOP ──────────────────────────────────────────────────────────────
+
 
 function animate() {
   const t_now = performance.now() / 1000;
@@ -46,8 +67,6 @@ function animate() {
   const t           = getTime();
   const motionSpeed = getMotionSpeed();
 
-  // The creature's own shape/color always follows the real weights -- env presets
-  // (see environment.js) only reparameterize the sky, never the ball material.
   const { clusterWeight: clusterBlend, metaballWeight: metaballBlend, burstWeight: burstBlend } = getWeights();
 
   stepSimulation();

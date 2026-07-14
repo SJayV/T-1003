@@ -16,11 +16,11 @@ Organized into three levels, from smallest to largest scope:
 |---|---|---|
 | JS private module-level symbols (vars + functions) | `_camelCase` | `_renderer`, `_firstFrame`, `_makeTarget`, `_enterState` |
 | JS public exports | `camelCase` | `initSimulation`, `getWeights` |
-| JS module constants | `SCREAMING_SNAKE_CASE` | `BALL_COUNT`, `BURST_MIN_FRAMES` |
+| JS module constants | `SCREAMING_SNAKE_CASE` | `BALL_COUNT`, `CLUSTER_CYL_RADIUS` |
 | GLSL internal helpers | `_camelCase` | `_envUV`, `_hash2`, `_computeCentroid` |
 | GLSL public chunk functions | `camelCase` | `orbitPoint`, `shadeHit`, `perlin2D` |
 | GLSL uniforms | `camelCase`, matches JS side | `burstBlend`, `motionSpeed` |
-| GLSL tunable constants | `SCREAMING_SNAKE_CASE` | `ORBIT_SNAP_RATE`, `VEL_DECAY_BURST` |
+| GLSL tunable constants | `SCREAMING_SNAKE_CASE` | `ORBIT_SNAP_RATE`, `BURST_FORCE_OFFSET` |
 | Files | `camelCase.js` | `gpuSetup.js`, `noiseChunk.js` |
 
 Underscore prefix marks all private module-level symbols: `let` state, `const` helpers, and unexported `function` declarations. It does not apply to block-scoped locals inside a function body.
@@ -35,7 +35,7 @@ Any numeric literal that encodes an artistic or behavioral tuning decision — a
 - Universally-named mathematical constants (`PI`) and standards with an established name in the literature (Rec. 709 luma weights — these *do* get named, since the standard itself supplies the name: `LUMA_WEIGHTS`).
 - Noise-hash decorrelation seeds (`127.1`, `311.7`, `43758.5453...`) — arbitrary by design; naming them would imply a meaning they don't have. Leave a one-line comment identifying the idiom instead (see `noiseChunk.js`).
 
-When the same conceptual constant is needed in more than one file — whether two JS modules or a JS module and a GLSL chunk/shader interpolating it into its template-literal source — define it once in `src/constants.js` and import it everywhere it's used (see [Shared cross-file constants](#shared-cross-file-constants)). Reach for a `// must match X in Y` comment only where the value can't be interpolated (e.g. it's derived differently on each side, as with `INIT_ANGULAR_RATE_SCALE` vs. `ORBIT_OMEGA_SCALE`, which are deliberately different approximations, not the same constant).
+When the same conceptual constant is needed in more than one file — whether two JS modules or a JS module and a GLSL chunk/shader interpolating it into its template-literal source — define it once in `src/constants.js` and import it everywhere it's used (see [Shared cross-file constants](#shared-cross-file-constants)). Reach for a `// must match X in Y` comment only where the value can't be interpolated because it's derived differently on each side (two deliberately different approximations of the same underlying quantity, not the same constant).
 
 ### Comments
 
@@ -74,13 +74,15 @@ Render target types: `FloatType` for simulation state; `HalfFloatType` for post-
 
 ### GLSL chunk injection
 
-Chunk files (`shaderChunks/`) export a single template-literal string injected via `${chunk}` into the enclosing shader. The chunk assumes the uniform declarations and helper functions of that shader are already in scope. Since chunks are concatenated into one GLSL compilation unit, top-level `const` names declared by one chunk must not collide with names declared by another chunk or shader in the same file — check before adding a new global constant.
+Chunk files (`shaderChunks/`) export a template-literal string injected via `${chunk}` into the enclosing shader. The chunk assumes the uniform declarations and helper functions of that shader are already in scope. Since chunks are concatenated into one GLSL compilation unit, top-level `const` names declared by one chunk must not collide with names declared by another chunk or shader in the same file — check before adding a new global constant.
+
+Most chunks export the string directly as a constant. One exception: `shapeChunk.js` exports a **function** (`shapeChunk(clusterVariant)`) instead, because one of its top-level functions (`clusterSDF`) needs to alias to a different implementation depending on a choice made at shader-assembly time (which of six Cluster shape combinations to compile in) — a JS-level parameter, not a runtime GLSL branch. Reach for this factory-function shape only when a chunk genuinely needs an assembly-time choice; a plain string constant is the default.
 
 Document required preconditions (uniforms, functions) at the top of each chunk string.
 
 ### Shared cross-file constants
 
-`src/constants.js` is the single source of truth for constants needed in **more than one file**. A JS module imports and uses the value directly; a GLSL chunk/shader imports it and interpolates it into its template-literal source (`` const int BALL_COUNT = ${BALL_COUNT}; ``), turning it into a compiled-in literal. A constant used in only one file stays local to that file — do not preemptively move things here "just in case." This mirrors how `moodChunk.js` already centralizes the phase colors for its multiple GLSL consumers, extended across the JS/GLSL boundary.
+`src/constants.js` is the single source of truth for constants needed in **more than one file**. A JS module imports and uses the value directly; a GLSL chunk/shader imports it and interpolates it into its template-literal source (`` const int BALL_COUNT = ${BALL_COUNT}; ``), turning it into a compiled-in literal. A constant used in only one file stays local to that file — do not preemptively move things here "just in case," though visual/geometric tuning constants (colors, shape sizes) are colocated there even when only one chunk consumes them, so every tunable dial lives in one place. This mirrors how `colorChunk.js` already centralizes the phase colors for its multiple GLSL consumers, extended across the JS/GLSL boundary.
 
 **Gotcha — always use `glslFloat(n)` when interpolating a number into a `float` context.** JS stringifies whole numbers without a decimal point (`` `${1.0}` === '1' ``), but GLSL ES 1.00 requires a decimal point on `float` literals; `const float x = 1;` is a type error on strict validators (ANGLE on Windows enforces this — other drivers may silently tolerate it, which is exactly what makes this bug easy to miss and hard to reproduce across machines). `glslFloat()` in `src/constants.js` guarantees a valid literal. Interpolating into an `int` context (`const int BALL_COUNT = ${BALL_COUNT};`) needs no such wrapping — use the raw value there.
 
@@ -88,7 +90,7 @@ Document required preconditions (uniforms, functions) at the top of each chunk s
 
 When the same computation appears more than once, extract it — but the *scope* of the extraction should match the scope of the duplication:
 
-- **Duplicated only within one file** (e.g. `_envSample` used solely by `_envSampleLod` inside `raymarchChunk.js`, or the `pow(clamp(1-w*scale,0,1),contrast)` shape used twice inside `environmentShader.js`): a `_camelCase` internal helper defined in that same file, next to its callers.
+- **Duplicated only within one file** (e.g. `_envSample` used solely by `_envSampleLod` inside `surfaceChunk.js`, or the `pow(clamp(1-w*scale,0,1),contrast)` shape used twice inside `environmentShader.js`): a `_camelCase` internal helper defined in that same file, next to its callers.
 - **Duplicated across files/chunks** (e.g. `perlin2D`, or `dualOctaveNoise`, the "two weighted perlin octaves" shape shared by `raymarchShader.js` and `environmentShader.js`): a public `camelCase` function added to the relevant shared chunk (`noiseChunk.js` for noise primitives) so every consumer imports the one definition instead of re-deriving it.
 
 Not every superficially similar expression is worth extracting — if two call sites only *look* alike but don't share an invariant that could drift out of sync, and a shared helper would need as many parameters as the inline expression has terms, leaving them inline is the better call.

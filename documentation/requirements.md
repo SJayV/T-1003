@@ -35,17 +35,18 @@ T-1003/
 │   ├── camera.js               ← statische Kamera (stub)
 │   ├── input.js                ← Webcam Frame-Differencing → reportMotion() → phase.js Gewichtssystem
 │   ├── audio.js                ← Phasengekoppelte Klangkulisse (Stub)
-│   └── environment.js          ← dynamische Equirectangular-Env-Map-Generierung
+│   ├── environment.js          ← dynamische Equirectangular-Env-Map-Generierung
+│   └── clusterShapeUI.js       ← Temporäre manuelle Auswahl der Cluster-Shape-Variante (siehe unten)
 ├── shaders/
 │   ├── simulationShader.js     ← Physik-GLSL (Sim-Pass); interpoliert positionChunk
 │   ├── environmentShader.js    ← Equirectangular-GLSL; interpoliert noiseChunk + colorChunk
-│   ├── raymarchShader.js       ← Rendering-GLSL; interpoliert noiseChunk + colorChunk + shapeChunk + surfaceChunk
+│   ├── raymarchShader.js       ← Rendering-GLSL; `buildMainFrag(clusterVariant)` interpoliert noiseChunk + colorChunk + shapeChunk(clusterVariant) + surfaceChunk
 │   └── bloomShader.js          ← Bloom Post-Processing (brightExtract, blur, composite Fragment-Shader)
 └── shaderChunks/
     ├── vertexChunk.js          ← GLSL-Chunk: gemeinsamer Passthrough-Vertex-Shader
     ├── noiseChunk.js           ← GLSL-Chunk: perlin2D, worley2D
     ├── colorChunk.js           ← GLSL-Chunk: Farbpalette (MOOD_*), moodColor(), Himmelsfarbe (envCluster/envMetaball/envBurst, blendEnvironment(uv))
-    ├── shapeChunk.js           ← GLSL-Chunk: clusterSDF/metaballSDF/burstSDF, map(), normal(), raymarch()
+    ├── shapeChunk.js           ← GLSL-Chunk-Factory: `shapeChunk(clusterVariant)`; clusterSDF/metaballSDF/burstSDF, map(), normal(), raymarch() — siehe Phasensystem → Cluster-Shape-Varianten
     ├── surfaceChunk.js         ← GLSL-Chunk: shadeMetaball, shadeCluster, shadeBurst, shadeHit
     └── positionChunk.js        ← GLSL-Chunk: applySimulation (gewichtet über clusterBlend/metaballBlend/burstBlend)
 ```
@@ -130,8 +131,7 @@ $\mu_i$ ist nie fallend (`mu = max(mu, t_now)`) und wird bei Aktivierung nicht a
 |---|---|
 | `LEAD` | Anstiegsfaktor: eine Aktivierung braucht `LEAD·σ` Sekunden vom Trigger bis nahezu voller Gewichtung |
 | `CLUSTER_SIGMA`, `METABALL_SIGMA`, `BURST_SIGMA` | Bump-Breite je Phase — bestimmt sowohl Anstiegs- als auch Abklingdauer |
-| `BURST_HOLD_MIN` | **Abgeleitet**, nicht frei gewählt: `= LEAD·BURST_SIGMA`, damit Burst beim Hold-Ende garantiert voll eingeschwungen ist (siehe unten) |
-| `BURST_HOLD_MAX` | `BURST_HOLD_MIN` + fixe Spanne, linear mit der bei Trigger erkannten `motionSpeed` interpoliert — deterministisch, kein Zufallsanteil |
+| `BURST_HOLD` | **Abgeleitet**, nicht frei gewählt: `= LEAD·BURST_SIGMA`, damit Burst beim Hold-Ende garantiert voll eingeschwungen ist (siehe unten). Fix, nicht mit `motionSpeed` skaliert — der frühere Speed-Interpolations-Spread war kaum wahrnehmbar und erschwerte nur das Abstimmen |
 | `METABALL_MIN_HOLD` | Mindestverweildauer in Metaball, unabhängig von Input |
 | `METABALL_SILENCE_HOLD` | Stille-Dauer (nach `METABALL_MIN_HOLD`) vor Rückkehr zu Cluster |
 | `METABALL_HANDOFF_LEAD` | `0` (nicht `LEAD`) — Metabolls Aktivierung beim Burst-Handoff, siehe unten |
@@ -139,9 +139,9 @@ $\mu_i$ ist nie fallend (`mu = max(mu, t_now)`) und wird bei Aktivierung nicht a
 
 **Wichtig — Hold-Dauer ≠ Abklingbreite:** Wie lange eine Phase aktiv gehalten wird, ist eine rein verhaltensbezogene Entscheidung, unabhängig von `σ` (das nur die *visuelle* Anstiegs-/Abklinggeschwindigkeit eines Bumps bestimmt). Die nächste Phase wird immer **exakt** beim Ablauf der aktuellen Hold-Dauer aktiviert — nie erst nach einer zusätzlichen "erst abklingen lassen"-Verzögerung.
 
-**Burst→Metaball als exakter 50/50-Übergang:** Cluster→Burst funktioniert von Natur aus gut (Burst aktiviert sofort bei Trigger, während Cluster noch nahe seinem Peak ist — die beiden Kurven kreuzen sich in der Mitte). Burst→Metaball braucht dafür zwei bewusste Entscheidungen: (1) `BURST_HOLD_MIN = LEAD·BURST_SIGMA` garantiert, dass `raw_burst` beim Hold-Ende bereits bei 1 angekommen ist, statt mittendrin abgeschnitten zu werden; (2) `METABALL_HANDOFF_LEAD = 0` setzt Metaballs `mu` exakt auf den Handoff-Zeitpunkt statt `LEAD·σ` in die Zukunft — `raw_metaball` startet damit ebenfalls bei 1, nicht beim üblichen ~1%-Boden. Im selben Moment sind beide Bumps auf ihrem Peak (1/1, exakt 50/50); ab da tracked Metaballs `mu` weiter mit `t_now` (bleibt bei 1), während Bursts `mu` einfriert und abklingt — die Gewichtsverteilung kippt rein durch Bursts eigenes Abklingen von 50/50 zu Metaball, ohne dass irgendwo gesprungen wird.
+**Burst→Metaball als exakter 50/50-Übergang:** Cluster→Burst funktioniert von Natur aus gut (Burst aktiviert sofort bei Trigger, während Cluster noch nahe seinem Peak ist — die beiden Kurven kreuzen sich in der Mitte). Burst→Metaball braucht dafür zwei bewusste Entscheidungen: (1) `BURST_HOLD = LEAD·BURST_SIGMA` garantiert, dass `raw_burst` beim Hold-Ende bereits bei 1 angekommen ist, statt mittendrin abgeschnitten zu werden; (2) `METABALL_HANDOFF_LEAD = 0` setzt Metaballs `mu` exakt auf den Handoff-Zeitpunkt statt `LEAD·σ` in die Zukunft — `raw_metaball` startet damit ebenfalls bei 1, nicht beim üblichen ~1%-Boden. Im selben Moment sind beide Bumps auf ihrem Peak (1/1, exakt 50/50); ab da tracked Metaballs `mu` weiter mit `t_now` (bleibt bei 1), während Bursts `mu` einfriert und abklingt — die Gewichtsverteilung kippt rein durch Bursts eigenes Abklingen von 50/50 zu Metaball, ohne dass irgendwo gesprungen wird.
 
-Dasselbe gilt auf der Bewegungsseite: `positionChunk.js`s `VEL_DECAY_BURST` ist aktuell `1.0` — **kein** Abklingen während Burst, experimentell, um zu testen, ob Metaballs Orbit-Snap den Übergang allein glätten kann, sobald sein Gewicht steigt. Bursts `vel` soll beim Handoff noch echten Schwung tragen, statt schon auf ~0 ausgerollt zu sein; wäre `vel` zu diesem Zeitpunkt bereits leer, würde Metaballs direkter Orbit-Snap die Bewegung faktisch allein übernehmen, was sich trotz glatter Gewichts-Überblendung wie ein harter Schnitt in der Bewegung liest, nicht wie eine Übergabe. Falls `1.0` zu wild wirkt (Bälle fliegen zu weit, bevor Metaball greift), ist ein Wert knapp darunter (z. B. 0.97–0.99) der nächste Versuch.
+Dasselbe gilt auf der Bewegungsseite: `positionChunk.js` dämpft `vel` während Burst gar nicht (Faktor `1.0`, siehe `applySimulation`s `VEL_DECAY_META`/`VEL_DECAY_CLUSTER`-Mix). Bursts `vel` soll beim Handoff noch echten Schwung tragen, statt schon auf ~0 ausgerollt zu sein — Metaballs eigene Orbit-Korrektur (`_simulateMetaball`/`_orbitTangentStep`) bleibt bewusst ein direktes, von `vel` unabhängiges Pos-Update (siehe unten), gerade damit sie mit Bursts Schwung interagiert statt ihn zu überschreiben.
 
 **Parameter (in `input.js`, unverändert):**
 
@@ -150,30 +150,36 @@ Dasselbe gilt auf der Bewegungsseite: `positionChunk.js`s `VEL_DECAY_BURST` ist 
 | `INPUT_SPEED_THRESHOLD` | Minimale normierte Geschwindigkeit |
 | `INPUT_PERSIST_FRAMES` | Konsekutive Frames mit Bewegung vor `reportMotion` |
 
-**Burst-Intensität:** `s = clamp(speed, 0, 1)` aus `input.js` bestimmt die Burst-Haltedauer bei Trigger. Die Abstoßungskraft $F_0$ liest davon entkoppelt live `motionSpeed` (nicht die eingefrorene Trigger-Intensität) — reagiert also weiter auf Bewegung, während Burst aktiv ist.
+**Metaball** — direktes Orbit-Update, zwei unabhängige Terme (`positionChunk.js`):
 
-**Metaball** — direktes Orbit-Update (nearest-phi):
+Pro Frame wird der nächste Punkt auf der Orbit-Ellipse zur aktuellen Ballposition bestimmt (`_phiOnOrbit`, projiziert `pos` auf die Orbit-Basisebene). Zwei Terme, beide direkt auf `pos` angewendet (gewichtet mit `metaballBlend`, **nicht** über `vel` akkumuliert — siehe unten):
+- **Radiale Rückholkraft** (`_simulateMetaball`): `(nearPt - pos) · ORBIT_SNAP_RATE`. Selbstlimitierend — geht gegen 0, sobald der Ball auf seinem Orbit ist. "Zurück in den Orbit, falls Burst ihn zu weit hinausgetragen hat" folgt daraus ohne Sonderfall.
+- **Tangentialer Orbit-Schritt** (`_orbitTangentStep`): der Winkel-Fortschritt des Orbits selbst pro Tick, unabhängig vom radialen Term — läuft immer mit voller Stärke, sobald Metaball gewichtet ist, nicht erst nachdem der Ball radial aufgeholt hat.
 
-Pro Frame wird der nächste Punkt auf der Orbit-Ellipse zur aktuellen Ballposition bestimmt. Die radiale Annäherung an diesen Punkt ist geschwindigkeitsgleich mit dem tangentialen Orbit-Schritt (per `min()` überschwingungsfrei gekappt) — kein fixer, langsamer Kriechwert. Das ist bewusst so gewählt: ein aus dem Burst verstreuter Ball soll mit derselben Dringlichkeit zurückschnappen, mit der er anschließend orbitiert, statt sichtbar langsam anzukommen und erst danach auf Orbit-Tempo zu beschleunigen — letzteres läse sich als Zögern, nicht als das intendierte "Panik"-Verhalten des Übergangs. Der Startwinkel $\phi_\text{rand} \sim \mathcal{U}[0, 2\pi)$ wird bei Programmstart gezogen, sodass jeder Run anders aussieht. Kein Noise in der Metaball-Phase.
+Beide Terme laufen **nicht** über `vel`: `vel` klingt nur wenige % pro Tick ab, eine Akkumulation dort würde sich jeden Frame aufsummieren statt sich auf die vorgesehene, selbstlimitierende Korrektur einzustellen — besonders der Tangential-Term, der nie gegen 0 geht (der Orbit schreitet immer weiter fort) und unbegrenzt aufschwingen würde. Der Burst→Metaball-Übergang wird stattdessen über die Gaußkurven-Überlappung und Bursts eigene, nie ganz auf 0 abklingende Kraft geglättet (siehe unten), nicht durch einen gemeinsamen Akkumulator der beiden Phasen.
+
+`ORBIT_SNAP_RATE` ist so schnell wie ohne Orbit-Bruch möglich gewählt: `_nearestOrbitPhi` approximiert nur (projiziert auf die Basisebene der Ellipse statt den echten nächsten Punkt zu lösen), und eine radiale Korrektur in ähnlicher Größenordnung wie der Tangential-Schritt kann mit diesem Approximationsfehler resonieren und einen Ball dauerhaft festsetzen statt konvergieren zu lassen. Der Startwinkel $\phi_\text{rand} \sim \mathcal{U}[0, 2\pi)$ wird bei Programmstart gezogen, sodass jeder Run anders aussieht. Kein Noise in der Metaball-Phase.
 
 $$\mathbf{c}_i^\text{orbit}(\phi) = \begin{pmatrix} r_i \cos\phi \\ r_i \sin\phi\,\sin\theta_i \\ r_i \sin\phi\,\cos\theta_i \cdot 0.28 \end{pmatrix}$$
 
 Die effektive Winkelgeschwindigkeit skaliert additiv mit `motionSpeed` — stärkere erkannte Bewegung beschleunigt alle Orbits.
 
-**Cluster** — Konvergenz zu einem Zylinder: Die Bälle werden nicht mehr zu einem formlosen Massezentrum gezogen, sondern jeweils zu einem eigenen Punkt auf einer einwindigen Helix um einen analytischen Zylinder (`_clusterTarget(ballIdx)` in `positionChunk.js`, Radius aus `CLUSTER_CYL_RADIUS` in `constants.js`; die Helix-Höhe ist bewusst auf `HELIX_HALF_HEIGHT=0.9` gekappt, unabhängig von der viel größeren visuellen `CLUSTER_CYL_HALF_HEIGHT` des Zylinders selbst — siehe unten):
+**Cluster** — Konvergenz zu einer Ziel-Form: Die Bälle werden nicht mehr zu einem formlosen Massezentrum gezogen, sondern jeweils zu einem eigenen Punkt auf einer einwindigen Helix um die (analytische) Cluster-Geometrie (`_clusterTarget(ballIdx)` in `positionChunk.js`, Radius aus `CLUSTER_CYL_RADIUS` in `constants.js` — die Helix ist immer um einen Zylinder gelegt, unabhängig davon, welche Shape-Variante gerade sichtbar ist, siehe „Cluster-Shape-Varianten" unten; die Helix-Höhe ist bewusst auf `HELIX_HALF_HEIGHT=0.9` gekappt, unabhängig von der viel größeren visuellen `CLUSTER_CYL_HALF_HEIGHT` selbst):
 
 $$\mathbf{t}_i = \mathbf{c}_\text{cyl} + \Bigl(R\cos\phi_i,\; \text{lerp}(-H_\text{helix}, H_\text{helix}, u_i),\; R\sin\phi_i\Bigr), \qquad u_i = \tfrac{i+0.5}{n},\; \phi_i = 2\pi u_i$$
 
-$$\mathbf{v}_i(t) \mathrel{+}= k_1(\mathbf{t}_i - \mathbf{c}_i)$$
+Diese Zielkraft ist **nicht** allein auf `clusterBlend` gewichtet, sondern auf `(clusterBlend + burstBlend)`, und zwar direkt auf Kraft-Ebene (vor der Akkumulation in `vel`, nicht erst bei der Anwendung auf `pos`): so lädt sie sich während Burst weiter auf `vel` auf (Cluster erbt so schon Schwung in die richtige Richtung), trägt aber ~0 zu `vel` bei, solange Metaball dominiert — sonst würde sich ungewichtet aufgeladene `vel` unbemerkt aufbauen und beim nächsten Cluster/Burst-Wechsel schlagartig in `pos` entladen ("floating around a point"-Regression, siehe Git-Historie).
 
-Perlin-Noise-Störung auf $\mathbf{v}_i$ sorgt weiterhin für organische, unregelmäßige Bewegung während der Konvergenz. Die tatsächliche *Form* im Cluster kommt aber nicht aus der Ballanordnung, sondern aus einem eigenständigen analytischen SDF (siehe SDF-Komposition unten) — die Helix-Zielpunkte sorgen nur dafür, dass die Bälle beim Einblenden visuell zum Zylinder hin konvergieren, statt an einer beliebigen Stelle zu verschwinden; sie müssen dabei nicht die volle (Bild-überragende) Höhe des Zylinders abdecken, da `reflectBounds` Bälle ohnehin auf `BY=1.0` begrenzt.
+$$\mathbf{v}_i(t) \mathrel{+}= k_1(\mathbf{t}_i - \mathbf{c}_i) \cdot (\text{clusterBlend} + \text{burstBlend})$$
 
-**Zylinder-Geometrie und Kamera-Zentrierung:** `CLUSTER_CYL_RADIUS=0.14` (ein dünner Stab, ein Viertel des ursprünglichen 0.55), `CLUSTER_CYL_HALF_HEIGHT=1.5` (überragt absichtlich Bild-oben/-unten). Der Zylindermittelpunkt $\mathbf{c}_\text{cyl}$ liegt **nicht** im Weltursprung, sondern bei `CLUSTER_CYL_CENTER_X`/`_Y` = `camera.js`s `CAMERA_START_POSITION.xy` (beide aus `constants.js`, einzige Quelle): `raymarchShader.js`s Kameramodell rotiert die Strahlrichtung nie zu `lookAt(0,0,0)` (bleibt immer exakt `-Z`), wodurch am Weltursprung platzierte Geometrie um einen zu `camPos.xy` proportionalen Betrag außermittig erscheint. Ein Objekt exakt bei `(camPos.x, camPos.y, 0)` erscheint unter diesem vereinfachten Modell exakt bildschirmmittig, unabhängig vom genauen Vorzeichen dieser Verschiebung.
+Perlin-Noise-Störung auf $\mathbf{v}_i$ sorgt weiterhin für organische, unregelmäßige Bewegung während der Konvergenz. Die tatsächliche *Form* im Cluster kommt aber nicht aus der Ballanordnung, sondern aus einem eigenständigen analytischen SDF (siehe SDF-Komposition unten) — die Helix-Zielpunkte sorgen nur dafür, dass die Bälle beim Einblenden visuell konvergieren, statt an einer beliebigen Stelle zu verschwinden; sie müssen dabei nicht die volle (Bild-überragende) Höhe der Zylinder-Zielform abdecken, da `reflectBounds` Bälle ohnehin auf `BY=1.0` begrenzt.
 
-**Burst** — exponentiell abklingende Abstoßung (stark lokal, asymptotisch 0):
-$$\mathbf{v}_i(t) \mathrel{+}= \hat{\mathbf{d}}_i \cdot F_0 \cdot e^{-\lambda\|\mathbf{d}_i\|}, \qquad \mathbf{d}_i = \mathbf{c}_i - \hat{\mathbf{c}}$$
+**Kamera-Zentrierung:** Der Zielpunkt $\mathbf{c}_\text{cyl}$ liegt bei `CLUSTER_CYL_CENTER_X`/`_Y` (`constants.js`) — ein rein empirisch bestimmter Wert, **nicht** aus dem Kameramodell abgeleitet: sowohl `+CAMERA_START_POSITION.xy` als auch `-CAMERA_START_POSITION.xy` wurden probiert und überschossen die Bildmitte in entgegengesetzte Richtungen; der aktuelle Wert ist eine weitere empirische Korrektur danach.
 
-$F_0$ skaliert mit der live gelesenen `motionSpeed` $\in [0,1]$. Balls, die die Sichtbarkeitsgrenzen überschreiten, werden reflektiert (`reflectBounds`).
+**Burst** — Abstoßung mit exponentiellem Nahbereich und konstantem Sockel (`_simulateBurst` in `positionChunk.js`, **nicht** asymptotisch auf 0 abklingend):
+$$\mathbf{v}_i(t) \mathrel{+}= \hat{\mathbf{d}}_i \cdot \bigl(F_\text{offset} + F_\text{peak} \cdot e^{-\lambda\|\mathbf{d}_i\|}\bigr), \qquad \mathbf{d}_i = \mathbf{c}_i - \hat{\mathbf{c}}, \quad F_\text{peak} = F_\text{base} + \text{motionSpeed}\cdot F_\text{scale}$$
+
+Nahe der Formation ist die Kraft am stärksten ($F_\text{offset}+F_\text{peak}$); mit wachsendem Abstand klingt sie exponentiell ab, aber nur bis zu einem konstanten Sockel $F_\text{offset}$ — die Bälle treiben also immer weiter nach außen, statt dass der Schub völlig ausläuft, sobald sie weit von der Formation entfernt sind. Diese Kraft wird jeden Frame ungedämpft in `vel` akkumuliert (siehe oben, `vel`-Decay `1.0` während Burst), daher sind $F_\text{base}$/$F_\text{scale}$ bewusst klein gehalten — die Akkumulation selbst erzeugt den Großteil der Bewegung. Balls, die die Sichtbarkeitsgrenzen überschreiten, werden reflektiert (`reflectBounds`).
 
 ### SDF-Komposition über Phasen
 
@@ -181,9 +187,35 @@ Analog zu Farbe und Position ist auch die Form pro Phase eine eigenständige, in
 
 $$d(\mathbf{x}, t) = w_\text{cluster}\cdot d_\text{cluster}(\mathbf{x}) + w_\text{metaball}\cdot d_\text{metaball}(\mathbf{x}, t) + w_\text{burst}\cdot d_\text{burst}(\mathbf{x}, t)$$
 
-`clusterSDF` ist ein analytischer, gerundeter Zylinder ohne Ballunion und ohne Rauschen — die "saubere" Form, die Cluster als eigenständige Formsprache tragen sollte (löst den früheren Offenen Punkt „Zielform/Linie in Cluster"). `metaballSDF`/`burstSDF` bleiben je eine vollständige, in sich geschlossene Ballunion inklusive eigenem Oberflächenrauschen, nur mit unterschiedlichem Verschmelzungsradius $k$ (Metaball loser fusioniert, Burst enger — liest sich "explodiert" statt "verschmolzen").
+`metaballSDF`/`burstSDF` bleiben je eine vollständige, in sich geschlossene Ballunion inklusive eigenem Oberflächenrauschen, nur mit unterschiedlichem Verschmelzungsradius $k$ (Metaball loser fusioniert, Burst enger — liest sich "explodiert" statt "verschmolzen"). `clusterSDF` ist komplexer und in einem eigenen Abschnitt unten beschrieben (Cluster-Shape-Varianten).
 
 Diese phasenübergreifende Summe ist eine **zeitliche Überblendung** (Gewichte laufen stetig gegen 0/1), keine räumliche Vereinigung: Ein `smin`/`min` über die drei Teil-SDFs wäre falsch, da `clusterSDF` überall im Raum definiert ist und so als geisterhaft "durchscheinende" feste Geometrie sichtbar würde, selbst wenn `clusterWeight ≈ 0`. `smin` bleibt exakt dort, wo es hingehört: innerhalb von `metaballSDF`/`burstSDF`, zur Verschmelzung der 12 gleichzeitig präsenten Bälle. `raymarch()` mildert das inhärente Risiko einer linearen SDF-Überblendung (kein exaktes Abstandsfeld während einer echten Überblendung) mit einem adaptiven, auf den Überblend-Gewichten basierenden konservativen Schrittfaktor, der im (dominanten) eingeschwungenen Zustand keine Kosten verursacht.
+
+### Cluster-Shape-Varianten (`shapeChunk.js`)
+
+`clusterSDF` ist keine einzelne feste Form mehr, sondern eine von sechs möglichen Kombinationen aus **Form** (Zylinder/Kugel/Box, alle um `CLUSTER_CENTER` zentriert, Größe fix aus `constants.js`: `CLUSTER_CYL_RADIUS`/`_HALF_HEIGHT`, `CLUSTER_SPHERE_RADIUS`, `CLUSTER_BOX_HALF_EXTENT` + `_ROTATION_X`/`_Y` für die feste Verkippung der Box) × **Modus** (voll / mit der Ballunion geschnitten):
+
+```
+clusterCylinderFull / clusterCylinderIntersect
+clusterSphereFull   / clusterSphereIntersect
+clusterBoxFull       / clusterBoxIntersect
+```
+
+Jede der sechs ist eine explizite, nicht-verzweigende Funktion, die nur die Helfer `_clusterCylinder`/`_clusterSphere`/`_clusterBox` und `_clusterIntersect` komponiert. `clusterSDF(p)` selbst ist ein Einzeiler, der auf genau eine dieser sechs aliast — welche, entscheidet `shapeChunk(clusterVariant)` **beim Shader-Zusammenbau** (ein JS-String, der in den generierten GLSL-Quelltext eingesetzt wird), nicht ein Laufzeit-Branch. Ändern der Variante bedeutet: `raymarchShader.js`s `buildMainFrag(clusterVariant)` neu aufrufen und `material.fragmentShader`/`needsUpdate` setzen (siehe `main.js`).
+
+**Intersect-Varianten** (`_clusterIntersect(shapeD, p)`): Schnittmenge (`max`, nicht `min`) aus Form und der (rauschperturbierten) Ballunion — die Bälle wirken dadurch von der Form "abgeschnitten", statt als separate Blob-Wolke neben ihr zu schweben. Die Schnittmenge selbst blendet ein, während Metaball ausblendet (`1 - metaballBlend`, nicht `clusterBlend`):
+
+$$d_\text{intersect}(\mathbf{x}) = \text{mix}\bigl(d_\text{ball}(\mathbf{x}),\; \max(d_\text{shape}(\mathbf{x}), d_\text{ball}(\mathbf{x})),\; 1-\text{metaballBlend}\bigr)$$
+
+Bei `metaballBlend≈1` liefert das exakt die (ungeschnittene) Ballunion — identisch zu `metaballSDF`, `clusterSDF` verzerrt also nichts, solange Metaball dominiert. Bei `metaballBlend≈0` ist es die echte Schnittmenge mit der Form in ihrer wahren Zielgröße.
+
+**Wichtig — Form-Größe bleibt immer fix, nur die Schnittmenge blendet:** Eine frühere Version interpolierte stattdessen den Radius/die Ausdehnung der Form selbst zwischen einem großen (die Ballbahnen umschließenden) und dem finalen Wert — das war ein Fehler: mitten in der Überblendung (wenn `metaballBlend` und `clusterBlend` beide relevant sind) hatte die Form dann einen überdimensionierten Zwischen-Radius, der von `clusterBlend` sichtbar ins Gesamtbild gemischt wurde — eine reale, falsch dimensionierte Aufblähung, kein Rendering-Artefakt. Die Positions-Konvergenz der Bälle (Helix, oben) litt nicht darunter, da sie über eine Kraft (einen Versatz reduzierend) statt eine Form-Größe läuft.
+
+**Full-Varianten** brauchen diesen Mechanismus gar nicht — sie referenzieren keine Bälle, sind immer ihre feste Zielgröße, und werden allein durch `clusterBlend`s eigenes Gewicht ein-/ausgeblendet, genau wie `metaballSDF`/`burstSDF`.
+
+**Bekannte Einschränkung:** Die Helix-Zielpunkte der Bälle (`_clusterTarget`, oben) sind immer um den *Zylinder* gelegt, unabhängig von der gewählten Shape-Variante — bei Kugel/Box-Intersect-Varianten passt die Ballverteilung also nicht notwendigerweise zur sichtbaren Form (z. B. könnte die schlanke, hohe Helix bei einer flacheren Kugel/Box stark wegschneiden). Für Full-Varianten irrelevant, da dort keine Bälle einfließen.
+
+**UI (temporär):** `src/clusterShapeUI.js` baut sechs Buttons direkt per DOM-API (kein `index.html`-Markup zu pflegen) und ruft bei Klick `buildMainFrag(variant)` + `material.needsUpdate=true` in `main.js` auf. Geplant: Ersatz durch eine zufällige Auswahl bei jedem Cluster-Eintritt (`phase.js`s `onPhaseTransition`) statt manueller UI.
 
 ---
 
@@ -223,7 +255,7 @@ Pro Fragment liest der Shader die aktuelle Ball-Position/-Geschwindigkeit sowie 
 **Positions-Update** (kombiniert):
 $$\Delta\mathbf{c}_i = \Delta\mathbf{c}^\text{orbit} \cdot \text{metaballBlend} + \mathbf{v}_i \cdot (\text{clusterBlend} + \text{burstBlend})$$
 
-**Kräfte**: Zentripetalkraft ist immer aktiv und baut $\mathbf{v}_i$ schon während der Metaball-Phase auf — beim Übergang zu Cluster ist so bereits Impuls in der richtigen Richtung vorhanden (Zielpunkt: die Helix-Position auf dem Cluster-Zylinder, siehe Phasensystem → Cluster). Cluster-Noise und Burst-Abstoßung werden mit `clusterBlend` bzw. `burstBlend` gewichtet. Burst liest seine Kraftstärke live aus `motionSpeed`, nicht aus einer bei Trigger eingefrorenen Intensität. Velocity-Decay wird phasenabhängig interpoliert (hoch bei Burst, niedrig bei Cluster — siehe Phasensystem → Burst→Metaball für warum `VEL_DECAY_BURST` bewusst sanft ist). Nach dem Positions-Update wird `reflectBounds` aufgerufen.
+**Kräfte**: Zentripetalkraft + Ursprungsanziehung sind mit `(clusterBlend+burstBlend)` gewichtet — direkt auf Kraft-Ebene, bevor sie in `vel` akkumulieren, nicht erst bei der `pos`-Anwendung. Dadurch laden sie sich während Burst weiter auf `vel` auf (Cluster erbt so Impuls in Richtung Helix-Ziel, siehe Phasensystem → Cluster), tragen aber ~0 zu `vel` bei, solange Metaball dominiert. Cluster-Noise und Burst-Abstoßung werden mit `clusterBlend` bzw. `burstBlend` gewichtet. Burst liest seine Kraftstärke live aus `motionSpeed`, nicht aus einer bei Trigger eingefrorenen Intensität, und klingt mit wachsendem Abstand nur bis zu einem konstanten Sockel ab (nicht auf 0). Velocity-Decay wird phasenabhängig interpoliert (`VEL_DECAY_META`/`VEL_DECAY_CLUSTER`, `mix`-Kette; während Burst keine Dämpfung, Faktor `1.0`). Nach dem Positions-Update wird `reflectBounds` aufgerufen.
 
 `_simulateCluster`/`_simulateBurst`/`_simulateMetaball` geben jeweils ihren rohen, ungewichteten Beitrag zurück; `applySimulation` gewichtet und summiert sie zentral — dasselbe Muster wie `map()` (`shapeChunk.js`) und `shadeHit()` (`surfaceChunk.js`), nicht mehr "jede Funktion wendet ihr Gewicht selbst an".
 
@@ -308,12 +340,12 @@ Metaball und Burst teilen sich denselben Generator (`_envKeyLight` in `colorChun
 
 ### Animation
 - Metaball-Phase: zirkulärer Drift, zeitweiliges Verschwinden/Auftauchen einzelner Segmente
-- Cluster-Phase: Bälle konvergieren auf eine Helix um einen analytischen Zylinder; die Zylinderform selbst kommt aus einem eigenständigen SDF, nicht aus der Ballanordnung (siehe Phasensystem → Cluster, SDF-Komposition über Phasen)
+- Cluster-Phase: Bälle konvergieren auf eine Helix um die Cluster-Zielform; die Form selbst kommt aus einem eigenständigen SDF (Zylinder/Kugel/Box × voll/geschnitten, sechs Varianten), nicht aus der Ballanordnung (siehe Phasensystem → Cluster, Cluster-Shape-Varianten)
 - Burst-Phase: schlagartige Auflösung, Zerstreuung in alle Richtungen
 - Shading-Übergänge: kontinuierlich über skalaren Phasenwert interpoliert
 
 ### Grafik
-- **Metallisch-reflektierend** (Metaball + Burst): Env-Map-Sampling, rauheitsabhängig; Reflexionen fremd und nicht verortbar. Metaball und Burst shading-seitig getrennt: gleiche Technik (`_shadeReflective`), unterschiedlicher Tint (Metaball grau via `MOOD_METABALL_METAL`, Burst via `MOOD_BURST`) und Rauheit (Metaball 0.15, Burst 1.0 — maximal, diffuses Streulicht passend zur chaotischen Burst-Stimmung). Beide tragen ein deutlich schwächeres Rim-Light als Cluster (`REFLECTIVE_RIM_WEIGHT` vs. Clusters `RIM_WEIGHT`), gefärbt nach aktuellem `moodColor()`.
+- **Metallisch-reflektierend** (Metaball + Burst): Env-Map-Sampling; Reflexionen fremd und nicht verortbar. Metaball und Burst shading-seitig getrennt nur durch ihren Tint (`MOOD_METABALL` bzw. `MOOD_BURST`, `colorChunk.js`/`constants.js`) — Rauheit (`SURFACE_ROUGHNESS`) und Rim-Light-Tint (`MOOD_RIM`) sind jetzt eine gemeinsame Konstante für beide Phasen, kein separater Wert pro Phase mehr.
 - **Transluzent-lumineszent** (Cluster): Fresnel, Streuung, angedeutete Materialdicke; inneres Leuchten; primärer Rim-Light-Träger
 - Schwarzer Hintergrund; Skybox als Alternative ⚠️ offen
 - Abstrakte dynamische Environment-Map — keine erkennbaren Strukturen
@@ -327,11 +359,11 @@ Eine Funktion pro Phase, `shadeHit` mischt alle drei gewichtet (immer 3-Wege, ke
 
 | Phase | Env-Map-Sampling | Rim-Light | Farbe |
 |---|---|---|---|
-| **Metaball** (`shadeMetaball`) | Ja (`_shadeReflective`, geteilt mit Burst) | Schwach (`REFLECTIVE_RIM_WEIGHT`, gefärbt nach `moodColor()`) | `MOOD_METABALL_METAL` — Platzhalter-Grau, zur individuellen Abstimmung vorgesehen |
-| **Cluster** (`shadeCluster`) | Nein | Stark (primärer Rim-Light-Träger, `RIM_WEIGHT`) | Bestehende Cluster-Tönung (unverändert) |
-| **Burst** (`shadeBurst`) | Ja (`_shadeReflective`, geteilt mit Metaball) | Schwach (`REFLECTIVE_RIM_WEIGHT`, gefärbt nach `moodColor()`) | `MOOD_BURST` (Rauheit 1.0, maximal) |
+| **Metaball** (`shadeMetaball`) | Ja (`_shadeReflective`, geteilt mit Burst) | `RIM_WEIGHT` · `MOOD_RIM` (gemeinsam mit Burst) | `MOOD_METABALL` |
+| **Cluster** (`shadeCluster`) | Nein | `RIM_WEIGHT` · `MOOD_CLUSTER` | Bestehende Cluster-Tönung (unverändert) |
+| **Burst** (`shadeBurst`) | Ja (`_shadeReflective`, geteilt mit Metaball) | `RIM_WEIGHT` · `MOOD_RIM` (gemeinsam mit Metaball) | `MOOD_BURST` |
 
-`shadeCluster` (vormals `shadeGlass`) bleibt der stärkste Rim-Light-Träger; Metaball/Burst tragen dasselbe `_rimLight()` (gefärbt nach `moodColor()`) nur deutlich schwächer gewichtet. `_shadeReflective(n, rd, NdotV, roughness, tint)` ist der interne, von Metaball und Burst geteilte Helfer — ein einzelner Tint-Parameter genügt, die Funktion leitet intern eine hellere Highlight-Variante für den direkten Specular-Term ab.
+`RIM_WEIGHT` und `SURFACE_ROUGHNESS` sind eine einzige, geteilte Konstante für alle drei Phasen (nicht mehr pro Phase unterschiedlich abgestimmt) — nur der Rim-Light-*Tint* unterscheidet sich (`MOOD_RIM` für die reflektive Gruppe Metaball/Burst, `MOOD_CLUSTER` für Cluster). `_shadeReflective(n, rd, NdotV, tint)` ist der interne, von Metaball und Burst geteilte Helfer — ein einzelner Tint-Parameter genügt, die Funktion leitet intern eine hellere Highlight-Variante für den direkten Specular-Term ab; Rauheit ist keine Funktionsparameter mehr, sondern direkt die Konstante `SURFACE_ROUGHNESS`.
 
 Einziger öffentlicher Aufruf aus `main()` des Fragment-Shaders:
 
@@ -361,7 +393,8 @@ color = shadeHit(p, n, rd);
 | Audio | ⚠️ geplant |
 | Anwesenheitserkennung (Presence vs. Motion) | ⚠️ geplant |
 | Facetracking | ⚠️ geplant (#3) |
-| Cluster-Zielform (analytischer Zylinder, eigenständiges SDF) | ✅ |
+| Cluster-Zielform (analytisch, eigenständiges SDF) | ✅ |
+| Cluster-Shape-Varianten (Zylinder/Kugel/Box × voll/geschnitten, manuelle UI) | ✅ (UI temporär, Zufallsauswahl geplant) |
 | Bewegungsparameter (experimentell) | ✅ |
 | Bloom Post-Processing | ✅ |
 | SDF-Komposition über Phasen (clusterSDF/metaballSDF/burstSDF, gewichtet) | ✅ |
@@ -376,3 +409,5 @@ color = shadeHit(p, n, rd);
 | 1 | Audio | Web Audio API; drei synthetische Schichten: Metaball = tiefer Drone (Frequenz skaliert mit motionSpeed), Cluster = Subbass-Puls im Atemrhythmus, Burst = perkussiver Anschlag + Hochfrequenz-Rauschen über burstBlend; OscillatorNode + BiquadFilterNode, kein Asset-Loading |
 | 2 | Anwesenheitserkennung | input.js liefert nur Motion-Speed; zweite Schicht: Hintergrundmodell erkennt Präsenz ohne Bewegung → Kreatur reagiert auf bloße Anwesenheit (aufmerksam werden, ohne Burst zu triggern); psychologisch stärker als reiner Bewegungs-Trigger |
 | 3 | Facetracking | Konkrete Technik für #2: Gesichtserkennung statt/neben Frame-Differencing in `input.js`; macht "Beobachtung verändert das Beobachtete" wörtlich. Siehe Input & Interaktion → Facetracking. Offen: Bibliothek/Modell, Performance-Budget, Blickrichtung vs. reine Anwesenheit, Datenschutz |
+| 4 | Cluster-Shape-Zufallsauswahl | `src/clusterShapeUI.js`s manuelle Buttons sollen durch eine zufällige Auswahl unter den sechs `CLUSTER_SHAPE_VARIANTS` ersetzt werden, einmal pro Cluster-Eintritt (Hook: `phase.js`s `onPhaseTransition`), statt bei jedem Klick |
+| 5 | Helix-Ziel je Shape-Variante | `_clusterTarget` (`positionChunk.js`) legt die Ball-Helix immer um den Zylinder, unabhängig von der sichtbaren Shape-Variante — bei Kugel/Box-Intersect kann das die Bälle stark wegschneiden. Müsste ggf. pro Shape-Familie ein eigenes Zielmuster bekommen |
