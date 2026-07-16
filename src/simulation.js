@@ -18,7 +18,7 @@ let _initTex     = null;
 let _firstFrame  = true;
 
 
-// ──── HELPER FUNCTIONS - INITIALIZATION ──────────────────────────────
+// ──── INITIALIZATION ──────────────────────────────
 
 
 function _makeTarget() {

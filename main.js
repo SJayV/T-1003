@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { scene, camera, renderer }                                    from './src/renderer.js';
-import { tick, getTime, getWeights, getMotionSpeed, getShapeVariant } from './src/phase.js';
+import { tick, getTime, getWeights, getMotionSpeed, getShapeVariant, getShapeIndex } from './src/phase.js';
 import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
 import {
   getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState,
@@ -11,7 +11,7 @@ import { initCamera, updateCamera }                                   from './sr
 import { initInput,  updateInput  }                                   from './src/input.js';
 import { initAudio,  updateAudio  }                                   from './src/audio.js';
 import { mainVert, buildMainFrag }                                    from './shaders/raymarchShader.js';
-import { CLUSTER_SHAPE_VARIANTS, CLUSTER_SHAPE_VARIANTS_EXPERIMENTAL } from './src/constants.js';
+import { CLUSTER_SHAPE_VARIANTS } from './src/constants.js';
 import { initClusterShapeUI, initClusterEnvMapUI, initMetaballEnvMapUI } from './src/ui.js';
 import { makeBloomSetup }                                             from './src/gpuSetup.js';
 import { brightExtractFrag, blurFrag, compositeFrag }                 from './shaders/bloomShader.js';
@@ -25,7 +25,7 @@ const BLOOM_THRESHOLD_BASE        = 0.65;
 const BLOOM_THRESHOLD_BURST_DROP  = 0.25;
 
 
-// ──── MATERIAL & UNIFORMS SETUP ───────────────────────────────────────────────────
+// ──── INITIALIZATION - MATERIAL & UNIFORMS ───────────────────────────────────────────────────
 
 
 const material = new THREE.ShaderMaterial({
@@ -37,36 +37,16 @@ const material = new THREE.ShaderMaterial({
     clusterBlend:  { value: 0 },
     burstBlend:    { value: 0 },
     motionSpeed:   { value: 0 },
+    clusterShapeIndex: { value: 0 },
     ...simDefs(),
     ...envDefs(),
   },
   vertexShader:   mainVert,
-  fragmentShader: buildMainFrag(CLUSTER_SHAPE_VARIANTS[0]),
+  fragmentShader: buildMainFrag(),
 });
 
 
-// ──── HELPER FUNCTIONS - INITIALIZATION ────────────────────────────────────────────
-
-
-const _shapeShaderSources = new Map(CLUSTER_SHAPE_VARIANTS.map(variant => [variant, buildMainFrag(variant)]));
-
-function _getShapeSource(variant) {
-  return _shapeShaderSources.get(variant) ?? buildMainFrag(variant);
-}
-
-function initializeShapeShaders() {
-  const startingVariant = _appliedShapeVariant;
-  for (const variant of CLUSTER_SHAPE_VARIANTS) {
-    material.fragmentShader = _shapeShaderSources.get(variant);
-    material.needsUpdate = true;
-    renderer.render(scene, camera);
-  }
-  material.fragmentShader = _shapeShaderSources.get(startingVariant);
-  material.needsUpdate = true;
-}
-
-
-// ──── SCENE & MODULE INITIALIZATION ───────────────────────────────────────────────
+// ──── INITIALIZATION - SCENE & MODULE ───────────────────────────────────────────────
 
 
 scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
@@ -76,17 +56,16 @@ initCamera(camera);
 initInput();
 initAudio();
 initSimulation(renderer);
-let _appliedShapeVariant = CLUSTER_SHAPE_VARIANTS[0];
+let _appliedShapeIndex = getShapeIndex();
 
-const shapeUI = initClusterShapeUI(CLUSTER_SHAPE_VARIANTS_EXPERIMENTAL, (variant) => {
-  material.fragmentShader = _getShapeSource(variant);
-  material.needsUpdate = true;
-  _appliedShapeVariant = variant;
+const shapeUI = initClusterShapeUI(CLUSTER_SHAPE_VARIANTS, (variant) => {
+  const idx = CLUSTER_SHAPE_VARIANTS.indexOf(variant);
+  material.uniforms.clusterShapeIndex.value = idx;
+  _appliedShapeIndex = idx;
 });
 initClusterEnvMapUI(ENV_MAP_FILES, CLUSTER_ENV_MAP_DEFAULT, setClusterEnvMapFile);
 initMetaballEnvMapUI(ENV_MAP_FILES, METABALL_ENV_MAP_DEFAULT, setMetaballEnvMapFile);
 const bloom = makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeFrag });
-initializeShapeShaders();
 
 
 // ──── ANIMATION LOOP ──────────────────────────────────────────────────────────────
@@ -100,12 +79,11 @@ function animate() {
 
   const { clusterWeight: clusterBlend, metaballWeight: metaballBlend, burstWeight: burstBlend } = getWeights();
 
-  const shapeVariant = getShapeVariant();
-  if (shapeVariant !== _appliedShapeVariant) {
-    material.fragmentShader = _getShapeSource(shapeVariant);
-    material.needsUpdate = true;
-    shapeUI.select(shapeVariant);
-    _appliedShapeVariant = shapeVariant;
+  const shapeIndex = getShapeIndex();
+  if (shapeIndex !== _appliedShapeIndex) {
+    material.uniforms.clusterShapeIndex.value = shapeIndex;
+    shapeUI.select(getShapeVariant());
+    _appliedShapeIndex = shapeIndex;
   }
 
   stepSimulation();

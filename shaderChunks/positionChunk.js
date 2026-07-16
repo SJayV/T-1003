@@ -107,13 +107,13 @@ float radiusMod(vec3 c, float r0) {
 vec3 _metaballPosition(vec3 pos, vec4 orb) {
   float phi_near = _phiOnOrbit(pos, orb);
   vec3  nearPt   = orbitPoint(orb, phi_near);
-  return (nearPt - pos) * ORBIT_SNAP_RATE;
+  return (nearPt - pos) * ORBIT_SNAP_RATE + _orbitTangentStep(pos, orb);
 }
 
 vec3 _clusterPosition(vec3 pos) {
   float np = perlin2D(vec2(pos.x * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_X1, pos.z * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_Z1));
   float nq = perlin2D(vec2(pos.y * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_Y2, pos.x * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_X2));
-  return vec3(np, nq, np * nq) * CLUSTER_NOISE_FORCE;
+  return vec3(np, nq, np * nq) * CLUSTER_NOISE_FORCE - pos * ORIGIN_PULL;
 }
 
 vec3 _burstPosition(vec3 pos, vec3 cen) {
@@ -121,7 +121,7 @@ vec3 _burstPosition(vec3 pos, vec3 cen) {
   float dist     = length(dir) + BURST_DIST_EPSILON;
   float peak     = BURST_FORCE_BASE + motionSpeed * BURST_FORCE_SCALE;
   float force    = BURST_FORCE_OFFSET + peak * exp(-dist * BURST_FALLOFF);
-  return normalize(dir) * force;
+  return normalize(dir) * force - pos * ORIGIN_PULL;
 }
 
 
@@ -131,18 +131,15 @@ vec3 _burstPosition(vec3 pos, vec3 cen) {
 void blendPosition(inout vec3 pos, inout vec3 vel, vec4 orb) {
   vec3 cen = _computeCentroid();
 
-  float primeBlend = clusterBlend + burstBlend;
-  vel -= pos * ORIGIN_PULL * primeBlend;
-
   vel += _clusterPosition(pos)    * clusterBlend
        + _burstPosition(pos, cen) * burstBlend;
 
-  pos += vel * (clusterBlend + burstBlend);
+  pos += vel * (clusterBlend + burstBlend)
+       + _metaballPosition(pos, orb) * metaballBlend;
 
-  pos += _metaballPosition(pos, orb) * metaballBlend
-       + _orbitTangentStep(pos, orb) * metaballBlend;
-
-  vel *= mix(mix(VEL_DECAY_META, VEL_DECAY_CLUSTER, clusterBlend), 1.0, burstBlend);
+  vel *= VEL_DECAY_META    * metaballBlend
+       + VEL_DECAY_CLUSTER * clusterBlend
+       + 1.0               * burstBlend;
 
   _reflectBounds(pos, vel);
 }

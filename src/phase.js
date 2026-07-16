@@ -25,7 +25,7 @@ const S_BURST    = 1;
 const S_METABALL = 2;
 
 
-// ──── HELPER FUNCTIONS - INITIALIZATION ────────────────────────────────────────────
+// ──── INITIALIZATION ────────────────────────────────────────────
 
 
 let _state                   = S_CLUSTER;
@@ -76,6 +76,10 @@ function _pickRandomShapeIndex() {
 
 export function getShapeVariant() {
   return CLUSTER_SHAPE_VARIANTS[_shapeIndex];
+}
+
+export function getShapeIndex() {
+  return _shapeIndex;
 }
 
 

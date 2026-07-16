@@ -7,7 +7,7 @@ import { STATE_TEX_W, glslFloat } from '../src/constants.js';
 
 export const mainVert = vertexChunk;
 
-export function buildMainFrag(clusterVariant) {
+export function buildMainFrag() {
   return `
 precision highp float;
 precision highp sampler2D;
@@ -43,9 +43,30 @@ void loadBalls() {
 
 ${noiseChunk}
 ${colorChunk}
-${shapeChunk(clusterVariant)}
-
+${shapeChunk}
 ${surfaceChunk}
+
+
+// ──── RAYMARCHING ─────────────────────────────────────────────────────────────────
+
+
+float raymarch(vec3 ro, vec3 rd) {
+  const int   MAX_STEPS    = 90;
+  const float HIT_EPSILON  = 0.001;
+  const float MAX_DISTANCE = 10.0;
+
+  float blendRisk  = clusterBlend * (metaballBlend + burstBlend);
+  float stepSafety = mix(1.0, 0.85, min(blendRisk * 4.0, 1.0));
+
+  float t = 0.0;
+  for (int i = 0; i < MAX_STEPS; i++) {
+    float d = blendShape(ro + rd * t);
+    if (d < HIT_EPSILON) return t;
+    t += d * stepSafety;
+    if (t > MAX_DISTANCE) break;
+  }
+  return -1.0;
+}
 
 
 // ──── ENTRY POINT ─────────────────────────────────────────────────────────────────
