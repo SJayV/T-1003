@@ -12,7 +12,7 @@ export const ENV_MAP_FILES = [
 ];
 
 export const CLUSTER_ENV_MAP_DEFAULT  = 'neonStudio.hdr';
-export const METABALL_ENV_MAP_DEFAULT = 'lightStudio.hdr';
+export const METABALL_ENV_MAP_DEFAULT = 'neonStudio.hdr';
 
 const EQUIRECT_W = 512;
 const EQUIRECT_H = 256;

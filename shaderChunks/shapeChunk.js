@@ -13,15 +13,6 @@ import {
   glslFloat,
 } from '../src/constants.js';
 
-export const CLUSTER_SHAPE_VARIANTS = [
-  'clusterCylinderFull', 'clusterCylinderIntersect',
-  'clusterSphereFull',   'clusterSphereIntersect',
-  'clusterBoxFull',      'clusterBoxIntersect',
-  'clusterTorusFull',
-  'clusterCapsuleFull',
-  'clusterPyramidFull',
-];
-
 export function shapeChunk(clusterVariant = 'clusterCylinderIntersect') {
   return `
 

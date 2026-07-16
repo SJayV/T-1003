@@ -76,15 +76,15 @@ describe('Cluster → Burst', () => {
 describe('Burst → Metaball', () => {
   it('metaballWeight übernimmt bald nach Ablauf der Hold-Dauer', () => {
     reportMotion(0.01);
-    advance(2.0);
+    advance(1.0);
     expect(getWeights().burstWeight).toBeGreaterThan(0.5);
-    advance(3.0);
+    advance(2.0);
     expect(getWeights().metaballWeight).toBeGreaterThan(0.5);
   });
 
   it('Burst-Hold-Dauer ist unabhängig von der Motion-Speed beim Trigger', () => {
     reportMotion(1.0);
-    advance(2.0);
+    advance(1.0);
     expect(getWeights().burstWeight).toBeGreaterThan(0.5);
   });
 });
@@ -100,7 +100,7 @@ describe('Metaball → Cluster', () => {
   it('kehrt nach Mindestdauer + kurzer Stille ohne Bewegung zu Cluster zurück', () => {
     reportMotion(0.01);
     advance(2.0);
-    advance(18.0);
+    advance(21.0);
     expect(getWeights().clusterWeight).toBeGreaterThan(0.5);
   });
 
@@ -116,11 +116,11 @@ describe('kein Cooldown (bewusste Verhaltensänderung ggü. der alten FSM)', () 
   it('reportMotion unmittelbar nach einem vollen Zyklus löst sofort wieder Burst aus', () => {
     reportMotion(0.01);
     advance(2.0);
-    advance(18.0);
+    advance(21.0);
     expect(getWeights().clusterWeight).toBeGreaterThan(0.5);
 
     reportMotion(1.0);
-    advance(2.0);
+    advance(1.0);
     expect(getWeights().burstWeight).toBeGreaterThan(0.5);
   });
 });
@@ -136,7 +136,7 @@ describe('onPhaseTransition', () => {
 
     reportMotion(0.01);
     advance(4.0);
-    advance(16.0);
+    advance(20.0);
 
     expect(calls).toHaveLength(3);
     expect(calls.every(args => args.length === 0)).toBe(true);

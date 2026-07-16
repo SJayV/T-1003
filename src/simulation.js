@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { simulationVert, simulationFrag } from '../shaders/simulationShader.js';
 import { makeGpuSetup } from './gpuSetup.js';
 import { getWeights, getTime, getMotionSpeed } from './phase.js';
-import { balls, STATE_TEX_W } from './constants.js';
+import { balls, STATE_TEX_W, ORBIT_Z_SQUASH } from './constants.js';
 
 
 // ──── MODULE STATE ────────────────────────────────────────────────────────────────
@@ -34,17 +34,18 @@ function _makeTarget() {
   });
 }
 
-function _buildInitData() {
+function _initializeData() {
   const data = new Float32Array(STATE_TEX_W * 4);
   balls.forEach((b, i) => {
     const t    = i * 12;
     const phi0 = Math.random() * Math.PI * 2;
     const r    = b.orbitRadius;
     const iSin = b.orbitInclination;
+    const iCos = Math.sqrt(Math.max(0, 1 - iSin * iSin));
 
-    data[t + 0] = 0;
+    data[t + 0] = r * Math.cos(phi0);
     data[t + 1] = r * Math.sin(phi0) * iSin;
-    data[t + 2] = 0;
+    data[t + 2] = r * Math.sin(phi0) * iCos * ORBIT_Z_SQUASH;
     data[t + 3] = b.r0;
     data[t + 4] = 0;
     data[t + 5] = 0;
@@ -67,7 +68,7 @@ export function initSimulation(renderer) {
   _readTarget  = _makeTarget();
   _writeTarget = _makeTarget();
 
-  _initTex = new THREE.DataTexture(_buildInitData(), STATE_TEX_W, 1, THREE.RGBAFormat, THREE.FloatType);
+  _initTex = new THREE.DataTexture(_initializeData(), STATE_TEX_W, 1, THREE.RGBAFormat, THREE.FloatType);
   _initTex.needsUpdate = true;
 
   _simMat = new THREE.ShaderMaterial({
