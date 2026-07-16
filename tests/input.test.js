@@ -3,36 +3,76 @@
  */
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
-const CANVAS_W             = 80;
-const CANVAS_H             = 60;
-const INPUT_SPEED_THRESHOLD = 0.20;
-const INPUT_PERSIST_FRAMES  = 2;
-const INPUT_PIXEL_THRESHOLD = 10;
-const INPUT_SENSITIVITY     = 20;
+const CANVAS_W = 80;
+const CANVAS_H = 60;
+const VIDEO_W  = 640;
+const VIDEO_H  = 480;
+
+const GAZE_DETECT_INTERVAL_FRAMES = 4;
+const GAZE_PERSIST_CYCLES         = 2;
 
 let updateInput;
-let mockReportMotion, mockCameraInput, mockGetImageData;
+let mockReportGazeDetected, mockReportMotionEnergy, mockCameraInput, mockGetImageData;
+let mockDetectAllFaces;
+let _gazingResult;
 
 function pixels(fill) {
   return { data: new Uint8ClampedArray(CANVAS_W * CANVAS_H * 4).fill(fill) };
 }
 
-function pixelsForSpeed(targetSpeed) {
-  const perPixel = Math.floor(
-    (targetSpeed * (255 - INPUT_PIXEL_THRESHOLD) * 3) / INPUT_SENSITIVITY
-  );
-  const delta = Math.ceil(perPixel / 3) + INPUT_PIXEL_THRESHOLD + 1;
-  return { data: new Uint8ClampedArray(CANVAS_W * CANVAS_H * 4).fill(delta) };
+function faceAt({ centered, frontal }) {
+  const box = centered
+    ? { x: 280, y: 200, width: 80, height: 80 }   // center ≈ (320, 240)
+    : { x: 0,   y: 200, width: 80, height: 80 };  // center ≈ (40, 240) — near the left edge
+
+  const leftEye  = [{ x: 300, y: 230 }];
+  const rightEye = [{ x: 340, y: 230 }];
+  const nose     = frontal ? [{ x: 320, y: 250 }] : [{ x: 340, y: 250 }];
+
+  return {
+    detection: { box },
+    landmarks: {
+      getLeftEye:  () => leftEye,
+      getRightEye: () => rightEye,
+      getNose:     () => nose,
+    },
+  };
+}
+
+async function flush() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+async function tick(faces = []) {
+  mockDetectAllFaces.mockReturnValue({ withFaceLandmarks: () => Promise.resolve(faces) });
+  updateInput();
+  await flush();
 }
 
 beforeEach(async () => {
   vi.resetModules();
 
-  mockReportMotion = vi.fn();
-  mockCameraInput  = vi.fn();
+  mockReportGazeDetected = vi.fn();
+  mockReportMotionEnergy = vi.fn();
+  mockCameraInput        = vi.fn();
 
-  vi.doMock('../src/phase.js', () => ({ reportMotion: mockReportMotion }));
+  vi.doMock('../src/phase.js', () => ({
+    reportGazeDetected: mockReportGazeDetected,
+    reportMotionEnergy: mockReportMotionEnergy,
+  }));
   vi.doMock('../src/camera.js', () => ({ onInput: mockCameraInput }));
+
+  mockDetectAllFaces = vi.fn().mockReturnValue({ withFaceLandmarks: () => Promise.resolve([]) });
+  vi.doMock('face-api.js', () => ({
+    nets: {
+      tinyFaceDetector:     { loadFromUri: vi.fn().mockResolvedValue(undefined) },
+      faceLandmark68TinyNet: { loadFromUri: vi.fn().mockResolvedValue(undefined) },
+    },
+    TinyFaceDetectorOptions: function TinyFaceDetectorOptions(opts) { Object.assign(this, opts); },
+    detectAllFaces: (...args) => mockDetectAllFaces(...args),
+  }));
 
   mockGetImageData = vi.fn().mockReturnValue(pixels(0));
   const mockCtx = {
@@ -43,6 +83,8 @@ beforeEach(async () => {
 
   vi.spyOn(HTMLVideoElement.prototype, 'play').mockResolvedValue(undefined);
   vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(4);
+  vi.spyOn(HTMLVideoElement.prototype, 'videoWidth', 'get').mockReturnValue(VIDEO_W);
+  vi.spyOn(HTMLVideoElement.prototype, 'videoHeight', 'get').mockReturnValue(VIDEO_H);
 
   let capturedVideo = null;
   const origCreate = document.createElement.bind(document);
@@ -61,65 +103,73 @@ beforeEach(async () => {
   updateInput = m.updateInput;
 
   m.initInput();
-  await Promise.resolve();
+  await flush();
   capturedVideo?.onloadedmetadata?.();
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('updateInput: kein Signal bei identischen Frames', () => {
-  it('kein reportMotion, "absence" an cameraInput bei identischen Frames', () => {
+describe('updateInput: Motion-Energie (frame-differencing, unabhängig von Gaze)', () => {
+  it('meldet reportMotionEnergy(0) bei identischen Frames', async () => {
     mockGetImageData.mockReturnValue(pixels(128));
-    updateInput();
+    await tick();
     mockGetImageData.mockReturnValue(pixels(128));
-    updateInput();
-    expect(mockReportMotion).not.toHaveBeenCalled();
+    await tick();
+    expect(mockReportMotionEnergy).toHaveBeenCalledWith(0);
+  });
+
+  it('meldet einen positiven Wert bei unterschiedlichen Frames', async () => {
+    mockGetImageData.mockReturnValue(pixels(0));
+    await tick();
+    mockGetImageData.mockReturnValue(pixels(255));
+    await tick();
+    const lastSpeed = mockReportMotionEnergy.mock.calls.at(-1)[0];
+    expect(lastSpeed).toBeGreaterThan(0);
+    expect(lastSpeed).toBeLessThanOrEqual(1.0);
+  });
+});
+
+describe('updateInput: Gaze-Erkennung (face-api.js, zentriert + frontal)', () => {
+  it('kein reportGazeDetected ohne erkanntes Gesicht; "absence" an cameraInput', async () => {
+    for (let i = 0; i < GAZE_DETECT_INTERVAL_FRAMES; i++) await tick([]);
+    expect(mockReportGazeDetected).not.toHaveBeenCalled();
     expect(mockCameraInput).toHaveBeenCalledWith('absence', {});
   });
-});
 
-describe('updateInput: Persist-Zähler', () => {
-  it('kein reportMotion nach erster Erkennung (persistCount = 1 < 2)', () => {
-    mockGetImageData.mockReturnValue(pixels(0));
-    updateInput();
-    mockGetImageData.mockReturnValue(pixels(255));
-    updateInput();
-    expect(mockReportMotion).not.toHaveBeenCalled();
+  it('kein reportGazeDetected, wenn das Gesicht zentriert, aber nicht frontal ist (zur Seite blickend)', async () => {
+    const face = faceAt({ centered: true, frontal: false });
+    for (let cycle = 0; cycle < GAZE_PERSIST_CYCLES + 1; cycle++) {
+      for (let i = 0; i < GAZE_DETECT_INTERVAL_FRAMES; i++) await tick([face]);
+    }
+    expect(mockReportGazeDetected).not.toHaveBeenCalled();
   });
 
-  it('reportMotion nach zweiter aufeinanderfolgender Erkennung (persistCount = 2)', () => {
-    mockGetImageData.mockReturnValue(pixels(0));
-    updateInput();
-    mockGetImageData.mockReturnValue(pixels(255));
-    updateInput();
-    mockGetImageData.mockReturnValue(pixels(0));
-    updateInput();
-    expect(mockReportMotion).toHaveBeenCalledTimes(1);
+  it('kein reportGazeDetected, wenn das Gesicht frontal, aber am Bildrand ist ("hiding")', async () => {
+    const face = faceAt({ centered: false, frontal: true });
+    for (let cycle = 0; cycle < GAZE_PERSIST_CYCLES + 1; cycle++) {
+      for (let i = 0; i < GAZE_DETECT_INTERVAL_FRAMES; i++) await tick([face]);
+    }
+    expect(mockReportGazeDetected).not.toHaveBeenCalled();
   });
-});
 
-describe('updateInput: Speed-Schwellwert (INPUT_SPEED_THRESHOLD)', () => {
-  it('kein reportMotion, "absence" bei Bewegung unterhalb des Schwellwerts', () => {
-    mockGetImageData.mockReturnValue(pixels(0));
-    updateInput();
-    mockGetImageData.mockReturnValue(pixels(11));
-    updateInput();
-    expect(mockReportMotion).not.toHaveBeenCalled();
-    expect(mockCameraInput).toHaveBeenCalledWith('absence', {});
+  it('kein reportGazeDetected vor Ablauf der Persist-Zyklen, auch bei zentriertem, frontalem Gesicht', async () => {
+    const face = faceAt({ centered: true, frontal: true });
+    for (let i = 0; i < GAZE_DETECT_INTERVAL_FRAMES; i++) await tick([face]);
+    expect(mockReportGazeDetected).not.toHaveBeenCalled();
   });
-});
 
-describe('updateInput: Speed-Bereich', () => {
-  it('gemeldeter Speed liegt im Bereich (0, 1]', () => {
-    mockGetImageData.mockReturnValue(pixels(0));
-    updateInput();
-    mockGetImageData.mockReturnValue(pixels(255));
-    updateInput();
-    mockGetImageData.mockReturnValue(pixels(0));
-    updateInput();
-    expect(mockReportMotion).toHaveBeenCalledTimes(1);
-    const speed = mockReportMotion.mock.calls[0][0];
-    expect(speed).toBeGreaterThan(0);
-    expect(speed).toBeLessThanOrEqual(1.0);
+  it('reportGazeDetected und "presence" nach genügend aufeinanderfolgenden zentrierten, frontalen Erkennungen', async () => {
+    const face = faceAt({ centered: true, frontal: true });
+    for (let cycle = 0; cycle < GAZE_PERSIST_CYCLES; cycle++) {
+      for (let i = 0; i < GAZE_DETECT_INTERVAL_FRAMES; i++) await tick([face]);
+    }
+    await tick([face]);
+    expect(mockReportGazeDetected).toHaveBeenCalled();
+    expect(mockCameraInput).toHaveBeenCalledWith('presence', {});
+  });
+
+  it('Gesichtserkennung wird gedrosselt (nicht jeden Frame aufgerufen)', async () => {
+    for (let i = 0; i < GAZE_DETECT_INTERVAL_FRAMES; i++) await tick([]);
+    expect(mockDetectAllFaces).toHaveBeenCalledTimes(1);
   });
 });

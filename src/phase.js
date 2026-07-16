@@ -15,7 +15,6 @@ const HOLD_BURST = LEAD_BURST * SIGMA_BURST;
 const HOLD_METABALL = 15.0;
 const SILENCE_METABALL = 3.2;
 
-
 const CLUSTER_COOLDOWN = 0;
 
 const MOTION_SPEED_DECAY = 0.97;
@@ -39,14 +38,19 @@ let _bumps = {
 };
 
 
-// ──── MOTION INPUT ───────────────────────────────────────────────────────────────
+// ──── GAZE & MOTION INPUT ─────────────────────────────────────────────────────────
 
 
-let _motionThisFrame = false;
+let _gazeThisFrame   = false;
+let _energyThisFrame = false;
 let _motionSpeed     = 0;
 
-export function reportMotion(speed) {
-  _motionThisFrame = true;
+export function reportGazeDetected() {
+  _gazeThisFrame = true;
+}
+
+export function reportMotionEnergy(speed) {
+  _energyThisFrame = true;
   _motionSpeed      = Math.max(0, Math.min(1, speed));
 }
 
@@ -96,16 +100,16 @@ function _metaballShouldExit(t_now) {
   return t_now > _metaballActivationStart + HOLD_METABALL && silenceDuration > SILENCE_METABALL;
 }
 
-function _clusterShouldExit(t_now, motionDetected) {
-  return motionDetected && (t_now - _lastBurstTrigger) > CLUSTER_COOLDOWN;
+function _clusterShouldExit(t_now, gazeDetected) {
+  return gazeDetected && (t_now - _lastBurstTrigger) > CLUSTER_COOLDOWN;
 }
 
 function _burstShouldExit(t_now) {
   return t_now > _burstActivationStart + HOLD_BURST;
 }
 
-function _metaballShouldHold(t_now, motionDetected) {
-  return t_now <= _metaballActivationStart + HOLD_METABALL || motionDetected;
+function _metaballShouldHold(t_now, gazeDetected) {
+  return t_now <= _metaballActivationStart + HOLD_METABALL || gazeDetected;
 }
 
 function _clusterStart(t_now) {
@@ -146,9 +150,9 @@ function _burstHold(t_now) {
 // ──── SCHEDULER ──────────────────────────────────────────────────────────────────
 
 
-function _scheduleTick(t_now, motionDetected) {
+function _scheduleTick(t_now, gazeDetected) {
   if (_state === S_CLUSTER) {
-    if (_clusterShouldExit(t_now, motionDetected)) {
+    if (_clusterShouldExit(t_now, gazeDetected)) {
       _burstStart(t_now);
     } else {
       _clusterHold(t_now);
@@ -161,7 +165,7 @@ function _scheduleTick(t_now, motionDetected) {
       _burstHold(t_now);
     }
   } else if (_state === S_METABALL) {
-    if (_metaballShouldHold(t_now, motionDetected)) {
+    if (_metaballShouldHold(t_now, gazeDetected)) {
       _metaballHold(t_now);
     }
     if (_metaballShouldExit(t_now)) {
@@ -196,12 +200,13 @@ function _evaluateWeights(t_now, bumps) {
 let _weights = { clusterWeight: 1, metaballWeight: 0, burstWeight: 0 };
 
 export function tick(t_now) {
-  const motionDetected = _motionThisFrame;
-  _scheduleTick(t_now, motionDetected);
+  const gazeDetected = _gazeThisFrame;
+  _scheduleTick(t_now, gazeDetected);
   _weights = _evaluateWeights(t_now, _bumps);
 
-  if (!_motionThisFrame) _motionSpeed *= MOTION_SPEED_DECAY;
-  _motionThisFrame = false;
+  if (!_energyThisFrame) _motionSpeed *= MOTION_SPEED_DECAY;
+  _gazeThisFrame   = false;
+  _energyThisFrame = false;
 
   _t += FRAME_TIME_STEP;
 }

@@ -15,8 +15,9 @@ Kontinuierliches Gauß-Gewichtssystem. Einzige autoritative Quelle für Phasenge
 | `tick(t_now)` | `t_now: float` (Sekunden, z. B. `performance.now()/1000`) | Aktualisiert Bumps + Gewichte, feuert ggf. `onPhaseTransition`, dekrementiert `_motionSpeed` | `void` | — |
 | `getTime()` | — | — | `float` | [0, ∞) monoton, frame-getaktet — für Shader-Animationen; unabhängig von `t_now` |
 | `getWeights()` | — | — | `{ clusterWeight, metaballWeight, burstWeight }` | je [0,1], Summe = 1 — einziger Phasenidentitäts-Output |
-| `getMotionSpeed()` | — | — | `float` | [0,1] Aktuell erkannte Bewegungsgeschwindigkeit; exponentiell abklingend (×0.97/Tick) ohne Bewegung |
-| `reportMotion(speed)` | `speed: float ∈ [0,1]` | Von `input.js`: setzt intern `_motionThisFrame = true`, `_motionSpeed = speed` — von `tick()` ausgelesen und zurückgesetzt | `void` | — |
+| `getMotionSpeed()` | — | — | `float` | [0,1] Rohe Bewegungsenergie aus Frame-Differencing (`reportMotionEnergy`), unabhängig von Gaze; exponentiell abklingend (×0.97/Tick) ohne gemeldete Energie |
+| `reportGazeDetected()` | — | Von `input.js` (face-api.js): setzt intern `_gazeThisFrame = true` — von `tick()` als Auslöser für Cluster→Burst und Metaball-Hold ausgelesen und zurückgesetzt | `void` | — |
+| `reportMotionEnergy(speed)` | `speed: float ∈ [0,1]` | Von `input.js` (Frame-Differencing): setzt `_motionSpeed = speed`, unabhängig vom Gaze-Signal — treibt ausschließlich `getMotionSpeed()` | `void` | — |
 | `onPhaseTransition(fn)` | `fn: () → void` | Feuert bei jedem Regime-Wechsel, ohne Argumente (kein Regime-Leck nach außen) | `void` | — |
 
 Bump-Konstanten (`LEAD`, `CLUSTER_SIGMA`/`METABALL_SIGMA`/`BURST_SIGMA`, `BURST_HOLD`, `METABALL_MIN_HOLD`/`SILENCE_HOLD`, `METABALL_HANDOFF_LEAD`, `CLUSTER_COOLDOWN`) stehen am Kopf der Datei, erklärt — siehe `requirements.md` → Phasensystem für die Bump-Mathematik und die Handoff-Mechanik (Burst→Metaball aktiviert mit kleinerem Lead als sonst, für mehr Überlappung ohne Bursts Haltedauer zu verändern). `BURST_HOLD` ist fix, nicht mit `motionSpeed` skaliert.
@@ -69,22 +70,34 @@ Stationäre Beobachter-Kamera (stub). Gibt Startposition vor; `updateCamera` und
 ---
 
 ### `src/input.js`
-Systemkamera → Bewegungserkennung → `phase.js` + Kamera.
+Systemkamera → zwei unabhängige Signale → `phase.js` + Kamera: rohe Bewegungsenergie (Frame-Differencing) und Blickerkennung (face-api.js).
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
-| `initInput()` | — | Webcam-Stream + Detektor-Setup | `void` | — |
-| `updateInput()` | — | Pro-Frame: Bewegungsanalyse → `reportMotion` / `cameraInput` | `void` | — |
+| `initInput()` | — | Webcam-Stream öffnen; face-api.js-Modelle (`tinyFaceDetector`, `faceLandmark68TinyNet`) asynchron aus `resources/` laden | `void` | — |
+| `updateInput()` | — | Pro-Frame: Frame-Differencing → `reportMotionEnergy`; gedrosselt face-api.js-Erkennung → `reportGazeDetected` / `cameraInput('presence'\|'absence', {})` | `void` | — |
 
-Bewegungserkennung: Frame-Differencing auf 80×60 Offscreen-Canvas (`willReadFrequently`).
-`speed = min(1, meanAbsDiff(R+G+B) / (n×765) × INPUT_SENSITIVITY)`
+**Bewegungsenergie** (unverändert ggü. der ursprünglichen Implementierung, treibt aber keine Phasenauslösung mehr): Frame-Differencing auf 80×60 Offscreen-Canvas (`willReadFrequently`).
+`speed = min(1, meanAbsDiff(R+G+B) / (n×765) × ENERGY_SENSITIVITY)` — ungedrosselt jeden Frame an `reportMotionEnergy` gemeldet (kein Schwellwert/Persist-Gate mehr, da kein Trigger-Boolean mehr dahinter hängt).
 
 | Konstante | Semantik |
 |---|---|
-| `INPUT_SPEED_THRESHOLD` | Minimale normierte Geschwindigkeit |
-| `INPUT_PERSIST_FRAMES` | Konsekutive Motion-Frames vor `reportMotion` |
-| `INPUT_SENSITIVITY` | Skalierungsfaktor thresholded-diff → speed ∈ [0,1] |
-| `INPUT_PIXEL_THRESHOLD` | Per-Pixel-Kanal-Diff darunter = Rauschen, ignoriert |
+| `ENERGY_SENSITIVITY` | Skalierungsfaktor thresholded-diff → speed ∈ [0,1] |
+| `ENERGY_PIXEL_THRESHOLD` | Per-Pixel-Kanal-Diff darunter = Rauschen, ignoriert |
+
+**Blickerkennung** (face-api.js, `TinyFaceDetectorOptions` + `withFaceLandmarks(true)`, gedrosselt auf `_video`, keine Offscreen-Canvas-Kopie nötig): Ein erkanntes Gesicht gilt als „blickend", wenn beide Tests zutreffen:
+- **zentriert**: Bounding-Box-Zentrum liegt (nach horizontaler Spiegelung) innerhalb von `GAZE_CENTER_FRACTION` um die Bildmitte
+- **frontal**: `|noseX − eyeMidX| / interEyeDist < GAZE_FRONTAL_THRESHOLD` — Näherung an „Kopf zeigt zur Kamera", da die Tiny-Landmarks keinen Iris-/Gaze-Vektor liefern
+
+Persistenz: `GAZE_PERSIST_CYCLES` aufeinanderfolgende „blickend"-Detektionszyklen (nicht Frames — ein Zyklus ist ein tatsächlicher, gedrosselter face-api.js-Aufruf) schalten das Signal an; ein einzelner nicht-blickender Zyklus schaltet sofort wieder ab (keine Debounce beim Verlust). Die Detektion selbst ist async (Promise); das Ergebnis eines Zyklus wird erst im nächsten `updateInput()`-Aufruf nach Abschluss wirksam (ein Frame Latenz), nicht noch im selben Aufruf.
+
+| Konstante | Semantik |
+|---|---|
+| `FACE_MODEL_URL` | Basis-URL für `loadFromUri` — lokal (`./resources`) |
+| `FACE_DETECT_INPUT_SIZE`, `FACE_DETECT_SCORE_THRESHOLD` | `TinyFaceDetectorOptions`-Parameter |
+| `GAZE_DETECT_INTERVAL_FRAMES` | Drosselung: face-api.js läuft nur alle N `updateInput()`-Aufrufe (Kosten deutlich höher als Frame-Differencing) |
+| `GAZE_PERSIST_CYCLES` | Siehe oben |
+| `GAZE_CENTER_FRACTION`, `GAZE_FRONTAL_THRESHOLD` | Siehe oben |
 
 ---
 
