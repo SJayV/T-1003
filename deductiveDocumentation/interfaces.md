@@ -12,7 +12,7 @@ Exports three ready-made singletons, constructed as an import-time side effect:
 `scene`, `camera`, `renderer`. No init function — importing the module *is* the
 initialization. Consumers: `main.js` (adds meshes, drives `animate()`),
 implicitly everything that receives `renderer`/`camera` as a parameter afterward
-(`initEnvMap(renderer)`, `initSimulation(renderer)`, `initCamera(camera)`,
+(`initializeEnvMap(renderer)`, `initializeSimulation(renderer)`, `initializeCamera(camera)`,
 `updateCamera(camera)`).
 
 ### `src/phase.js` — the hub
@@ -70,7 +70,7 @@ is the only consumer, calling `bloom.render(...)` once per frame instead of
 dependency on any specific shader.
 
 ### `src/input.js`
-Exports `initInput()` / `updateInput()` only; `main.js` calls both but never inspects
+Exports `initializeInput()` / `updateInput()` only; `main.js` calls both but never inspects
 their innards. Internally, `input.js` calls two *other* modules directly rather than
 returning a value for `main.js` to route:
 
@@ -81,16 +81,16 @@ input.js --onInput('presence'|'absence', {...})--> camera.js
 
 This is the same "no central mediator" pattern as `phase.js`'s `reportMotion`: cross-
 module wiring happens at the call site inside the producing module, not inside
-`main.js`. `main.js`'s only relationship to `input.js` is lifecycle (`initInput()` /
+`main.js`. `main.js`'s only relationship to `input.js` is lifecycle (`initializeInput()` /
 `updateInput()` each frame).
 
 ### `src/camera.js`
-Exports `initCamera(camera)` (consumes `CAMERA_START_POSITION` from `constants.js`),
+Exports `initializeCamera(camera)` (consumes `CAMERA_START_POSITION` from `constants.js`),
 `updateCamera(camera)` (stub, called every frame by `main.js` but currently a no-op),
 and `onInput(type, data)` (stub, the receiving end of `input.js`'s direct call).
 
 ### `src/clusterShapeUI.js`
-`initClusterShapeUI(variants, onSelect)` — takes the list of valid variant names
+`initializeClusterShapeUI(variants, onSelect)` — takes the list of valid variant names
 (`CLUSTER_SHAPE_VARIANTS`, itself exported from `shaderChunks/shapeChunk.js`) and a
 callback. `main.js` supplies a closure as `onSelect` that rebuilds the fragment shader
 string and flips `material.needsUpdate = true` — the UI module itself never touches

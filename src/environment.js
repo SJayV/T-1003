@@ -36,7 +36,7 @@ function _regenerate() {
   _renderer.setRenderTarget(null);
 }
 
-export function initEnvMap(renderer, clusterFilename = CLUSTER_ENV_MAP_DEFAULT, metaballFilename = METABALL_ENV_MAP_DEFAULT) {
+export function initializeEnvMap(renderer, clusterFilename = CLUSTER_ENV_MAP_DEFAULT, metaballFilename = METABALL_ENV_MAP_DEFAULT) {
   _renderer = renderer;
 
   _equirectTarget = new THREE.WebGLRenderTarget(EQUIRECT_W, EQUIRECT_H, {

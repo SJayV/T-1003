@@ -60,7 +60,7 @@ Jedes Modul besitzt seine Uniforms vollständig. `main.js` kennt keine Uniform-N
 // Einmalig beim Material-Setup:
 ...simulation.getUniformDefs()    // → { stateTex }
 ...environment.getUniformDefs()   // → { envMap }
-input.initInput()                                    // Webcam-Stream + face-api.js-Modelle laden
+input.initializeInput()                                    // Webcam-Stream + face-api.js-Modelle laden
 
 // Jeden Frame:
 input.updateInput()          // Frame-Differencing → reportMotionEnergy(); gedrosselte Gaze-Erkennung → reportGazeDetected()
@@ -98,7 +98,7 @@ Cluster hat kein eigenes Ball-SDF mehr — sein Teil-SDF ist eine von neun analy
 
 - Rendering: **Raymarching** auf fullscreen Quad — keine explizite Geometrie
 - Normalenberechnung: zentrale finite Differenzen auf dem SDF
-- Sensoren / augenähnliche Elemente: Reaktivität als Mimik-Äquivalent ⚠️ offen
+- Sensoren / augenähnliche Elemente: bewusst nicht umgesetzt — Reaktivität kommt stattdessen ausschließlich über Phasenwechsel, Shading und Bewegung des Objekts als Ganzes zustande, keine augenartige Geometrie
 
 ### Noise
 
@@ -220,7 +220,7 @@ Bei `metaballBlend≈1` liefert das exakt die (ungeschnittene) Ballunion — ide
 
 **Full-Varianten** (alle neun Formen als Grundform, aber nur Zylinder/Kugel/Box/Torus/Kapsel/Pyramide *ausschließlich* als Full) brauchen den Intersect-Mechanismus gar nicht — sie referenzieren keine Bälle, sind immer ihre feste Zielgröße, und werden allein durch `clusterBlend`s eigenes Gewicht ein-/ausgeblendet, genau wie `_metaballShape`/`_burstShape`.
 
-**Zufallsauswahl + UI:** `phase.js`s `getShapeVariant()` würfelt bei jedem Burst→Metaball-Übergang einen neuen Index aus `CLUSTER_SHAPE_VARIANTS` (nur die sechs Full-Varianten, siehe oben); `main.js` pollt das Ergebnis jeden Frame (gleiches Muster wie `getWeights()`/`getMotionSpeed()`) und baut bei Änderung `buildMainFrag(variant)` neu. Manuelle Buttons existieren weiterhin daneben, nicht als Ersatz, sondern zum Testen/Übersteuern: `src/ui.js`s `initClusterShapeUI(variants, onSelect)` baut die Buttons für `CLUSTER_SHAPE_VARIANTS_EXPERIMENTAL` (alle neun, inkl. der drei Intersect-Varianten) direkt per DOM-API, in einer kollabierbaren Sektion oben rechts. Ein manueller Klick und die automatische Auswahl halten sich über `main.js`s `_appliedShapeVariant` gegenseitig auf dem Laufenden, ohne sich zu überschreiben.
+**Zufallsauswahl + UI:** `phase.js`s `getShapeVariant()` würfelt bei jedem Burst→Metaball-Übergang einen neuen Index aus `CLUSTER_SHAPE_VARIANTS` (nur die sechs Full-Varianten, siehe oben); `main.js` pollt das Ergebnis jeden Frame (gleiches Muster wie `getWeights()`/`getMotionSpeed()`) und baut bei Änderung `buildMainFrag(variant)` neu. Manuelle Buttons existieren weiterhin daneben, nicht als Ersatz, sondern zum Testen/Übersteuern: `src/ui.js`s `initializeClusterShapeUI(variants, onSelect)` baut die Buttons für `CLUSTER_SHAPE_VARIANTS_EXPERIMENTAL` (alle neun, inkl. der drei Intersect-Varianten) direkt per DOM-API, in einer kollabierbaren Sektion oben rechts. Ein manueller Klick und die automatische Auswahl halten sich über `main.js`s `_appliedShapeVariant` gegenseitig auf dem Laufenden, ohne sich zu überschreiben.
 
 ---
 
@@ -310,7 +310,7 @@ Ersetzt die ursprünglich als Phasenauslöser genutzte Bewegungserkennung durch 
 - Ein Gesicht gilt nur dann als „blickend", wenn **beide** Tests zutreffen — zentriert-aber-abgewandt und frontal-aber-am-Rand zählen beide nicht.
 - **Drosselung + Debounce:** Die Erkennung läuft nur alle `GAZE_DETECT_INTERVAL_FRAMES` (4) Frames (Kosten deutlich höher als Frame-Differencing); `GAZE_PERSIST_CYCLES` (2) aufeinanderfolgende „blickend"-Zyklen müssen anschlagen, bevor das Signal „an" schaltet — Verlust des Blicks wird dagegen sofort übernommen (keine Debounce beim Abschalten).
 - Modul-Interface-Prinzip bleibt gewahrt: `input.js` ruft weiterhin `phase.js`-Funktionen direkt auf, keine Vermittlung durch `main.js`.
-- Offen: Datenschutz-Implikationen einer Gesichtserkennung im Installationskontext; echte Iris-/Gaze-Vektor-Auswertung (statt des Kopfausrichtungs-Proxys) wäre mit einem Modell mit Iris-Landmarks möglich, aktuell nicht implementiert.
+- **Datenschutz:** Verarbeitung geschieht vollständig lokal im Browser — `getUserMedia` liefert den Kamera-Stream direkt ans `<video>`-Element, face-api.js (TensorFlow.js) wertet ihn im selben Tab gegen die lokal aus `resources/` geladenen, bereits trainierten Modellgewichte aus. Es gibt keinen Netzwerkaufruf, der Bild-, Gesichts- oder Erkennungsdaten überträgt (die einzigen Netzwerkzugriffe sind das einmalige Laden der Bibliothek/Modelldateien selbst beim Seitenaufruf, nicht die Auswertung); nichts verlässt das Gerät, nichts wird gespeichert oder weiterverarbeitet.
 
 ### Environment (`environment.js`)
 
@@ -328,12 +328,10 @@ environmentShader.js           →  WebGLRenderTarget (HalfFloat, Equirectangula
 
 Da alle drei Phasen in **eine** gemeinsame `envMap`-Textur gewichtet einfließen (statt getrennt gesampelt zu werden), ist eine echte Isolation zwischen den beiden Quellbildern während einer Überblendung bewusst nicht gegeben: Bei relevanten Zwischen-Gewichten (z. B. Cluster→Burst) enthält das Ergebnis an jedem Pixel einen Mix aus beiden geladenen Bildern — Clusters Glasbrechung (siehe Shading-Modul) sampelt in diesem Moment also nicht rein `clusterSourceMap`, sondern die bereits gemischte Textur. Das ist explizit **kein Bug**, sondern dieselbe gewichtete Überblendung wie bei SDF-Komposition, Farbe und Position (siehe oben) — konsequent zu Ende gedacht: nirgends im System wird hart umgeschaltet, also auch hier nicht. Eine strikte Trennung (zweite, getrennt gesampelte Uniform statt der gemeinsamen `envMap`) wurde bewusst verworfen.
 
-**UI (bewusst dauerhaft manuell):** `src/ui.js`s `initClusterEnvMapUI`/`initMetaballEnvMapUI` bauen je eine kollabierbare Sektion ("CLUSTER ENVIRONMENT"/"METABALL ENVIRONMENT") mit einem Button pro Datei aus `ENV_MAP_FILES`, oben rechts neben der Shape-Auswahl (siehe Cluster-Shape-Varianten oben) — alle drei Sektionen teilen sich ein gemeinsames, lazy erzeugtes Panel-Element. Anders als die Shape-Auswahl ist hier **keine** automatische Zufallsauswahl vorgesehen — die beiden Env-Map-Dateien bleiben eine reine Nutzerentscheidung.
+**UI (bewusst dauerhaft manuell):** `src/ui.js`s `initializeClusterEnvMapUI`/`initializeMetaballEnvMapUI` bauen je eine kollabierbare Sektion ("CLUSTER ENVIRONMENT"/"METABALL ENVIRONMENT") mit einem Button pro Datei aus `ENV_MAP_FILES`, oben rechts neben der Shape-Auswahl (siehe Cluster-Shape-Varianten oben) — alle drei Sektionen teilen sich ein gemeinsames, lazy erzeugtes Panel-Element. Anders als die Shape-Auswahl ist hier **keine** automatische Zufallsauswahl vorgesehen — die beiden Env-Map-Dateien bleiben eine reine Nutzerentscheidung.
 
-### Audio (`audio.js`) ⚠️ offen
-- Phasengekoppelt über `onPhaseTransition`: niederfrequent (Metaball/Cluster) ↔ hochfrequent (Burst)
-- Stimmungskopplung mit Environment: hell/offen ↔ Dur; dunkel/gesättigt ↔ Moll/Dissonanz
-- Technische Soundkulisse vs. Musik: offen
+### Audio (`audio.js`)
+Phasengekoppelt über `onPhaseTransition` (Burst-Ping) und den Gewichts-/Frequenzblend (Drone) — siehe Design → Audio für die Implementierung. Keine Stimmungskopplung mit den Environment-Maps (Dur/Moll je nach hell/dunkel) — `audio.js` liest ausschließlich `phase.js`, keine Environment-Parameter.
 
 ---
 
@@ -381,9 +379,14 @@ color = blendShading(p, n, rd);
 
 `surfaceChunk.js` ist ein GLSL-Chunk, der in `raymarchShader.js` nach `shapeChunk` (und damit nach `blendShape`/`_clusterShape`/`normal`) interpoliert wird (notwendig, da `_clusterTraceInterior` `_clusterShape` für den Innen-Raymarch und `normal()` für die Austrittsnormale direkt aufruft). Austausch eines Materialmodells erfordert nur Änderungen in der jeweiligen Phasenfunktion.
 
-### Audio
-- Phasengekoppelte Klangkulisse ⚠️ offen
-- Stimmungskopplung mit Environment-Parametern
+### Audio (`audio.js`)
+
+Web Audio API, ein Dauerton-Oszillator (Drone) + ein bei Burst-Transition ausgelöster Ping. Dieselbe Blend-Logik wie überall sonst (`_blendFrequency`, `_blendPulse`): jede Größe ist ein Gewichts-Blend aus phaseneigenen, unabhängigen Beiträgen, keine harten Umschalter.
+
+- **Frequenz:** `F_CLUSTER` (fix) und `F_METABALL_BASE`/`F_BURST_BASE` (zusätzlich oktavskaliert mit `motionSpeed`, exponentiell statt linear addiert — Tonhöhenwahrnehmung ist logarithmisch), gewichtet zur Zielfrequenz summiert.
+- **Puls/„Atmen":** ein additiver Oktavversatz obendrauf, als langsame Sinusmodulation der Frequenz (nicht der Lautstärke — eine frühere Version modulierte stattdessen die Gain, wurde aber bewusst auf Frequenz umgestellt) — eigene Rate/Tiefe für Cluster und Metaball, keine für Burst (zu kurz, dominiert vom Ping). Zeitbasis ist `_ctx.currentTime` (echte Sekunden), nicht `phase.js`s `getTime()` — Letzteres ist ein frame-getakteter Akkumulator, keine Wanduhrzeit, und hätte die Puls-Raten unbeabsichtigt framerate-abhängig und zu langsam gemacht.
+- **Burst-Ping:** kurzlebiger zweiter Oszillator mit eigener Gain-Hüllkurve und abfallendem Frequenz-Sweep, ausgelöst über `onPhaseTransition` (siehe unten) statt über einen direkten Aufruf aus `phase.js` — `phase.js` kennt `audio.js` nicht, bleibt agnostisch gegenüber seinen Konsumenten wie jedes andere Modul.
+- **Datenschutz:** Kein Bezug zur Gesichtserkennung in `input.js` — `audio.js` liest ausschließlich `getWeights()`/`getMotionSpeed()` aus `phase.js`, keine Kamera- oder Bilddaten.
 
 ---
 
@@ -399,7 +402,7 @@ color = blendShading(p, n, rd);
 | Environment (dynamische Equirectangular-Env-Map, immer 3-Wege-Blend, environmentShader.js) | ✅ |
 | Externes Eingabegerät (input.js): Motion-Energie + Gaze-gesteuerte Phasenauslösung | ✅ |
 | Facetracking / Anwesenheits- & Blickerkennung (face-api.js, zentriert + frontal) | ✅ |
-| Audio | ⚠️ geplant |
+| Audio (Web Audio API, Drone + Puls-Modulation + Burst-Ping über onPhaseTransition) | ✅ |
 | Cluster-Zielform (analytisch, eigenständiges SDF) | ✅ |
 | Cluster-Shape-Varianten (Zylinder/Kugel/Box × voll/geschnitten + Torus/Kapsel/Pyramide nur voll) | ✅ |
 | Cluster-Shape-Zufallsauswahl bei Burst→Metaball (`getShapeVariant()`) + manuelle Override-UI | ✅ |
@@ -416,8 +419,4 @@ color = blendShading(p, n, rd);
 
 ## Offene Punkte ⚠️
 
-| # | Thema | Notiz |
-|---|---|---|
-| 1 | Audio | Web Audio API; drei synthetische Schichten: Metaball = tiefer Drone (Frequenz skaliert mit motionSpeed), Cluster = Subbass-Puls im Atemrhythmus, Burst = perkussiver Anschlag + Hochfrequenz-Rauschen über burstBlend; OscillatorNode + BiquadFilterNode, kein Asset-Loading |
-| 2 | Echte Blickrichtung (Iris-Vektor) | Aktuell approximiert `input.js` „blickend" über Zentrierung + Kopf-Frontalität (Nasenspitzen-Versatz), kein echter Iris-/Gaze-Vektor — ein Modell mit Iris-Landmarks könnte Blickrichtung unabhängig von der Kopfausrichtung auswerten |
-| 3 | Datenschutz-Implikationen | Gesichtserkennung im Installationskontext wirft Fragen zu Zustimmung/Anzeige auf — bislang nicht adressiert |
+Keine. Audio war der letzte Eintrag dieser Liste und ist implementiert (siehe Design → Audio). Die Kamera bleibt bewusst statisch (siehe Kamera oben), kein offener Punkt.

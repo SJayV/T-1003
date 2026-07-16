@@ -38,7 +38,7 @@ let _lastGazeDetected    = false;
 // ──── PUBLIC INTERFACE ────────────────────────────────────────────────────────────
 
 
-export function initInput() {
+export function initializeInput() {
   _canvas = document.createElement('canvas');
   _canvas.width  = CANVAS_W;
   _canvas.height = CANVAS_H;

@@ -64,8 +64,8 @@ export function onPhaseTransition(fn) {
   _listeners.push(fn);
 }
 
-function _fireTransition() {
-  _listeners.forEach(fn => fn());
+function _fireTransition(name) {
+  _listeners.forEach(fn => fn(name));
 }
 
 
@@ -115,7 +115,7 @@ function _metaballShouldHold(t_now, gazeDetected) {
 function _clusterStart(t_now) {
   _activate(_bumps.cluster, t_now);
   _state = S_CLUSTER;
-  _fireTransition();
+  _fireTransition('cluster');
 }
 
 function _metaballStart(t_now) {
@@ -123,7 +123,7 @@ function _metaballStart(t_now) {
   _activate(_bumps.metaball, t_now, LEAD_METABALL);
   _state = S_METABALL;
   _shapeIndex = _pickRandomShapeIndex();
-  _fireTransition();
+  _fireTransition('metaball');
 }
 
 function _burstStart(t_now) {
@@ -131,7 +131,7 @@ function _burstStart(t_now) {
   _lastBurstTrigger = t_now;
   _activate(_bumps.burst, t_now);
   _state = S_BURST;
-  _fireTransition();
+  _fireTransition('burst');
 }
 
 function _metaballHold(t_now) {

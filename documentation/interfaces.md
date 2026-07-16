@@ -18,7 +18,7 @@ Kontinuierliches Gauß-Gewichtssystem. Einzige autoritative Quelle für Phasenge
 | `getMotionSpeed()` | — | — | `float` | [0,1] Rohe Bewegungsenergie aus Frame-Differencing (`reportMotionEnergy`), unabhängig von Gaze; exponentiell abklingend (×0.97/Tick) ohne gemeldete Energie |
 | `reportGazeDetected()` | — | Von `input.js` (face-api.js): setzt intern `_gazeThisFrame = true` — von `tick()` als Auslöser für Cluster→Burst und Metaball-Hold ausgelesen und zurückgesetzt | `void` | — |
 | `reportMotionEnergy(speed)` | `speed: float ∈ [0,1]` | Von `input.js` (Frame-Differencing): setzt `_motionSpeed = speed`, unabhängig vom Gaze-Signal — treibt ausschließlich `getMotionSpeed()` | `void` | — |
-| `onPhaseTransition(fn)` | `fn: () → void` | Feuert bei jedem Regime-Wechsel, ohne Argumente (kein Regime-Leck nach außen) | `void` | — |
+| `onPhaseTransition(fn)` | `fn: (name: 'cluster'\|'metaball'\|'burst') → void` | Feuert bei jedem Regime-Wechsel mit dem Namen der Zielphase; einziger Kanal, über den `phase.js` Konsumenten erreicht, ohne selbst welche zu importieren | `void` | — |
 
 Bump-Konstanten (`LEAD`, `CLUSTER_SIGMA`/`METABALL_SIGMA`/`BURST_SIGMA`, `BURST_HOLD`, `METABALL_MIN_HOLD`/`SILENCE_HOLD`, `METABALL_HANDOFF_LEAD`, `CLUSTER_COOLDOWN`) stehen am Kopf der Datei, erklärt — siehe `requirements.md` → Phasensystem für die Bump-Mathematik und die Handoff-Mechanik (Burst→Metaball aktiviert mit kleinerem Lead als sonst, für mehr Überlappung ohne Bursts Haltedauer zu verändern). `BURST_HOLD` ist fix, nicht mit `motionSpeed` skaliert.
 
@@ -29,7 +29,7 @@ GPU-Physiksimulation. Verwaltet 1D-Zustandstextur (RGBA32F, 36×1) und Ping-Pong
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
-| `initSimulation(renderer)` | `renderer: WebGLRenderer` | Wird intern für Sim-Pass-Render-Calls gespeichert | `void` | — |
+| `initializeSimulation(renderer)` | `renderer: WebGLRenderer` | Wird intern für Sim-Pass-Render-Calls gespeichert | `void` | — |
 | `stepSimulation()` | — | Liest `getWeights()`, `time`, `motionSpeed` direkt aus `phase.js`; setzt `clusterBlend`/`metaballBlend`/`burstBlend` (identisch zu den Shading-Uniforms) und `motionSpeed` auf dem Sim-Material | `void` | — |
 | `getUniformDefs()` | — | — | `{ stateTex: { value } }` | Uniform-Objekt für ShaderMaterial |
 | `applyStateToMaterial(material)` | `material: ShaderMaterial` | Setzt `stateTex` auf aktuelle Lesertextur | `void` | — |
@@ -46,7 +46,7 @@ Equirectangular-Env-Map-Generierung: `environmentShader.js` blendet zwei **gelad
 | `ENV_MAP_FILES` | `string[]` | Alle in `resources/` verfügbaren Dateinamen — händisch gepflegt (kein Verzeichnis-Listing zur Laufzeit möglich); Quelle für beide UI-Picker (`src/ui.js`) | — |
 | `CLUSTER_ENV_MAP_DEFAULT` | `string` | Default-Dateiname für die Cluster-Rolle | — |
 | `METABALL_ENV_MAP_DEFAULT` | `string` | Default-Dateiname für die geteilte Metaball/Burst-Rolle | — |
-| `initEnvMap(renderer, clusterFilename?, metaballFilename?)` | `renderer: WebGLRenderer`, Dateinamen (Default: die beiden Konstanten oben) | Baut Render-Target + internes Env-Material, lädt beide Start-Dateien | `void` |
+| `initializeEnvMap(renderer, clusterFilename?, metaballFilename?)` | `renderer: WebGLRenderer`, Dateinamen (Default: die beiden Konstanten oben) | Baut Render-Target + internes Env-Material, lädt beide Start-Dateien | `void` |
 | `setClusterEnvMapFile(filename)` | `filename: string` (aus `ENV_MAP_FILES`) | Lädt eine andere Datei in die `clusterSourceMap`-Uniform nach; setzt `texture.flipY = true` (siehe unten) | `void` |
 | `setMetaballEnvMapFile(filename)` | `filename: string` (aus `ENV_MAP_FILES`) | Wie oben, für `metaballSourceMap` (von Metaball **und** Burst geteilt) | `void` |
 | `getUniformDefs()` | — | — | `{ envMap: { value } }` | Einzelne Env-Map-Uniform (nur diese wird an das Haupt-Material gereicht) |
@@ -63,7 +63,7 @@ Stationäre Beobachter-Kamera (stub). Gibt Startposition vor; `updateCamera` und
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
-| `initCamera(camera)` | `camera: PerspectiveCamera` | Setzt Startposition | `void` | — |
+| `initializeCamera(camera)` | `camera: PerspectiveCamera` | Setzt Startposition | `void` | — |
 | `updateCamera(camera)` | `camera: PerspectiveCamera` | Stub | `void` | — |
 | `onInput(type, data)` | `type: string ∈ {'presence','absence'}`, `data: { speed?: float ∈ [0,1] }` | Aufgerufen von `input.js`; stub | `void` | — |
 
@@ -74,7 +74,7 @@ Systemkamera → zwei unabhängige Signale → `phase.js` + Kamera: rohe Bewegun
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
-| `initInput()` | — | Webcam-Stream öffnen; face-api.js-Modelle (`tinyFaceDetector`, `faceLandmark68TinyNet`) asynchron aus `resources/` laden | `void` | — |
+| `initializeInput()` | — | Webcam-Stream öffnen; face-api.js-Modelle (`tinyFaceDetector`, `faceLandmark68TinyNet`) asynchron aus `resources/` laden | `void` | — |
 | `updateInput()` | — | Pro-Frame: Frame-Differencing → `reportMotionEnergy`; gedrosselt face-api.js-Erkennung → `reportGazeDetected` / `cameraInput('presence'\|'absence', {})` | `void` | — |
 
 **Bewegungsenergie** (unverändert ggü. der ursprünglichen Implementierung, treibt aber keine Phasenauslösung mehr): Frame-Differencing auf 80×60 Offscreen-Canvas (`willReadFrequently`).
@@ -102,14 +102,18 @@ Persistenz: `GAZE_PERSIST_CYCLES` aufeinanderfolgende „blickend"-Detektionszyk
 ---
 
 ### `src/audio.js`
-Phasengekoppelte Klangkulisse. ⚠️ Stub.
+Phasengekoppelte Klangkulisse (Web Audio API). Pollt `getWeights()`/`getMotionSpeed()` aus `phase.js` wie jedes andere Modul; abonniert zusätzlich `onPhaseTransition` für den Burst-Einsatz — das einzige Modul, das diesen Listener tatsächlich nutzt.
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe | Bereich |
 |---|---|---|---|---|
-| `initAudio()` | — | — | `void` | — |
-| `updateAudio()` | — | Stub; liest bei Implementierung Phasenwerte direkt aus `phase.js` | `void` | — |
+| `initializeAudio()` | — | Baut den Audio-Graph (`AudioContext` → `masterGain` → Destination; Drone-Oszillator → `droneGain` → `masterGain`); registriert `onPhaseTransition`-Listener | `void` | — |
+| `updateAudio()` | — | Pro Frame: blendet Ziel-Frequenz (`_blendFrequency`) und Puls-Oktavversatz (`_blendPulse`) aus den drei Phasengewichten, glättet beide über `setTargetAtTime` auf den Drone-Oszillator | `void` | — |
 
-Registriert sich bei `onPhaseTransition` für Klangwechsel an Schwellenwerten.
+**Drone** (Dauerton, ein `OscillatorNode` `DRONE_OSCILLATOR_TYPE='triangle'`): Zielfrequenz ist ein 3-Wege-Gewichtsblend aus `F_CLUSTER` (fix) und `F_METABALL_BASE`/`F_BURST_BASE` (beide zusätzlich oktavskaliert mit `motionSpeed`, exponentiell statt linear — Tonhöhenwahrnehmung ist logarithmisch). Darüber legt sich ein zweiter, additiver Oktavversatz (`_blendPulse`) — eine langsame Sinusmodulation, die als „Atmen"/„Pulsieren" hörbar wird: eigene Rate/Tiefe für Cluster (`BREATH_RATE_CLUSTER`, `BREATH_DEPTH_CLUSTER_OCTAVES`) und Metaball (`BREATH_RATE_METABALL`, `BREATH_DEPTH_METABALL_OCTAVES`), keine für Burst (zu kurz, dominiert ohnehin vom Ping). Als Zeitbasis dient `_ctx.currentTime` (echte Sekunden), nicht `phase.js`s `getTime()` — Letzteres ist ein frame-getakteter Akkumulator (`FRAME_TIME_STEP` pro Tick, nicht Sekunden) und macht die `BREATH_RATE_*`-Konstanten sonst framerate-abhängig und faktisch zu langsam.
+
+**Burst-Ping** (`_triggerBurstSound`, privat, nur vom `onPhaseTransition`-Listener aufgerufen): Ein zweiter, kurzlebiger `OscillatorNode` mit eigener Gain-Hüllkurve (linearer Attack, exponentieller Decay) und einem abfallenden Frequenz-Sweep (`BURST_PING_FREQUENCY` → `BURST_PING_FREQUENCY_END`) für einen scharfen „Schreck"-Charakter statt eines flachen Klicks.
+
+`phase.js` kennt `audio.js` nicht — die Kopplung läuft ausschließlich über den bereits bestehenden `onPhaseTransition(fn)`-Listener, `fn` erhält seit dieser Implementierung den Namen der jeweiligen Zielphase (`'cluster'`/`'metaball'`/`'burst'`) als Argument (vorher argumentlos).
 
 ---
 
@@ -118,9 +122,9 @@ Manuelle Override-UI, dauerhaft — nicht temporär. Baut ein gemeinsames, lazy 
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe |
 |---|---|---|---|
-| `initClusterShapeUI(variants, onSelect)` | `variants: string[]` (aus `constants.js`s `CLUSTER_SHAPE_VARIANTS_EXPERIMENTAL`, alle neun inkl. Intersect), `onSelect: (name: string) => void` | Sektion "SHAPES"; Klick ruft `onSelect(name)` | `{ select(value) }` |
-| `initClusterEnvMapUI(files, current, onSelect)` | `files: string[]` (aus `environment.js`s `ENV_MAP_FILES`), `current: string` (initial hervorgehoben), `onSelect: (filename: string) => void` | Sektion "CLUSTER ENVIRONMENT" | `{ select(value) }` |
-| `initMetaballEnvMapUI(files, current, onSelect)` | Wie oben | Sektion "METABALL ENVIRONMENT" | `{ select(value) }` |
+| `initializeClusterShapeUI(variants, onSelect)` | `variants: string[]` (aus `constants.js`s `CLUSTER_SHAPE_VARIANTS_EXPERIMENTAL`, alle neun inkl. Intersect), `onSelect: (name: string) => void` | Sektion "SHAPES"; Klick ruft `onSelect(name)` | `{ select(value) }` |
+| `initializeClusterEnvMapUI(files, current, onSelect)` | `files: string[]` (aus `environment.js`s `ENV_MAP_FILES`), `current: string` (initial hervorgehoben), `onSelect: (filename: string) => void` | Sektion "CLUSTER ENVIRONMENT" | `{ select(value) }` |
+| `initializeMetaballEnvMapUI(files, current, onSelect)` | Wie oben | Sektion "METABALL ENVIRONMENT" | `{ select(value) }` |
 
 Intern teilen sich alle drei Funktionen einen generischen `_makeCollapsibleSection(title, items, current, onSelect)`-Helfer (Header-Button togglet eine versteckte Optionsliste); `items: Array<{value, label}>` — `label` ist die Anzeige (z. B. Dateiname ohne Endung, oder der Shape-Name ohne `cluster`-Präfix und mit eingefügten Leerzeichen), `value` das, was an `onSelect` durchgereicht wird. Die zurückgegebene `select(value)`-Funktion aktualisiert nur die Hervorhebung (ohne erneut `onSelect` zu feuern) — `main.js` nutzt sie, um die UI nach einer automatischen Shape-Auswahl visuell nachzuziehen.
 

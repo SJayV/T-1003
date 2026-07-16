@@ -59,7 +59,7 @@ vec3 blendEnvironment(vec2 uv, sampler2D clusterSourceMap, sampler2D metaballSou
   vec3  rDir = vec3(dir.x * cosR - dir.z * sinR, dir.y, dir.x * sinR + dir.z * cosR);
 
   return _metaballEnvironment(rDir, metaballSourceMap) * metaballBlend
-       + _clusterEnvironment(rDir, clusterSourceMap)    * clusterBlend
-       + _burstEnvironment(rDir, metaballSourceMap)     * burstBlend;
+       + _clusterEnvironment(rDir, clusterSourceMap)   * clusterBlend
+       + _burstEnvironment(rDir, metaballSourceMap)    * burstBlend;
 }
 `;

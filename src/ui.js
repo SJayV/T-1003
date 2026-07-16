@@ -65,7 +65,7 @@ function _makeCollapsibleSection(title, items, current, onSelect) {
 // ──── SHAPES ──────────────────────────────────────────────────────────────────────
 
 
-export function initClusterShapeUI(variants, onSelect) {
+export function initializeClusterShapeUI(variants, onSelect) {
   const items = variants.map(name => ({
     value: name,
     label: name.replace(/^cluster/, '').replace(/([A-Z])/g, ' $1').trim(),
@@ -81,10 +81,10 @@ function _envMapItems(files) {
   return files.map(name => ({ value: name, label: name.replace(/\.[^.]+$/, '') }));
 }
 
-export function initClusterEnvMapUI(files, current, onSelect) {
+export function initializeClusterEnvMapUI(files, current, onSelect) {
   _makeCollapsibleSection('CLUSTER ENVIRONMENT', _envMapItems(files), current, onSelect);
 }
 
-export function initMetaballEnvMapUI(files, current, onSelect) {
+export function initializeMetaballEnvMapUI(files, current, onSelect) {
   _makeCollapsibleSection('METABALL ENVIRONMENT', _envMapItems(files), current, onSelect);
 }
