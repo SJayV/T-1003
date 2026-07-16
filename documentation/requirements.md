@@ -30,10 +30,10 @@ T-1003/
 │   ├── renderer.js             ← WebGLRenderer, PerspectiveCamera, Resize
 │   ├── simulation.js           ← Ping-Pong RenderTargets, Sim-Pass (GPU)
 │   ├── gpuSetup.js             ← Fullscreen-Quad-Factory (makeGpuSetup)
-│   ├── phase.js                ← Gauß-Gewichtsystem, getWeights()/MotionSpeed, reportMotion(), onPhaseTransition()
+│   ├── phase.js                ← Gauß-Gewichtsystem, getWeights()/getMotionSpeed(), reportGazeDetected()/reportMotionEnergy(), onPhaseTransition()
 │   ├── constants.js            ← Cross-Datei-Konstanten (BALL_COUNT, Cluster-Shape-Größen/-Rotationen, ...) + Initialzustand der 12 Bälle + glslFloat()
 │   ├── camera.js               ← statische Kamera (stub)
-│   ├── input.js                ← Webcam Frame-Differencing → reportMotion() → phase.js Gewichtssystem
+│   ├── input.js                ← Webcam: Frame-Differencing (reportMotionEnergy) + face-api.js Gaze-Erkennung (reportGazeDetected) → phase.js Gewichtssystem
 │   ├── audio.js                ← Phasengekoppelte Klangkulisse (Stub)
 │   ├── environment.js          ← lädt zwei HDRI-Dateien (RGBELoader) aus resources/, blendet sie zur `envMap`
 │   └── ui.js                   ← Temporäre manuelle Auswahl (Cluster-Shape-Variante, Cluster-/Metaball-Env-Map-Datei) — kollabierbare Sektionen, oben rechts
@@ -60,10 +60,10 @@ Jedes Modul besitzt seine Uniforms vollständig. `main.js` kennt keine Uniform-N
 // Einmalig beim Material-Setup:
 ...simulation.getUniformDefs()    // → { stateTex }
 ...environment.getUniformDefs()   // → { envMap }
-input.initInput()                                    // Webcam-Stream + Detektor-Setup
+input.initInput()                                    // Webcam-Stream + face-api.js-Modelle laden
 
 // Jeden Frame:
-input.updateInput()          // Bewegungsanalyse → reportMotion()
+input.updateInput()          // Frame-Differencing → reportMotionEnergy(); gedrosselte Gaze-Erkennung → reportGazeDetected()
 stepSimulation()             // liest getWeights()/time/motionSpeed aus phase.js
 applyStateToMaterial(material)
 applyEnvState(material)
@@ -74,7 +74,7 @@ applyEnvState(material)
 Phase ist der gemeinsame Intermediär zwischen Zeitsteuerung, externem Input und den Ausgabekanälen (Shading, Environment, Audio):
 
 ```
-tick() / reportMotion(speed)
+tick() / reportGazeDetected() / reportMotionEnergy(speed)
   └→ onPhaseTransition-Listener:
        environment.js  → Equirectangular-Regenerierung
        audio.js        → Klangwechsel (geplant)
@@ -144,12 +144,15 @@ $\mu_i$ ist nie fallend (`mu = max(mu, t_now)`) und wird bei Aktivierung nicht a
 
 Dasselbe gilt auf der Bewegungsseite: `positionChunk.js` dämpft `vel` während Burst gar nicht (Faktor `1.0`, siehe `blendPosition`s `VEL_DECAY_META`/`VEL_DECAY_CLUSTER`-Mix). Bursts `vel` soll beim Handoff noch echten Schwung tragen, statt schon auf ~0 ausgerollt zu sein — Metaballs eigene Orbit-Korrektur (`_metaballPosition`/`_orbitTangentStep`) bleibt bewusst ein direktes, von `vel` unabhängiges Pos-Update (siehe unten), gerade damit sie mit Bursts Schwung interagiert statt ihn zu überschreiben.
 
-**Parameter (in `input.js`, unverändert):**
+**Parameter (in `input.js`):**
 
 | Konstante | Semantik |
 |---|---|
-| `INPUT_SPEED_THRESHOLD` | Minimale normierte Geschwindigkeit |
-| `INPUT_PERSIST_FRAMES` | Konsekutive Frames mit Bewegung vor `reportMotion` |
+| `ENERGY_SENSITIVITY`, `ENERGY_PIXEL_THRESHOLD` | Skalierung/Rausch-Schwelle für `reportMotionEnergy` (Frame-Differencing, unabhängig von Gaze) |
+| `GAZE_DETECT_INTERVAL_FRAMES` | Drosselung: face-api.js läuft nur alle N `updateInput()`-Aufrufe |
+| `GAZE_PERSIST_CYCLES` | Konsekutive „blickend"-Erkennungszyklen vor `reportGazeDetected` (nur beim Anschalten, nicht beim Abschalten) |
+| `GAZE_CENTER_FRACTION` | Breiten-/Höhenanteil des Kamerabilds, der als „zentriert" zählt |
+| `GAZE_FRONTAL_THRESHOLD` | Max. normierter Nasenspitzen-Versatz, der noch als „frontal" zählt |
 
 **Metaball** — direktes Orbit-Update, zwei unabhängige Terme (`positionChunk.js`):
 
@@ -267,7 +270,7 @@ $$\Delta\mathbf{c}_i = \Delta\mathbf{c}^\text{orbit} \cdot \text{metaballBlend} 
 |---|---|---|
 | `time` | phase.js | Globale Zeit |
 | `metaballBlend`, `clusterBlend`, `burstBlend` | phase.js (`getWeights()`) | Vorberechnete Blend-Gewichte (Summe = 1); identisch an Shading- und Sim-Material übergeben |
-| `motionSpeed` | phase.js (`getMotionSpeed()`) | Erkannte Bewegungsgeschwindigkeit ∈ [0,1]; exponentiell abklingend (×0.97/Tick) ohne Bewegung; treibt auch Bursts Abstoßungsstärke live |
+| `motionSpeed` | phase.js (`getMotionSpeed()`) | Rohe, von der Blickerkennung unabhängige Bewegungsenergie ∈ [0,1] (`reportMotionEnergy`); exponentiell abklingend (×0.97/Tick) ohne gemeldete Energie; treibt auch Bursts Abstoßungsstärke live |
 | `camPos` | renderer.js | Kameraposition |
 | `resolution` | renderer.js | Viewport-Größe |
 | `stateTex` | simulation.js | Ball-Zustandstextur (RGBA32F, 36×1) |
@@ -289,19 +292,25 @@ $$\Delta\mathbf{c}_i = \Delta\mathbf{c}^\text{orbit} \cdot \text{metaballBlend} 
 Primärer deterministischer Input; steuert Phasenzyklus. Variation entsteht durch inkommensurable Orbit-Frequenzen — keine zwei Phasen sehen gleich aus.
 
 ### Externes Eingabegerät (`input.js`)
-- Kamerabasiertes Gerät (z.B. Webcam + Personenerkennung) registriert Anwesenheit und Bewegung
-- Ruft `phase.js`-Interfaces direkt auf — keine Kopplung durch `main.js`:
-  - `reportMotion(speed)` bei erkannter Bewegung; `phase.js` entscheidet über Burst-Auslösung
-  - Bewegungsgeschwindigkeit skaliert Burst-Stärke
-- Anleitungsinteraktion als Installationskonzept denkbar ⚠️ offen
 
-### Facetracking ⚠️ offen (siehe Offene Punkte #3)
+Zwei unabhängige, gleichzeitig laufende Signale — beide rufen `phase.js`-Interfaces direkt auf, keine Kopplung durch `main.js`:
 
-Konkrete Umsetzung der bereits geplanten Anwesenheitserkennung (Offene Punkt #2, Presence vs. Motion): statt reinem Frame-Differencing erkennt ein Gesichtserkennungs-Modell im Browser (z. B. eine JS-Face-Detection-Bibliothek) Anwesenheit und Blickrichtung einer Person direkt. Das trifft die Kernthese der Installation unmittelbarer als generisches Motion-Diffing — **„Beobachtung verändert das Beobachtete"** wird wörtlich einlösbar, wenn das System tatsächlich erkennt, *dass* (und ggf. *wohin*) ein Gesicht blickt, statt nur pixelweise Veränderung zu messen.
+- **Rohe Bewegungsenergie** (Frame-Differencing, wie zuvor): meldet kontinuierlich `reportMotionEnergy(speed)` — treibt ausschließlich visuelle Skalierung (Orbit-Winkelgeschwindigkeit, Burst-Abstoßungsstärke), **keine** Phasenauslösung mehr.
+- **Blickerkennung** (face-api.js, siehe Facetracking unten): meldet `reportGazeDetected()`, sobald eine Person das Objekt gerade ansieht — dies ist der alleinige Auslöser für Cluster→Burst und hält Metaball, solange der Blick anhält (siehe Phasensystem).
 
-- Ergänzt, ersetzt aber nicht zwingend `input.js`s Motion-Differencing — beide Signale könnten parallel in `phase.js` einfließen (z. B. Facetracking → Präsenz/Aufmerksamkeit, Motion-Speed → weiterhin Burst-Auslöser)
-- Modul-Interface-Prinzip bleibt gewahrt: ein neues/erweitertes `input.js` ruft weiterhin `phase.js`-Funktionen direkt auf, keine Vermittlung durch `main.js`
-- Offene Fragen: welche Bibliothek/Modell (Performance-Budget neben Raymarching + Sim-Pass), ob Blickrichtung oder nur Anwesenheit ausgewertet wird, Datenschutz-Implikationen einer Gesichtserkennung im Installationskontext
+Anleitungsinteraktion als Installationskonzept denkbar ⚠️ offen.
+
+### Facetracking (`input.js`, face-api.js)
+
+Ersetzt die ursprünglich als Phasenauslöser genutzte Bewegungserkennung durch echte Gesichts-/Blickerkennung — die Kernthese der Installation wird damit wörtlich eingelöst: **„Beobachtung verändert das Beobachtete"** reagiert jetzt tatsächlich darauf, *dass* (und mit welcher groben Kopf-Ausrichtung) eine Person das Objekt ansieht, statt nur pixelweise Veränderung zu messen.
+
+- **Bibliothek:** [face-api.js](https://github.com/justadudewhohacks/face-api.js) (CDN via jsdelivrs `/+esm`-Auto-Wrap-Endpoint, siehe `index.html`-Importmap — die von der npm-Version ausgelieferten Dateien sind entweder ein UMD-Bundle oder ein ES6-Build mit externen Bare-Imports, keines davon direkt browser-ESM-tauglich ohne diesen Umweg); Modellgewichte (`tinyFaceDetector` + `faceLandmark68TinyNet`) liegen lokal in `resources/`.
+- **Zentriert-Test:** Bounding-Box-Zentrum innerhalb der mittleren `GAZE_CENTER_FRACTION` (30%) des (horizontal gespiegelten) Kamerabilds — wer am Bildrand steht, gilt als „versteckt", unabhängig von der Kopfausrichtung.
+- **Frontal-Test (Blick-Proxy):** Da die Tiny-Modelle keinen echten Iris-/Gaze-Vektor liefern, wird der horizontale Nasenspitzen-Versatz relativ zum Augen-Mittelpunkt, normiert auf den Augenabstand, als Näherung für „Kopf zeigt zur Kamera" verwendet (`GAZE_FRONTAL_THRESHOLD`) — jemand, der zentriert steht, aber zur Seite blickt, zählt nicht als beobachtend.
+- Ein Gesicht gilt nur dann als „blickend", wenn **beide** Tests zutreffen — zentriert-aber-abgewandt und frontal-aber-am-Rand zählen beide nicht.
+- **Drosselung + Debounce:** Die Erkennung läuft nur alle `GAZE_DETECT_INTERVAL_FRAMES` (4) Frames (Kosten deutlich höher als Frame-Differencing); `GAZE_PERSIST_CYCLES` (2) aufeinanderfolgende „blickend"-Zyklen müssen anschlagen, bevor das Signal „an" schaltet — Verlust des Blicks wird dagegen sofort übernommen (keine Debounce beim Abschalten).
+- Modul-Interface-Prinzip bleibt gewahrt: `input.js` ruft weiterhin `phase.js`-Funktionen direkt auf, keine Vermittlung durch `main.js`.
+- Offen: Datenschutz-Implikationen einer Gesichtserkennung im Installationskontext; echte Iris-/Gaze-Vektor-Auswertung (statt des Kopfausrichtungs-Proxys) wäre mit einem Modell mit Iris-Landmarks möglich, aktuell nicht implementiert.
 
 ### Environment (`environment.js`)
 
@@ -388,10 +397,9 @@ color = blendShading(p, n, rd);
 | GPU-Simulation (1D-Textur RGBA32F, Ping-Pong, simulationShader.js) | ✅ |
 | Shading-Modul (surfaceChunk.js, blendShading, phasenweise: _metaballShading/_clusterShading/_burstShading) | ✅ |
 | Environment (dynamische Equirectangular-Env-Map, immer 3-Wege-Blend, environmentShader.js) | ✅ |
-| Externes Eingabegerät (input.js) | ✅ |
+| Externes Eingabegerät (input.js): Motion-Energie + Gaze-gesteuerte Phasenauslösung | ✅ |
+| Facetracking / Anwesenheits- & Blickerkennung (face-api.js, zentriert + frontal) | ✅ |
 | Audio | ⚠️ geplant |
-| Anwesenheitserkennung (Presence vs. Motion) | ⚠️ geplant |
-| Facetracking | ⚠️ geplant (#3) |
 | Cluster-Zielform (analytisch, eigenständiges SDF) | ✅ |
 | Cluster-Shape-Varianten (Zylinder/Kugel/Box × voll/geschnitten + Torus/Kapsel/Pyramide nur voll) | ✅ |
 | Cluster-Shape-Zufallsauswahl bei Burst→Metaball (`getShapeVariant()`) + manuelle Override-UI | ✅ |
@@ -411,5 +419,5 @@ color = blendShading(p, n, rd);
 | # | Thema | Notiz |
 |---|---|---|
 | 1 | Audio | Web Audio API; drei synthetische Schichten: Metaball = tiefer Drone (Frequenz skaliert mit motionSpeed), Cluster = Subbass-Puls im Atemrhythmus, Burst = perkussiver Anschlag + Hochfrequenz-Rauschen über burstBlend; OscillatorNode + BiquadFilterNode, kein Asset-Loading |
-| 2 | Anwesenheitserkennung | input.js liefert nur Motion-Speed; zweite Schicht: Hintergrundmodell erkennt Präsenz ohne Bewegung → Kreatur reagiert auf bloße Anwesenheit (aufmerksam werden, ohne Burst zu triggern); psychologisch stärker als reiner Bewegungs-Trigger |
-| 3 | Facetracking | Konkrete Technik für #2: Gesichtserkennung statt/neben Frame-Differencing in `input.js`; macht "Beobachtung verändert das Beobachtete" wörtlich. Siehe Input & Interaktion → Facetracking. Offen: Bibliothek/Modell, Performance-Budget, Blickrichtung vs. reine Anwesenheit, Datenschutz |
+| 2 | Echte Blickrichtung (Iris-Vektor) | Aktuell approximiert `input.js` „blickend" über Zentrierung + Kopf-Frontalität (Nasenspitzen-Versatz), kein echter Iris-/Gaze-Vektor — ein Modell mit Iris-Landmarks könnte Blickrichtung unabhängig von der Kopfausrichtung auswerten |
+| 3 | Datenschutz-Implikationen | Gesichtserkennung im Installationskontext wirft Fragen zu Zustimmung/Anzeige auf — bislang nicht adressiert |
