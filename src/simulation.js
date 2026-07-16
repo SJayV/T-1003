@@ -63,7 +63,7 @@ function _initializeData() {
 // ──── PUBLIC INTERFACE ────────────────────────────────────────────────────────────
 
 
-export function initSimulation(renderer) {
+export function initializeSimulation(renderer) {
   _renderer   = renderer;
   _readTarget  = _makeTarget();
   _writeTarget = _makeTarget();

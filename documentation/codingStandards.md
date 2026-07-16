@@ -15,7 +15,7 @@ Organized into three levels, from smallest to largest scope:
 | Scope | Convention | Example |
 |---|---|---|
 | JS private module-level symbols (vars + functions) | `_camelCase` | `_renderer`, `_firstFrame`, `_makeTarget`, `_enterState` |
-| JS public exports | `camelCase` | `initSimulation`, `getWeights` |
+| JS public exports | `camelCase` | `initializeSimulation`, `getWeights` |
 | JS module constants | `SCREAMING_SNAKE_CASE` | `BALL_COUNT`, `CLUSTER_CYL_RADIUS` |
 | GLSL internal helpers | `_camelCase` | `_envUV`, `_hash2`, `_computeCentroid` |
 | GLSL public chunk functions | `camelCase` | `orbitPoint`, `blendShading`, `perlin2D` |

@@ -1,6 +1,6 @@
 import { CAMERA_START_POSITION } from './constants.js';
 
-export function initCamera(camera) {
+export function initializeCamera(camera) {
   camera.position.set(...CAMERA_START_POSITION);
   camera.lookAt(0, 0, 0);
 }

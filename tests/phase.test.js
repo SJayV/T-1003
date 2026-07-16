@@ -129,16 +129,15 @@ describe('kein Cooldown (bewusste Verhaltensänderung ggü. der alten FSM)', () 
 
 
 describe('onPhaseTransition', () => {
-  it('feuert ohne Argumente genau dreimal pro vollem Zyklus', () => {
+  it('feuert mit dem Namen der jeweiligen Zielphase, genau dreimal pro vollem Zyklus', () => {
     const calls = [];
-    onPhaseTransition((...args) => calls.push(args));
+    onPhaseTransition(name => calls.push(name));
 
     reportGazeDetected();
     advance(4.0);
     advance(20.0);
 
-    expect(calls).toHaveLength(3);
-    expect(calls.every(args => args.length === 0)).toBe(true);
+    expect(calls).toEqual(['burst', 'metaball', 'cluster']);
   });
 });
 

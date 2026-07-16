@@ -102,7 +102,7 @@ beforeEach(async () => {
   const m = await import('../src/input.js');
   updateInput = m.updateInput;
 
-  m.initInput();
+  m.initializeInput();
   await flush();
   capturedVideo?.onloadedmetadata?.();
 });

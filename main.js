@@ -1,18 +1,18 @@
 import * as THREE from 'three';
 import { scene, camera, renderer }                                    from './src/renderer.js';
 import { tick, getTime, getWeights, getMotionSpeed, getShapeVariant, getShapeIndex } from './src/phase.js';
-import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
+import { getUniformDefs as simDefs, initializeSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
 import {
-  getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState,
+  getUniformDefs as envDefs, initializeEnvMap, applyStateToMaterial as applyEnvState,
   ENV_MAP_FILES, CLUSTER_ENV_MAP_DEFAULT, METABALL_ENV_MAP_DEFAULT,
   setClusterEnvMapFile, setMetaballEnvMapFile,
 } from './src/environment.js';
-import { initCamera, updateCamera }                                   from './src/camera.js';
-import { initInput,  updateInput  }                                   from './src/input.js';
-import { initAudio,  updateAudio  }                                   from './src/audio.js';
+import { initializeCamera, updateCamera }                                   from './src/camera.js';
+import { initializeInput,  updateInput  }                                   from './src/input.js';
+import { initializeAudio, updateAudio }                               from './src/audio.js';
 import { mainVert, buildMainFrag }                                    from './shaders/raymarchShader.js';
 import { CLUSTER_SHAPE_VARIANTS } from './src/constants.js';
-import { initClusterShapeUI, initClusterEnvMapUI, initMetaballEnvMapUI } from './src/ui.js';
+import { initializeClusterShapeUI, initializeClusterEnvMapUI, initializeMetaballEnvMapUI } from './src/ui.js';
 import { makeBloomSetup }                                             from './src/gpuSetup.js';
 import { brightExtractFrag, blurFrag, compositeFrag }                 from './shaders/bloomShader.js';
 
@@ -51,20 +51,20 @@ const material = new THREE.ShaderMaterial({
 
 scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
 
-initEnvMap(renderer);
-initCamera(camera);
-initInput();
-initAudio();
-initSimulation(renderer);
+initializeEnvMap(renderer);
+initializeCamera(camera);
+initializeInput();
+initializeAudio();
+initializeSimulation(renderer);
 let _appliedShapeIndex = getShapeIndex();
 
-const shapeUI = initClusterShapeUI(CLUSTER_SHAPE_VARIANTS, (variant) => {
+const shapeUI = initializeClusterShapeUI(CLUSTER_SHAPE_VARIANTS, (variant) => {
   const idx = CLUSTER_SHAPE_VARIANTS.indexOf(variant);
   material.uniforms.clusterShapeIndex.value = idx;
   _appliedShapeIndex = idx;
 });
-initClusterEnvMapUI(ENV_MAP_FILES, CLUSTER_ENV_MAP_DEFAULT, setClusterEnvMapFile);
-initMetaballEnvMapUI(ENV_MAP_FILES, METABALL_ENV_MAP_DEFAULT, setMetaballEnvMapFile);
+initializeClusterEnvMapUI(ENV_MAP_FILES, CLUSTER_ENV_MAP_DEFAULT, setClusterEnvMapFile);
+initializeMetaballEnvMapUI(ENV_MAP_FILES, METABALL_ENV_MAP_DEFAULT, setMetaballEnvMapFile);
 const bloom = makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeFrag });
 
 
