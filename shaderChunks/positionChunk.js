@@ -14,7 +14,7 @@ const float ORBIT_SNAP_RATE    = 0.012;
 const float ORBIT_OMEGA_SCALE  = 18.0;
 const float ORBIT_OMEGA_MOTION = 9.0;
 
-const float ORIGIN_PULL      = 0.00006;
+const float ORIGIN_PULL      = 0.00012;
 
 const float CLUSTER_NOISE_FREQ    = 3.0;
 const float CLUSTER_NOISE_TIME_X1 = 0.18;
@@ -24,10 +24,10 @@ const float CLUSTER_NOISE_TIME_X2 = 0.10;
 const float CLUSTER_NOISE_FORCE   = 0.00015;
 
 const float BURST_DIST_EPSILON = 0.01;
-const float BURST_FALLOFF      = 3.2;
-const float BURST_FORCE_BASE   = 0.0020;
+const float BURST_FALLOFF      = 2.2;
+const float BURST_FORCE_BASE   = 0.0030;
 const float BURST_FORCE_SCALE  = 0.0070;
-const float BURST_FORCE_OFFSET = 0.0015;
+const float BURST_FORCE_OFFSET = 0.0062;
 
 const float VEL_DECAY_META    = 0.99;
 const float VEL_DECAY_CLUSTER = 0.995;
@@ -139,7 +139,8 @@ void blendPosition(inout vec3 pos, inout vec3 vel, vec4 orb) {
 
   pos += vel * (clusterBlend + burstBlend);
 
-  pos += (_metaballPosition(pos, orb) + _orbitTangentStep(pos, orb)) * metaballBlend;
+  pos += _metaballPosition(pos, orb) * metaballBlend
+       + _orbitTangentStep(pos, orb) * metaballBlend;
 
   vel *= mix(mix(VEL_DECAY_META, VEL_DECAY_CLUSTER, clusterBlend), 1.0, burstBlend);
 

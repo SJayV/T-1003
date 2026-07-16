@@ -38,13 +38,16 @@ function _makeCollapsibleSection(title, items, current, onSelect) {
     body.style.display = expanded ? 'flex' : 'none';
   });
 
+  function _highlight(value) {
+    buttons.forEach((btn, i) => { btn.style.cssText = _optionStyle(items[i].value === value); });
+  }
+
   const buttons = items.map(({ value, label }) => {
     const btn = document.createElement('button');
     btn.textContent = label;
     btn.style.cssText = _optionStyle(value === current);
     btn.addEventListener('click', () => {
-      buttons.forEach(b => { b.style.cssText = _optionStyle(false); });
-      btn.style.cssText = _optionStyle(true);
+      _highlight(value);
       onSelect(value);
     });
     body.appendChild(btn);
@@ -54,6 +57,8 @@ function _makeCollapsibleSection(title, items, current, onSelect) {
   section.appendChild(header);
   section.appendChild(body);
   _getPanel().appendChild(section);
+
+  return { select: _highlight };
 }
 
 
@@ -65,7 +70,7 @@ export function initClusterShapeUI(variants, onSelect) {
     value: name,
     label: name.replace(/^cluster/, '').replace(/([A-Z])/g, ' $1').trim(),
   }));
-  _makeCollapsibleSection('SHAPES', items, variants[0], onSelect);
+  return _makeCollapsibleSection('SHAPES', items, variants[0], onSelect);
 }
 
 

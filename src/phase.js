@@ -1,20 +1,20 @@
-import { FRAME_TIME_STEP } from './constants.js';
+import { FRAME_TIME_STEP, CLUSTER_SHAPE_VARIANTS } from './constants.js';
 
 
 // ──── CONSTANTS ───────────────────────────────────────────────────────────
 
 
-const LEAD = 3;
+const LEAD_BURST = 3;
+const LEAD_METABALL = -2.0;
 
-const CLUSTER_SIGMA  = 0.6;
-const METABALL_SIGMA = 3.0;
-const BURST_SIGMA    = 1.2;
+const SIGMA_CLUSTER  = 0.6;
+const SIGMA_METABALL = 4.5;
+const SIGMA_BURST    = 0.5;
 
-const BURST_HOLD        = LEAD * BURST_SIGMA;
-const METABALL_MIN_HOLD = 13.3;
-const METABALL_SILENCE_HOLD = 1.2;
+const HOLD_BURST = LEAD_BURST * SIGMA_BURST;
+const HOLD_METABALL = 15.0;
+const SILENCE_METABALL = 3.2;
 
-const METABALL_HANDOFF_LEAD = 0;
 
 const CLUSTER_COOLDOWN = 0;
 
@@ -25,28 +25,18 @@ const S_BURST    = 1;
 const S_METABALL = 2;
 
 
-// ──── MODULE STATE - SCHEDULER ───────────────────────────────────────────────────
+// ──── HELPER FUNCTIONS - INITIALIZATION ────────────────────────────────────────────
 
 
 let _state                   = S_CLUSTER;
 let _lastBurstTrigger        = -Infinity;
 let _metaballActivationStart = 0;
 let _burstActivationStart    = 0;
-
-
-// ──── MODULE STATE - BUMPS ────────────────────────────────────────────────────────
-
-
 let _bumps = {
-  cluster:  { mu: 0,         sigma: CLUSTER_SIGMA,  activated: true  },
-  metaball: { mu: -Infinity, sigma: METABALL_SIGMA, activated: false },
-  burst:    { mu: -Infinity, sigma: BURST_SIGMA,     activated: false },
+  cluster:  { mu: 0,         sigma: SIGMA_CLUSTER,  activated: true  },
+  metaball: { mu: -Infinity, sigma: SIGMA_METABALL, activated: false },
+  burst:    { mu: -Infinity, sigma: SIGMA_BURST,     activated: false },
 };
-
-function _activate(bump, t_now, lead = LEAD) {
-  bump.mu        = t_now + lead * bump.sigma;
-  bump.activated = true;
-}
 
 
 // ──── MOTION INPUT ───────────────────────────────────────────────────────────────
@@ -75,42 +65,104 @@ function _fireTransition() {
 }
 
 
+// ──── SHAPES ──────────────────────────────────────────────────────────────────
+
+
+let _shapeIndex = 0;
+
+function _pickRandomShapeIndex() {
+  return Math.floor(Math.random() * CLUSTER_SHAPE_VARIANTS.length);
+}
+
+export function getShapeVariant() {
+  return CLUSTER_SHAPE_VARIANTS[_shapeIndex];
+}
+
+
+// ──── DISPATCHER ─────────────────────────────────────────────────────────────────
+
+
+function _activate(bump, t_now, lead = LEAD_BURST) {
+  bump.mu        = t_now + lead * bump.sigma;
+  bump.activated = true;
+}
+
+function _metaballShouldExit(t_now) {
+  const silenceDuration = t_now - _bumps.metaball.mu;
+  return t_now > _metaballActivationStart + HOLD_METABALL && silenceDuration > SILENCE_METABALL;
+}
+
+function _clusterShouldExit(t_now, motionDetected) {
+  return motionDetected && (t_now - _lastBurstTrigger) > CLUSTER_COOLDOWN;
+}
+
+function _burstShouldExit(t_now) {
+  return t_now > _burstActivationStart + HOLD_BURST;
+}
+
+function _metaballShouldHold(t_now, motionDetected) {
+  return t_now <= _metaballActivationStart + HOLD_METABALL || motionDetected;
+}
+
+function _clusterStart(t_now) {
+  _activate(_bumps.cluster, t_now);
+  _state = S_CLUSTER;
+  _fireTransition();
+}
+
+function _metaballStart(t_now) {
+  _metaballActivationStart = t_now;
+  _activate(_bumps.metaball, t_now, LEAD_METABALL);
+  _state = S_METABALL;
+  _shapeIndex = _pickRandomShapeIndex();
+  _fireTransition();
+}
+
+function _burstStart(t_now) {
+  _burstActivationStart = t_now;
+  _lastBurstTrigger = t_now;
+  _activate(_bumps.burst, t_now);
+  _state = S_BURST;
+  _fireTransition();
+}
+
+function _metaballHold(t_now) {
+  _bumps.metaball.mu = Math.max(_bumps.metaball.mu, t_now);
+}
+
+function _clusterHold(t_now) {
+  _bumps.cluster.mu = Math.max(_bumps.cluster.mu, t_now);
+}
+
+function _burstHold(t_now) {
+  _bumps.burst.mu = Math.max(_bumps.burst.mu, t_now);
+}
+
+
 // ──── SCHEDULER ──────────────────────────────────────────────────────────────────
 
 
 function _scheduleTick(t_now, motionDetected) {
   if (_state === S_CLUSTER) {
-    if (motionDetected && (t_now - _lastBurstTrigger) > CLUSTER_COOLDOWN) {
-      _burstActivationStart = t_now;
-      _lastBurstTrigger = t_now;
-      _activate(_bumps.burst, t_now);
-      _state = S_BURST;
-      _fireTransition();
+    if (_clusterShouldExit(t_now, motionDetected)) {
+      _burstStart(t_now);
+    } else {
+      _clusterHold(t_now);
     }
   } else if (_state === S_BURST) {
-    if (t_now <= _burstActivationStart + BURST_HOLD) {
-      _bumps.burst.mu = Math.max(_bumps.burst.mu, t_now);
+    if (_burstShouldExit(t_now)) {
+      _metaballStart(t_now);
     }
-    if (t_now > _burstActivationStart + BURST_HOLD) {
-      _metaballActivationStart = t_now;
-      _activate(_bumps.metaball, t_now, METABALL_HANDOFF_LEAD);
-      _state = S_METABALL;
-      _fireTransition();
+    else {
+      _burstHold(t_now);
     }
   } else if (_state === S_METABALL) {
-    if (t_now <= _metaballActivationStart + METABALL_MIN_HOLD || motionDetected) {
-      _bumps.metaball.mu = Math.max(_bumps.metaball.mu, t_now);
+    if (_metaballShouldHold(t_now, motionDetected)) {
+      _metaballHold(t_now);
     }
-    const silenceDuration = t_now - _bumps.metaball.mu;
-    if (t_now > _metaballActivationStart + METABALL_MIN_HOLD && silenceDuration > METABALL_SILENCE_HOLD) {
-      _activate(_bumps.cluster, t_now);
-      _state = S_CLUSTER;
-      _fireTransition();
+    if (_metaballShouldExit(t_now)) {
+      _clusterStart(t_now);
     }
-  }
-
-  if (_state === S_CLUSTER) {
-    _bumps.cluster.mu = Math.max(_bumps.cluster.mu, t_now);
   }
 }
 

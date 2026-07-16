@@ -74,3 +74,19 @@ export const CLUSTER_PYRAMID_SCALE      = 1.1;
 export const CLUSTER_PYRAMID_HEIGHT     = 0.9;
 export const CLUSTER_PYRAMID_ROTATION_Y = 0.6;
 export const CLUSTER_PYRAMID_ROTATION_X = -0.3;
+
+export const CLUSTER_SHAPE_VARIANTS = [
+  'clusterCylinderFull',
+  'clusterSphereFull',
+  'clusterBoxFull',
+  'clusterTorusFull',
+  'clusterCapsuleFull',
+  'clusterPyramidFull',
+];
+
+export const CLUSTER_SHAPE_VARIANTS_EXPERIMENTAL = [
+  ...CLUSTER_SHAPE_VARIANTS,
+  'clusterCylinderIntersect',
+  'clusterSphereIntersect',
+  'clusterBoxIntersect',
+];

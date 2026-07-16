@@ -101,17 +101,17 @@ Registriert sich bei `onPhaseTransition` für Klangwechsel an Schwellenwerten.
 ---
 
 ### `src/ui.js`
-⚠️ Temporär — alle drei Picker sollen durch eine zufällige Auswahl bei jedem Cluster-Eintritt ersetzt werden (siehe `requirements.md` → Offene Punkte #4). Baut ein gemeinsames, lazy erzeugtes Panel-Element (`position: fixed; top/right`) mit einer kollabierbaren Sektion pro Picker — kein `index.html`-Markup zu pflegen, damit die spätere Entfernung eine reine Ein-Datei-Löschung ist.
+Manuelle Override-UI, dauerhaft — nicht temporär. Baut ein gemeinsames, lazy erzeugtes Panel-Element (`position: fixed; top/right`) mit einer kollabierbaren Sektion pro Picker. Die Shape-Sektion läuft **neben** der automatischen Zufallsauswahl (`phase.js`s `getShapeVariant()`, siehe dort) her, nicht als Ersatz dafür; die beiden Env-Map-Sektionen sind bewusst die einzige Auswahlmöglichkeit für ihre Dateien — keine automatische Zufallsauswahl vorgesehen.
 
 | Funktion | Parameter | Bereich / Semantik | Rückgabe |
 |---|---|---|---|
-| `initClusterShapeUI(variants, onSelect)` | `variants: string[]` (aus `shapeChunk.js`s `CLUSTER_SHAPE_VARIANTS`), `onSelect: (name: string) => void` | Sektion "SHAPES"; Klick ruft `onSelect(name)` | `void` |
-| `initClusterEnvMapUI(files, current, onSelect)` | `files: string[]` (aus `environment.js`s `ENV_MAP_FILES`), `current: string` (initial hervorgehoben), `onSelect: (filename: string) => void` | Sektion "CLUSTER ENVIRONMENT" | `void` |
-| `initMetaballEnvMapUI(files, current, onSelect)` | Wie oben | Sektion "METABALL ENVIRONMENT" | `void` |
+| `initClusterShapeUI(variants, onSelect)` | `variants: string[]` (aus `constants.js`s `CLUSTER_SHAPE_VARIANTS_EXPERIMENTAL`, alle neun inkl. Intersect), `onSelect: (name: string) => void` | Sektion "SHAPES"; Klick ruft `onSelect(name)` | `{ select(value) }` |
+| `initClusterEnvMapUI(files, current, onSelect)` | `files: string[]` (aus `environment.js`s `ENV_MAP_FILES`), `current: string` (initial hervorgehoben), `onSelect: (filename: string) => void` | Sektion "CLUSTER ENVIRONMENT" | `{ select(value) }` |
+| `initMetaballEnvMapUI(files, current, onSelect)` | Wie oben | Sektion "METABALL ENVIRONMENT" | `{ select(value) }` |
 
-Intern teilen sich alle drei Funktionen einen generischen `_makeCollapsibleSection(title, items, current, onSelect)`-Helfer (Header-Button togglet eine versteckte Optionsliste); `items: Array<{value, label}>` — `label` ist die Anzeige (z. B. Dateiname ohne Endung, oder der Shape-Name ohne `cluster`-Präfix und mit eingefügten Leerzeichen), `value` das, was an `onSelect` durchgereicht wird.
+Intern teilen sich alle drei Funktionen einen generischen `_makeCollapsibleSection(title, items, current, onSelect)`-Helfer (Header-Button togglet eine versteckte Optionsliste); `items: Array<{value, label}>` — `label` ist die Anzeige (z. B. Dateiname ohne Endung, oder der Shape-Name ohne `cluster`-Präfix und mit eingefügten Leerzeichen), `value` das, was an `onSelect` durchgereicht wird. Die zurückgegebene `select(value)`-Funktion aktualisiert nur die Hervorhebung (ohne erneut `onSelect` zu feuern) — `main.js` nutzt sie, um die UI nach einer automatischen Shape-Auswahl visuell nachzuziehen.
 
-`main.js` reicht die Shape-Auswahl über `buildMainFrag(variant)` + `material.fragmentShader`/`needsUpdate = true` durch; die beiden Env-Map-Picker rufen direkt `setClusterEnvMapFile`/`setMetaballEnvMapFile` aus `environment.js` auf.
+`main.js` reicht die Shape-Auswahl über `_getShapeSource(variant)` (gecachte bzw. live gebaute Shader-Quelle, siehe `main.js`) + `material.fragmentShader`/`needsUpdate = true` durch; die beiden Env-Map-Picker rufen direkt `setClusterEnvMapFile`/`setMetaballEnvMapFile` aus `environment.js` auf.
 
 ---
 
@@ -236,7 +236,7 @@ SDF-Komposition **und** deren Auswertung (Normale, Raymarch-Loop) — nicht nur 
 
 ### `shaderChunks/surfaceChunk.js`
 Material-/Lichtantwort (Nachimplementierung von `MeshPhysicalMaterial` für Raymarching) — wie sich Metall/Glas unter Licht + Env-Map verhalten, nicht *welche* Farbe/Form etwas hat. Keine Farbkonstanten mehr (weder eigene noch aus `colorChunk.js` importiert) — alle Farbe kommt aus der gesampelten `envMap`. Nur von `raymarchShader.js` verwendet.
-Voraussetzung: Uniform `envMap` (sampler2D); `_clusterShape(vec3)` (`shapeChunk`) und `clusterBlend`|`metaballBlend`|`burstBlend` (`colorChunk`) in Scope.
+Voraussetzung: Uniform `envMap` (sampler2D); `_clusterShape(vec3)`/`normal(vec3)` (`shapeChunk`) und `clusterBlend`|`metaballBlend`|`burstBlend` (`colorChunk`) in Scope.
 
 Benennung nach **Phase**: `_metaballShading`/`_clusterShading`/`_burstShading` sind austauschbare Implementierungen, je eine pro Phase; `blendShading` mischt alle drei gewichtet nach `metaballBlend`/`clusterBlend`/`burstBlend` (immer 3-Wege, keine Early-Outs). Metaball und Burst sind inzwischen **identisch** — beide delegieren direkt an `_shadeReflective`, ohne Tint-Unterscheidung. Cluster hat eine komplett eigenständige Glas-Implementierung.
 
@@ -245,16 +245,15 @@ Benennung nach **Phase**: `_metaballShading`/`_clusterShading`/`_burstShading` s
 | `blendShading(p, n, rd)` | `p: vec3`, `n: vec3` (norm.), `rd: vec3` (norm.) | 3-Wege-Blend: `_metaballShading·metaballBlend + _clusterShading·clusterBlend + _burstShading·burstBlend` | `vec3` | [0, ∞) HDR |
 | `_metaballShading(n, rd, NdotV)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]` | `= _shadeReflective(n, rd, NdotV)` | `vec3` | HDR |
 | `_burstShading(n, rd, NdotV)` | `n,rd: vec3`, `NdotV: float ∈ [0,1]` | `= _shadeReflective(n, rd, NdotV)` — identisch zu `_metaballShading` | `vec3` | HDR |
-| `_clusterShading(p, n, rd, NdotV)` | `p,n,rd: vec3`, `NdotV: float ∈ [0,1]` | Ignoriert das übergebene, geblendete `n` — berechnet stattdessen `_clusterNormal(p)` (Gradient von `_clusterShape` an `p`) und mischt Fresnel-gewichtet (`_fresnelFactor`, `GLASS_FRESNEL_POWER`) eine reine Spiegelreflexion mit `_clusterRefractedColor(p, cn, rd)` | `vec3` | HDR |
+| `_clusterShading(p, n, rd, NdotV)` | `p,n,rd: vec3`, `NdotV: float ∈ [0,1]` | Verwendet durchgehend das übergebene, geblendete `n`/`NdotV` (genau wie `_metaballShading`/`_burstShading`) — mischt Fresnel-gewichtet (`_fresnelFactor`, `GLASS_FRESNEL_POWER`) eine reine Spiegelreflexion mit `_clusterRefractedColor(p, n, rd)` | `vec3` | HDR |
 
 **Reflektive Helfer** (`_shadeReflective(n, rd, NdotV)`, kein Tint-Parameter mehr): Cook-Torrance-BRDF gegen ein festes, ungefärbtes `METAL_F0 = vec3(0.95)` (statt eines Phasen-Tints) + Env-Map-Sampling via Cone-Sampling (5 Taps, `_envSampleLod`, approximiert rauheitsabhängige Unschärfe ohne PMREM, Spread `ENV_CONE_SPREAD`) gewichtet mit `_fresnelSchlickRoughness(METAL_F0, NdotV, SURFACE_ROUGHNESS)`; `SURFACE_ROUGHNESS = 0.05` (nahezu Spiegel) ist eine einzelne, geteilte Konstante. Kein Rim-Light-Term mehr — ersatzlos entfernt.
 
 **Glas-Helfer** (`GLASS_IOR`, `GLASS_ABSORPTION`, `GLASS_TRACE_STEPS`/`_EPSILON`/`_MAX_DIST`, `GLASS_TINT_COLOR`, `GLASS_FRESNEL_POWER`; `struct GlassExit { vec3 pos; vec3 normal; float dist; }`):
-- `_clusterNormal(p)` — zentrale finite Differenzen auf `_clusterShape` allein (nicht auf `blendShape`).
-- `_clusterTraceInterior(p, rd)` — kurzer (`GLASS_TRACE_STEPS`) Sphere-Trace durch `_clusterShape`s Inneres; liefert Austrittspunkt/-normale/-weglänge als `GlassExit`.
+- `_clusterTraceInterior(p, rd)` — kurzer (`GLASS_TRACE_STEPS`) Sphere-Trace durch `_clusterShape`s Inneres; Austrittsnormale kommt aus `normal(exitPos)` (`shapeChunk.js`, geblendetes Feld), nicht aus einer Cluster-eigenen Gradientenfunktion — liefert Austrittspunkt/-normale/-weglänge als `GlassExit`.
 - `_clusterRefractedColor(p, n, rd)` — bricht `rd` beim Eintritt (`refract(rd, n, 1.0/GLASS_IOR)`), trackt bis zum Austritt, bricht erneut (`GLASS_IOR`), sampelt `envMap` am Austrittsstrahl und mischt exponentiell (Beer-Lambert, `GLASS_ABSORPTION`) mit `GLASS_TINT_COLOR` nach Weglänge.
 
-Bekannte Einschränkung: `p` (der Trefferpunkt aus `raymarch()`) stammt vom Raymarch über `blendShape` (3-Phasen-Summe), nicht über `_clusterShape` allein — liegt also nicht notwendigerweise exakt auf `_clusterShape`s eigener Nullmenge. Die Verwendung von `_clusterNormal(p)` statt der geblendeten Normale umgeht die gröbsten Auswirkungen, löst die Inkonsistenz aber nicht grundsätzlich (siehe `requirements.md` → Offene Punkte #6).
+Frühere Sonderbehandlung entfernt: `_clusterNormal` (eigene, nur an `_clusterShape` gemessene Gradientenfunktion) existiert nicht mehr — sowohl `_clusterShading` als auch `_clusterTraceInterior`s Austrittsnormale nutzen jetzt einheitlich das geblendete `normal()`/`n`. Der Trefferpunkt `p` liegt dadurch weiterhin nicht notwendigerweise exakt auf `_clusterShape`s eigener Nullmenge, das wird aber bewusst in Kauf genommen statt korrigiert (kein offener Punkt mehr).
 
 ---
 
@@ -272,7 +271,7 @@ Voraussetzung: Uniforms `stateTex`, `time`, `clusterBlend`/`metaballBlend`/`burs
 Interne Phasenfunktionen (alle rein — lesen `pos`/`cen`/`orb`, mutieren nichts, geben den rohen Delta zurück):
 - `_metaballPosition(pos, orb) → vec3` — radiale Annäherung an den nächsten Orbit-Punkt (`_phiOnOrbit`) über `ORBIT_SNAP_RATE`, selbstlimitierend (→0 sobald der Ball auf Orbit ist).
 - `_orbitTangentStep(pos, orb) → vec3` — der Winkel-Fortschritt des Orbits selbst pro Tick, unabhängig vom radialen Term, läuft immer mit voller Stärke. Beide Metaball-Terme werden **direkt auf `pos` angewendet** (gewichtet mit `metaballBlend`), nicht in `vel` akkumuliert — `vel` deckt nur wenige % pro Tick ab, eine Akkumulation würde sich aufsummieren statt sich auf die vorgesehene Korrektur einzustellen (besonders der Tangential-Term, der nie gegen 0 geht).
-- `_clusterPosition(pos) → vec3` — **nur noch** organisches Perlin-Rauschen (2D, zwei versetzte Achsenpaare); keine Zielkraft mehr. Eine frühere Version zog jeden Ball über `_clusterTarget(ballIdx)` zu einem Punkt auf einer Helix um die Cluster-Geometrie — diese Funktion und ihr `ballIdx`-Parameter wurden ersatzlos entfernt (siehe `requirements.md` → Phasensystem → Cluster und Offene Punkte #5). Die Ballpositionen haben dadurch aktuell keine erkennbare Beziehung mehr zur sichtbaren `_clusterShape`-Geometrie.
+- `_clusterPosition(pos) → vec3` — organisches Perlin-Rauschen (2D, zwei versetzte Achsenpaare); keine formspezifische Zielkraft. Eine frühere Version zog jeden Ball über `_clusterTarget(ballIdx)` zu einem Punkt auf einer Helix um die Cluster-Geometrie — diese Funktion und ihr `ballIdx`-Parameter wurden ersatzlos entfernt (siehe `requirements.md` → Phasensystem → Cluster). Die generische Ursprungsanziehung (`ORIGIN_PULL`, oben in `blendPosition`) übernimmt stattdessen das Zusammenziehen zur Bildmitte, ohne Bezug zur konkreten Shape-Variante.
 - `_burstPosition(pos, cen) → vec3` — Abstoßung vom Centroid mit exponentiellem Nahbereich (`BURST_FALLOFF`) und konstantem Sockel (`BURST_FORCE_OFFSET`, klingt **nicht** auf 0 ab), Kraftstärke (`BURST_FORCE_BASE`+`BURST_FORCE_SCALE`) aus live gelesenem `motionSpeed`.
 
 ---

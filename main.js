@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { scene, camera, renderer }                                    from './src/renderer.js';
-import { tick, getTime, getWeights, getMotionSpeed }                  from './src/phase.js';
+import { tick, getTime, getWeights, getMotionSpeed, getShapeVariant } from './src/phase.js';
 import { getUniformDefs as simDefs, initSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
 import {
   getUniformDefs as envDefs, initEnvMap, applyStateToMaterial as applyEnvState,
@@ -11,7 +11,7 @@ import { initCamera, updateCamera }                                   from './sr
 import { initInput,  updateInput  }                                   from './src/input.js';
 import { initAudio,  updateAudio  }                                   from './src/audio.js';
 import { mainVert, buildMainFrag }                                    from './shaders/raymarchShader.js';
-import { CLUSTER_SHAPE_VARIANTS }                                     from './shaderChunks/shapeChunk.js';
+import { CLUSTER_SHAPE_VARIANTS, CLUSTER_SHAPE_VARIANTS_EXPERIMENTAL } from './src/constants.js';
 import { initClusterShapeUI, initClusterEnvMapUI, initMetaballEnvMapUI } from './src/ui.js';
 import { makeBloomSetup }                                             from './src/gpuSetup.js';
 import { brightExtractFrag, blurFrag, compositeFrag }                 from './shaders/bloomShader.js';
@@ -45,6 +45,27 @@ const material = new THREE.ShaderMaterial({
 });
 
 
+// ──── HELPER FUNCTIONS - INITIALIZATION ────────────────────────────────────────────
+
+
+const _shapeShaderSources = new Map(CLUSTER_SHAPE_VARIANTS.map(variant => [variant, buildMainFrag(variant)]));
+
+function _getShapeSource(variant) {
+  return _shapeShaderSources.get(variant) ?? buildMainFrag(variant);
+}
+
+function initializeShapeShaders() {
+  const startingVariant = _appliedShapeVariant;
+  for (const variant of CLUSTER_SHAPE_VARIANTS) {
+    material.fragmentShader = _shapeShaderSources.get(variant);
+    material.needsUpdate = true;
+    renderer.render(scene, camera);
+  }
+  material.fragmentShader = _shapeShaderSources.get(startingVariant);
+  material.needsUpdate = true;
+}
+
+
 // ──── SCENE & MODULE INITIALIZATION ───────────────────────────────────────────────
 
 
@@ -55,13 +76,17 @@ initCamera(camera);
 initInput();
 initAudio();
 initSimulation(renderer);
-initClusterShapeUI(CLUSTER_SHAPE_VARIANTS, (variant) => {
-  material.fragmentShader = buildMainFrag(variant);
+let _appliedShapeVariant = CLUSTER_SHAPE_VARIANTS[0];
+
+const shapeUI = initClusterShapeUI(CLUSTER_SHAPE_VARIANTS_EXPERIMENTAL, (variant) => {
+  material.fragmentShader = _getShapeSource(variant);
   material.needsUpdate = true;
+  _appliedShapeVariant = variant;
 });
 initClusterEnvMapUI(ENV_MAP_FILES, CLUSTER_ENV_MAP_DEFAULT, setClusterEnvMapFile);
 initMetaballEnvMapUI(ENV_MAP_FILES, METABALL_ENV_MAP_DEFAULT, setMetaballEnvMapFile);
 const bloom = makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeFrag });
+initializeShapeShaders();
 
 
 // ──── ANIMATION LOOP ──────────────────────────────────────────────────────────────
@@ -74,6 +99,14 @@ function animate() {
   const motionSpeed = getMotionSpeed();
 
   const { clusterWeight: clusterBlend, metaballWeight: metaballBlend, burstWeight: burstBlend } = getWeights();
+
+  const shapeVariant = getShapeVariant();
+  if (shapeVariant !== _appliedShapeVariant) {
+    material.fragmentShader = _getShapeSource(shapeVariant);
+    material.needsUpdate = true;
+    shapeUI.select(shapeVariant);
+    _appliedShapeVariant = shapeVariant;
+  }
 
   stepSimulation();
   applySimState(material);

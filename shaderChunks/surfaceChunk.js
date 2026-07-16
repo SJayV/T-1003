@@ -107,15 +107,6 @@ const float GLASS_FRESNEL_POWER  = 2.5;
 
 struct GlassExit { vec3 pos; vec3 normal; float dist; };
 
-vec3 _clusterNormal(vec3 p) {
-  vec2 e = vec2(0.001, 0.0);
-  return normalize(vec3(
-    _clusterShape(p + e.xyy) - _clusterShape(p - e.xyy),
-    _clusterShape(p + e.yxy) - _clusterShape(p - e.yxy),
-    _clusterShape(p + e.yyx) - _clusterShape(p - e.yyx)
-  ));
-}
-
 GlassExit _clusterTraceInterior(vec3 p, vec3 rd) {
   float t = GLASS_TRACE_EPSILON * 2.0;
   for (int i = 0; i < GLASS_TRACE_STEPS; i++) {
@@ -125,7 +116,7 @@ GlassExit _clusterTraceInterior(vec3 p, vec3 rd) {
     if (t > GLASS_TRACE_MAX_DIST) break;
   }
   vec3 exitPos = p + rd * t;
-  return GlassExit(exitPos, _clusterNormal(exitPos), t);
+  return GlassExit(exitPos, normal(exitPos), t);
 }
 
 vec3 _clusterRefractedColor(vec3 p, vec3 n, vec3 rd) {
@@ -150,12 +141,10 @@ vec3 _metaballShading(vec3 n, vec3 rd, float NdotV) {
 }
 
 vec3 _clusterShading(vec3 p, vec3 n, vec3 rd, float NdotV) {
-  vec3  cn      = _clusterNormal(p);
-  float cNdotV  = max(dot(cn, -rd), 0.0);
-  float fresnel = _fresnelFactor(cNdotV, GLASS_FRESNEL_POWER);
+  float fresnel = _fresnelFactor(NdotV, GLASS_FRESNEL_POWER);
 
-  vec3 reflected = _envSampleLod(reflect(rd, cn));
-  vec3 refracted = _clusterRefractedColor(p, cn, rd);
+  vec3 reflected = _envSampleLod(reflect(rd, n));
+  vec3 refracted = _clusterRefractedColor(p, n, rd);
   return mix(refracted, reflected, fresnel);
 }
 
