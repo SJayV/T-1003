@@ -1,5 +1,5 @@
 import {
-  CLUSTER_CYL_RADIUS, CLUSTER_CYL_HALF_HEIGHT, CLUSTER_CYL_CENTER_X, CLUSTER_CYL_CENTER_Y,
+  CLUSTER_CYL_RADIUS, CLUSTER_CYL_HALF_HEIGHT,
   CLUSTER_SPHERE_RADIUS,
   CLUSTER_BOX_HALF_EXTENT,
   CLUSTER_CYL_ROTATION_Y, CLUSTER_CYL_ROTATION_X,
@@ -10,11 +10,11 @@ import {
   CLUSTER_CAPSULE_ROTATION_Y, CLUSTER_CAPSULE_ROTATION_X,
   CLUSTER_PYRAMID_SCALE, CLUSTER_PYRAMID_HEIGHT,
   CLUSTER_PYRAMID_ROTATION_Y, CLUSTER_PYRAMID_ROTATION_X,
+  CLUSTER_SHAPE_VARIANTS,
   glslFloat,
 } from '../src/constants.js';
 
-export function shapeChunk(clusterVariant = 'clusterCylinderIntersect') {
-  return `
+export const shapeChunk = `
 
 
 // ──── HELPER FUNCTIONS - PRIMITIVES ──────────────────────────────────────────────
@@ -65,6 +65,31 @@ float _sdPyramid(vec3 p, float h) {
 }
 
 
+// ──── HELPER FUNCTIONS - TRANSFORMATIONS ─────────────────────────────────────────
+
+
+vec3 _rotateYX(vec3 p, float ry, float rx) {
+  float cy = cos(ry), sy = sin(ry);
+  float cx = cos(rx), sx = sin(rx);
+  p.xz = mat2(cy, -sy, sy, cy) * p.xz;
+  p.yz = mat2(cx, -sx, sx, cx) * p.yz;
+  return p;
+}
+
+// Adapted from Inigo Quilez's opTwist (iquilezles.org/articles/distfunctions) -- GLSL ES 1.00 has no
+// function types, so this can't take a primitive callback and return primitive(q) like the original.
+// Instead it returns the twisted point for the caller to feed into any primitive fn, e.g.
+// _sdCappedCylinder(_opTwist(p, k), r, h). Also keeps p.y as the height axis (matching every
+// primitive above), unlike iq's q = vec3(m*p.xz, p.y), which swaps the height into q.z.
+vec3 _opTwist(vec3 p, float k) {
+  float c = cos(k * p.y);
+  float s = sin(k * p.y);
+  mat2  m = mat2(c, -s, s, c);
+  vec2  q = m * p.xz;
+  return vec3(q.x, p.y, q.y);
+}
+
+
 // ──── HELPER FUNCTIONS - BALL UNION ──────────────────────────────
 
 
@@ -102,92 +127,61 @@ float _noisyBallUnion(vec3 p, float k) {
 // ──── CLUSTER SHAPE - SDFS ────────────────────────────────────────────────────────────────
 
 
-const vec3 CLUSTER_CENTER = vec3(${glslFloat(CLUSTER_CYL_CENTER_X)}, ${glslFloat(CLUSTER_CYL_CENTER_Y)}, 0.0);
-
-vec3 _rotateYX(vec3 p, float ry, float rx) {
-  float cy = cos(ry), sy = sin(ry);
-  float cx = cos(rx), sx = sin(rx);
-  p.xz = mat2(cy, -sy, sy, cy) * p.xz;
-  p.yz = mat2(cx, -sx, sx, cx) * p.yz;
-  return p;
-}
-
-float _clusterCylinder(vec3 p) {
+float clusterCylinder(vec3 p) {
   const float RADIUS      = ${glslFloat(CLUSTER_CYL_RADIUS)};
   const float HALF_HEIGHT = ${glslFloat(CLUSTER_CYL_HALF_HEIGHT)};
   const float ROTATION_Y  = ${glslFloat(CLUSTER_CYL_ROTATION_Y)};
   const float ROTATION_X  = ${glslFloat(CLUSTER_CYL_ROTATION_X)};
 
-  vec3 pr = _rotateYX(p - CLUSTER_CENTER, ROTATION_Y, ROTATION_X);
+  vec3 pr = _rotateYX(p, ROTATION_Y, ROTATION_X);
   return _sdCappedCylinder(pr, RADIUS, HALF_HEIGHT);
 }
 
-float _clusterSphere(vec3 p) {
+float clusterSphere(vec3 p) {
   const float RADIUS = ${glslFloat(CLUSTER_SPHERE_RADIUS)};
-  return _sdSphere(p - CLUSTER_CENTER, RADIUS);
+  return _sdSphere(p, RADIUS);
 }
 
-float _clusterBox(vec3 p) {
+float clusterBox(vec3 p) {
   const float HALF_EXTENT = ${glslFloat(CLUSTER_BOX_HALF_EXTENT)};
   const float ROTATION_Y  = ${glslFloat(CLUSTER_BOX_ROTATION_Y)};
   const float ROTATION_X  = ${glslFloat(CLUSTER_BOX_ROTATION_X)};
 
-  vec3 pr = _rotateYX(p - CLUSTER_CENTER, ROTATION_Y, ROTATION_X);
+  vec3 pr = _rotateYX(p, ROTATION_Y, ROTATION_X);
   return _sdBox(pr, vec3(HALF_EXTENT));
 }
 
-float _clusterTorus(vec3 p) {
+float clusterTorus(vec3 p) {
   const float RING_RADIUS = ${glslFloat(CLUSTER_TORUS_RING_RADIUS)};
   const float TUBE_RADIUS = ${glslFloat(CLUSTER_TORUS_TUBE_RADIUS)};
   const float ROTATION_Y  = ${glslFloat(CLUSTER_TORUS_ROTATION_Y)};
   const float ROTATION_X  = ${glslFloat(CLUSTER_TORUS_ROTATION_X)};
 
-  vec3 pr = _rotateYX(p - CLUSTER_CENTER, ROTATION_Y, ROTATION_X);
+  vec3 pr = _rotateYX(p, ROTATION_Y, ROTATION_X);
   return _sdTorus(pr, vec2(RING_RADIUS, TUBE_RADIUS));
 }
 
-float _clusterCapsule(vec3 p) {
+float clusterCapsule(vec3 p) {
   const float HALF_LENGTH = ${glslFloat(CLUSTER_CAPSULE_HALF_LENGTH)};
   const float RADIUS      = ${glslFloat(CLUSTER_CAPSULE_RADIUS)};
   const float ROTATION_Y  = ${glslFloat(CLUSTER_CAPSULE_ROTATION_Y)};
   const float ROTATION_X  = ${glslFloat(CLUSTER_CAPSULE_ROTATION_X)};
 
-  vec3 pr = _rotateYX(p - CLUSTER_CENTER, ROTATION_Y, ROTATION_X);
+  vec3 pr = _rotateYX(p, ROTATION_Y, ROTATION_X);
   return _sdCapsule(pr, vec3(0.0, -HALF_LENGTH, 0.0), vec3(0.0, HALF_LENGTH, 0.0), RADIUS);
 }
 
-float _clusterPyramid(vec3 p) {
+float clusterPyramid(vec3 p) {
   const float SCALE       = ${glslFloat(CLUSTER_PYRAMID_SCALE)};
   const float HEIGHT      = ${glslFloat(CLUSTER_PYRAMID_HEIGHT)};
   const float ROTATION_Y  = ${glslFloat(CLUSTER_PYRAMID_ROTATION_Y)};
   const float ROTATION_X  = ${glslFloat(CLUSTER_PYRAMID_ROTATION_X)};
 
-  vec3 pr    = _rotateYX(p - CLUSTER_CENTER, ROTATION_Y, ROTATION_X);
+  vec3 pr    = _rotateYX(p, ROTATION_Y, ROTATION_X);
   vec3 local = pr / SCALE;
   local.y   += HEIGHT * 0.5;
   return _sdPyramid(local, HEIGHT) * SCALE;
 }
-
-
-// ──── CLUSTER SHAPE - VARIANTS ──────────────────────────────────────────────────────
-
-
-const float CLUSTER_SMIN_K = 0.35;
-
-float _clusterIntersect(float shapeD, vec3 p) {
-  float ballD = _noisyBallUnion(p, CLUSTER_SMIN_K);
-  return mix(ballD, max(shapeD, ballD), 1.0 - metaballBlend);
-}
-
-float clusterCylinderFull(vec3 p)      { return _clusterCylinder(p); }
-float clusterCylinderIntersect(vec3 p) { return _clusterIntersect(_clusterCylinder(p), p); }
-float clusterSphereFull(vec3 p)        { return _clusterSphere(p); }
-float clusterSphereIntersect(vec3 p)   { return _clusterIntersect(_clusterSphere(p), p); }
-float clusterBoxFull(vec3 p)           { return _clusterBox(p); }
-float clusterBoxIntersect(vec3 p)      { return _clusterIntersect(_clusterBox(p), p); }
-float clusterTorusFull(vec3 p)         { return _clusterTorus(p); }
-float clusterCapsuleFull(vec3 p)       { return _clusterCapsule(p); }
-float clusterPyramidFull(vec3 p)       { return _clusterPyramid(p); }
 
 
 // ──── PHASE SHAPE ─────────────────────────────────────────────────
@@ -198,7 +192,16 @@ float _metaballShape(vec3 p) {
   return _noisyBallUnion(p, SMIN_K);
 }
 
-float _clusterShape(vec3 p) { return ${clusterVariant}(p); }
+// GLSL ES 1.00 has no function pointers/first-class functions, so a runtime index can't index
+// into an array of function references the way CLUSTER_SHAPE_VARIANTS is indexed in JS -- the
+// mapping is still reused, just one level up: this if-chain is generated from that very array,
+// so the JS-side name list and the GLSL-side dispatch order can never drift apart.
+uniform int clusterShapeIndex;
+
+float _clusterShape(vec3 p) {
+  ${CLUSTER_SHAPE_VARIANTS.map((variant, i) => `if (clusterShapeIndex == ${i}) return ${variant}(p);`).join('\n  ')}
+  return ${CLUSTER_SHAPE_VARIANTS[0]}(p);
+}
 
 float _burstShape(vec3 p) {
   const float SMIN_K = 0.10;
@@ -232,27 +235,4 @@ vec3 normal(vec3 p) {
     _centralDiff(p, e.yyx)
   ));
 }
-
-
-// ──── RAYMARCHING ─────────────────────────────────────────────────────────────────
-
-
-float raymarch(vec3 ro, vec3 rd) {
-  const int   MAX_STEPS    = 90;
-  const float HIT_EPSILON  = 0.001;
-  const float MAX_DISTANCE = 10.0;
-
-  float blendRisk  = clusterBlend * (metaballBlend + burstBlend);
-  float stepSafety = mix(1.0, 0.85, min(blendRisk * 4.0, 1.0));
-
-  float t = 0.0;
-  for (int i = 0; i < MAX_STEPS; i++) {
-    float d = blendShape(ro + rd * t);
-    if (d < HIT_EPSILON) return t;
-    t += d * stepSafety;
-    if (t > MAX_DISTANCE) break;
-  }
-  return -1.0;
-}
 `;
-}

@@ -47,8 +47,6 @@ export const CAMERA_START_POSITION = [-0.4, -0.2, 3.0];
 // ──── CLUSTER SHAPES ─────────────────────────────────────────────────────────────
 
 
-export const CLUSTER_CYL_CENTER_X   = 0.06;
-export const CLUSTER_CYL_CENTER_Y   = 0;
 export const CLUSTER_CYL_RADIUS      = 0.35;
 export const CLUSTER_CYL_HALF_HEIGHT = 0.5;
 export const CLUSTER_CYL_ROTATION_Y = 0.4;
@@ -76,17 +74,10 @@ export const CLUSTER_PYRAMID_ROTATION_Y = 0.6;
 export const CLUSTER_PYRAMID_ROTATION_X = -0.3;
 
 export const CLUSTER_SHAPE_VARIANTS = [
-  'clusterCylinderFull',
-  'clusterSphereFull',
-  'clusterBoxFull',
-  'clusterTorusFull',
-  'clusterCapsuleFull',
-  'clusterPyramidFull',
-];
-
-export const CLUSTER_SHAPE_VARIANTS_EXPERIMENTAL = [
-  ...CLUSTER_SHAPE_VARIANTS,
-  'clusterCylinderIntersect',
-  'clusterSphereIntersect',
-  'clusterBoxIntersect',
+  'clusterCylinder',
+  'clusterSphere',
+  'clusterBox',
+  'clusterTorus',
+  'clusterCapsule',
+  'clusterPyramid',
 ];
