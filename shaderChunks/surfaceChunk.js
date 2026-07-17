@@ -12,12 +12,6 @@ const float SURFACE_ROUGHNESS  = 0.05;
 // ──── HELPER FUNCTIONS - ENVIRONMENT MAPPING ─────────────────────────────────────
 
 
-vec2 _envUV(vec3 dir) {
-  const float PI = 3.14159265;
-  return vec2(atan(dir.z, dir.x) / (2.0 * PI) + 0.5,
-              asin(clamp(dir.y, -1.0, 1.0)) / PI + 0.5);
-}
-
 vec3 _envSample(vec3 dir) {
   vec3 raw = texture2D(envMap, _envUV(dir)).rgb;
   return raw / (raw + 1.0);

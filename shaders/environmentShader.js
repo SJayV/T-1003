@@ -1,6 +1,5 @@
-import { vertexChunk } from '../shaderChunks/vertexChunk.js';
-import { noiseChunk  } from '../shaderChunks/noiseChunk.js';
-import { colorChunk  } from '../shaderChunks/colorChunk.js';
+import { sampleChunk, vertexChunk } from '../shaderChunks/helpersChunk.js';
+import { colorChunk   } from '../shaderChunks/colorChunk.js';
 
 export const environmentVert = vertexChunk;
 
@@ -12,7 +11,7 @@ uniform vec2      resolution;
 uniform sampler2D clusterSourceMap;
 uniform sampler2D metaballSourceMap;
 
-${noiseChunk}
+${sampleChunk}
 ${colorChunk}
 
 void main() {
