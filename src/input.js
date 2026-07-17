@@ -10,7 +10,7 @@ const ENERGY_PIXEL_THRESHOLD = 10;
 const CANVAS_W                = 80;
 const CANVAS_H                = 60;
 
-const FACE_MODEL_URL           = './resources';
+const FACE_MODEL_URL           = './resources/weights';
 const FACE_DETECT_INPUT_SIZE   = 224;
 const FACE_DETECT_SCORE_THRESHOLD = 0.5;
 const GAZE_DETECT_INTERVAL_FRAMES = 4;   

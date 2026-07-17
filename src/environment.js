@@ -72,10 +72,10 @@ export function initializeEnvMap(renderer, clusterFilename = CLUSTER_ENV_MAP_DEF
 
 function _loadSourceMap(uniformKey, filename) {
   _equirectMat.uniforms[uniformKey].value = _loader.load(
-    `resources/${filename}`,
+    `resources/environments/${filename}`,
     (texture) => { texture.flipY = true; texture.needsUpdate = true; },
     undefined,
-    () => console.warn(`envMapFile not found: resources/${filename}`)
+    () => console.warn(`envMapFile not found: resources/environments/${filename}`)
   );
 }
 
