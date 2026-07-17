@@ -1,6 +1,5 @@
 import * as faceapi                       from 'face-api.js';
 import { reportGazeDetected, reportMotionEnergy } from './phase.js';
-import { onInput as cameraInput }         from './camera.js';
 
 // ──── CONSTANTS ───────────────────────────────────────────────────────────────────
 
@@ -71,12 +70,7 @@ export function updateInput() {
   _updateMotionEnergy();
   _updateGaze();
 
-  if (_lastGazeDetected) {
-    reportGazeDetected();
-    cameraInput('presence', {});
-  } else {
-    cameraInput('absence', {});
-  }
+  if (_lastGazeDetected) reportGazeDetected();
 }
 
 

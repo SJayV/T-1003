@@ -12,7 +12,7 @@ const GAZE_DETECT_INTERVAL_FRAMES = 4;
 const GAZE_PERSIST_CYCLES         = 2;
 
 let updateInput;
-let mockReportGazeDetected, mockReportMotionEnergy, mockCameraInput, mockGetImageData;
+let mockReportGazeDetected, mockReportMotionEnergy, mockGetImageData;
 let mockDetectAllFaces;
 let _gazingResult;
 
@@ -56,13 +56,11 @@ beforeEach(async () => {
 
   mockReportGazeDetected = vi.fn();
   mockReportMotionEnergy = vi.fn();
-  mockCameraInput        = vi.fn();
 
   vi.doMock('../src/phase.js', () => ({
     reportGazeDetected: mockReportGazeDetected,
     reportMotionEnergy: mockReportMotionEnergy,
   }));
-  vi.doMock('../src/camera.js', () => ({ onInput: mockCameraInput }));
 
   mockDetectAllFaces = vi.fn().mockReturnValue({ withFaceLandmarks: () => Promise.resolve([]) });
   vi.doMock('face-api.js', () => ({
@@ -130,10 +128,9 @@ describe('updateInput: Motion-Energie (frame-differencing, unabhängig von Gaze)
 });
 
 describe('updateInput: Gaze-Erkennung (face-api.js, zentriert + frontal)', () => {
-  it('kein reportGazeDetected ohne erkanntes Gesicht; "absence" an cameraInput', async () => {
+  it('kein reportGazeDetected ohne erkanntes Gesicht', async () => {
     for (let i = 0; i < GAZE_DETECT_INTERVAL_FRAMES; i++) await tick([]);
     expect(mockReportGazeDetected).not.toHaveBeenCalled();
-    expect(mockCameraInput).toHaveBeenCalledWith('absence', {});
   });
 
   it('kein reportGazeDetected, wenn das Gesicht zentriert, aber nicht frontal ist (zur Seite blickend)', async () => {
@@ -158,14 +155,13 @@ describe('updateInput: Gaze-Erkennung (face-api.js, zentriert + frontal)', () =>
     expect(mockReportGazeDetected).not.toHaveBeenCalled();
   });
 
-  it('reportGazeDetected und "presence" nach genügend aufeinanderfolgenden zentrierten, frontalen Erkennungen', async () => {
+  it('reportGazeDetected nach genügend aufeinanderfolgenden zentrierten, frontalen Erkennungen', async () => {
     const face = faceAt({ centered: true, frontal: true });
     for (let cycle = 0; cycle < GAZE_PERSIST_CYCLES; cycle++) {
       for (let i = 0; i < GAZE_DETECT_INTERVAL_FRAMES; i++) await tick([face]);
     }
     await tick([face]);
     expect(mockReportGazeDetected).toHaveBeenCalled();
-    expect(mockCameraInput).toHaveBeenCalledWith('presence', {});
   });
 
   it('Gesichtserkennung wird gedrosselt (nicht jeden Frame aufgerufen)', async () => {

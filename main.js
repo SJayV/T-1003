@@ -7,11 +7,10 @@ import {
   ENV_MAP_FILES, CLUSTER_ENV_MAP_DEFAULT, METABALL_ENV_MAP_DEFAULT,
   setClusterEnvMapFile, setMetaballEnvMapFile,
 } from './src/environment.js';
-import { initializeCamera, updateCamera }                                   from './src/camera.js';
 import { initializeInput,  updateInput  }                                   from './src/input.js';
 import { initializeAudio, updateAudio }                               from './src/audio.js';
 import { mainVert, buildMainFrag }                                    from './shaders/raymarchShader.js';
-import { CLUSTER_SHAPE_VARIANTS } from './src/constants.js';
+import { CLUSTER_SHAPE_VARIANTS, CAMERA_START_POSITION } from './src/constants.js';
 import { initializeClusterShapeUI, initializeClusterEnvMapUI, initializeMetaballEnvMapUI } from './src/ui.js';
 import { makeBloomSetup }                                             from './src/gpuSetup.js';
 import { brightExtractFrag, blurFrag, compositeFrag }                 from './shaders/bloomShader.js';
@@ -52,7 +51,8 @@ const material = new THREE.ShaderMaterial({
 scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
 
 initializeEnvMap(renderer);
-initializeCamera(camera);
+camera.position.set(...CAMERA_START_POSITION);
+camera.lookAt(0, 0, 0);
 initializeInput();
 initializeAudio();
 initializeSimulation(renderer);
@@ -90,7 +90,6 @@ function animate() {
   applySimState(material);
   applyEnvState(material);
   updateInput();
-  updateCamera(camera);
   updateAudio();
 
   material.uniforms.time.value          = t;
