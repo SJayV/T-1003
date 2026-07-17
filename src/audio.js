@@ -1,59 +1,70 @@
-import { getWeights, getMotionSpeed, onPhaseTransition } from './phase.js';
+import { getWeights, onPhaseTransition } from './phase.js';
 
 // ──── CONSTANTS ───────────────────────────────────────────────────────────────────
 
 
 const MASTER_GAIN = 0.35;
-const DRONE_GAIN   = 1.2;
 
-const DRONE_OSCILLATOR_TYPE = 'triangle';
-const FREQ_SMOOTHING_TIME_CONSTANT = 0.15;
+const SOUNDS_URL    = './resources/sounds';
+const CLUSTER_FILE  = 'cluster.mp3';
+const METABALL_FILE = 'metaball.mp3';
+const BURST_FILE    = 'burst.mp3';
 
-const F_CLUSTER  = 70;
-const F_METABALL_BASE            = 140;
-const F_METABALL_SPREAD_OCTAVES  = 1.5;
-const F_BURST_BASE               = 150;
-const F_BURST_SPREAD_OCTAVES     = 1.0;
-
-const BREATH_RATE_CLUSTER          = 0.25;
-const BREATH_DEPTH_CLUSTER_OCTAVES = 0.03;
-const BREATH_RATE_METABALL          = 0.4;
-const BREATH_DEPTH_METABALL_OCTAVES = 0.04;
-
-const BURST_PING_OSCILLATOR_TYPE = 'triangle';
-const BURST_PING_FREQUENCY       = 520;
-const BURST_PING_FREQUENCY_END   = 120;
-const BURST_PING_GAIN            = 0.8;
-const BURST_PING_ATTACK_TIME     = 0.005;
-const BURST_PING_DECAY_TIME      = 7.2;
+const GAIN_SMOOTHING_TIME_CONSTANT = 0.15;
 
 
 // ──── INITIALIZATION ────────────────────────────────────────────────────────────────
 
 
-let _ctx        = null;
-let _masterGain = null;
-let _droneOsc   = null;
-let _droneGain  = null;
+let _ctx           = null;
+let _masterGain     = null;
+let _clusterGain   = null;
+let _metaballGain  = null;
+let _clusterSource  = null;
+let _metaballSource = null;
+let _burstBuffer    = null;
 
-export function initializeAudio() {
+async function _loadBuffer(ctx, filename) {
+  const response   = await fetch(`${SOUNDS_URL}/${filename}`);
+  const arrayBuffer = await response.arrayBuffer();
+  return ctx.decodeAudioData(arrayBuffer);
+}
+
+function _startLoop(ctx, buffer, destination) {
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.loop   = true;
+  source.connect(destination);
+  source.start();
+  return source;
+}
+
+export async function initializeAudio() {
   _ctx = new AudioContext();
 
   _masterGain = _ctx.createGain();
   _masterGain.gain.value = MASTER_GAIN;
   _masterGain.connect(_ctx.destination);
 
-  _droneGain = _ctx.createGain();
-  _droneGain.gain.value = DRONE_GAIN;
-  _droneGain.connect(_masterGain);
+  _clusterGain = _ctx.createGain();
+  _clusterGain.gain.value = 1;
+  _clusterGain.connect(_masterGain);
 
-  _droneOsc = _ctx.createOscillator();
-  _droneOsc.type = DRONE_OSCILLATOR_TYPE;
-  _droneOsc.frequency.value = F_CLUSTER;
-  _droneOsc.connect(_droneGain);
-  _droneOsc.start();
+  _metaballGain = _ctx.createGain();
+  _metaballGain.gain.value = 0;
+  _metaballGain.connect(_masterGain);
 
   onPhaseTransition(name => { if (name === 'burst') _triggerBurstSound(); });
+
+  const [clusterBuffer, metaballBuffer, burstBuffer] = await Promise.all([
+    _loadBuffer(_ctx, CLUSTER_FILE),
+    _loadBuffer(_ctx, METABALL_FILE),
+    _loadBuffer(_ctx, BURST_FILE),
+  ]);
+
+  _burstBuffer = burstBuffer;
+  _clusterSource  = _startLoop(_ctx, clusterBuffer, _clusterGain);
+  _metaballSource = _startLoop(_ctx, metaballBuffer, _metaballGain);
 }
 
 
@@ -61,15 +72,13 @@ export function initializeAudio() {
 
 
 export function updateAudio() {
-  if (!_ctx) return;
+  if (!_ctx || !_clusterSource || !_metaballSource) return;
 
-  const weights     = getWeights();
-  const motionSpeed = getMotionSpeed();
-  const now         = _ctx.currentTime;
+  const weights = getWeights();
+  const now      = _ctx.currentTime;
 
-  const pulseOctaves = _blendPulse(weights, now);
-  const targetFreq   = _blendFrequency(weights, motionSpeed) * Math.pow(2, pulseOctaves);
-  _droneOsc.frequency.setTargetAtTime(targetFreq, now, FREQ_SMOOTHING_TIME_CONSTANT);
+  _clusterGain.gain.setTargetAtTime(weights.clusterWeight, now, GAIN_SMOOTHING_TIME_CONSTANT);
+  _metaballGain.gain.setTargetAtTime(weights.metaballWeight + weights.burstWeight, now, GAIN_SMOOTHING_TIME_CONSTANT);
 }
 
 
@@ -77,41 +86,10 @@ export function updateAudio() {
 
 
 function _triggerBurstSound() {
-  if (!_ctx) return;
+  if (!_ctx || !_burstBuffer) return;
 
-  const now = _ctx.currentTime;
-
-  const ping = _ctx.createOscillator();
-  ping.type = BURST_PING_OSCILLATOR_TYPE;
-  ping.frequency.setValueAtTime(BURST_PING_FREQUENCY, now);
-  ping.frequency.exponentialRampToValueAtTime(BURST_PING_FREQUENCY_END, now + BURST_PING_DECAY_TIME);
-
-  const envelope = _ctx.createGain();
-  envelope.gain.setValueAtTime(0, now);
-  envelope.gain.linearRampToValueAtTime(BURST_PING_GAIN, now + BURST_PING_ATTACK_TIME);
-  envelope.gain.exponentialRampToValueAtTime(0.0001, now + BURST_PING_ATTACK_TIME + BURST_PING_DECAY_TIME);
-
-  ping.connect(envelope);
-  envelope.connect(_masterGain);
-
-  ping.start(now);
-  ping.stop(now + BURST_PING_ATTACK_TIME + BURST_PING_DECAY_TIME + 0.05);
-}
-
-
-// ──── WEIGHTED BLENDING ───────────────────────────────────────────────────────────
-
-
-function _blendFrequency(weights, motionSpeed) {
-  const metaballFreq = F_METABALL_BASE * Math.pow(2, motionSpeed * F_METABALL_SPREAD_OCTAVES);
-  const burstFreq    = F_BURST_BASE    * Math.pow(2, motionSpeed * F_BURST_SPREAD_OCTAVES);
-
-  return weights.clusterWeight  * F_CLUSTER
-       + weights.metaballWeight * metaballFreq
-       + weights.burstWeight    * burstFreq;
-}
-
-function _blendPulse(weights, t) {
-  return weights.clusterWeight  * BREATH_DEPTH_CLUSTER_OCTAVES  * Math.sin(2 * Math.PI * BREATH_RATE_CLUSTER  * t)
-       + weights.metaballWeight * BREATH_DEPTH_METABALL_OCTAVES * Math.sin(2 * Math.PI * BREATH_RATE_METABALL * t);
+  const source = _ctx.createBufferSource();
+  source.buffer = _burstBuffer;
+  source.connect(_masterGain);
+  source.start();
 }
