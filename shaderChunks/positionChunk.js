@@ -16,13 +16,6 @@ const float ORBIT_OMEGA_MOTION = 9.0;
 
 const float ORIGIN_PULL      = 0.00012;
 
-const float CLUSTER_NOISE_FREQ    = 3.0;
-const float CLUSTER_NOISE_TIME_X1 = 0.18;
-const float CLUSTER_NOISE_TIME_Z1 = 0.14;
-const float CLUSTER_NOISE_TIME_Y2 = 0.15;
-const float CLUSTER_NOISE_TIME_X2 = 0.10;
-const float CLUSTER_NOISE_FORCE   = 0.00015;
-
 const float BURST_DIST_EPSILON = 0.01;
 const float BURST_FALLOFF      = 2.2;
 const float BURST_FORCE_BASE   = 0.0030;
@@ -111,9 +104,7 @@ vec3 _metaballPosition(vec3 pos, vec4 orb) {
 }
 
 vec3 _clusterPosition(vec3 pos) {
-  float np = perlin2D(vec2(pos.x * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_X1, pos.z * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_Z1));
-  float nq = perlin2D(vec2(pos.y * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_Y2, pos.x * CLUSTER_NOISE_FREQ + time * CLUSTER_NOISE_TIME_X2));
-  return vec3(np, nq, np * nq) * CLUSTER_NOISE_FORCE - pos * ORIGIN_PULL;
+  return -pos * ORIGIN_PULL;
 }
 
 vec3 _burstPosition(vec3 pos, vec3 cen) {

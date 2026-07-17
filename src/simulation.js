@@ -5,7 +5,7 @@ import { getWeights, getTime, getMotionSpeed } from './phase.js';
 import { balls, STATE_TEX_W, ORBIT_Z_SQUASH } from './constants.js';
 
 
-// ──── MODULE STATE ────────────────────────────────────────────────────────────────
+// ──── INITIALIZATION ──────────────────────────────
 
 
 let _renderer   = null;
@@ -16,10 +16,6 @@ let _simCamera   = null;
 let _simMat      = null;
 let _initTex     = null;
 let _firstFrame  = true;
-
-
-// ──── INITIALIZATION ──────────────────────────────
-
 
 function _makeTarget() {
   return new THREE.WebGLRenderTarget(STATE_TEX_W, 1, {
