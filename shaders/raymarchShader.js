@@ -1,6 +1,4 @@
-import { vertexChunk   } from '../shaderChunks/vertexChunk.js';
-import { noiseChunk    } from '../shaderChunks/noiseChunk.js';
-import { colorChunk    } from '../shaderChunks/colorChunk.js';
+import { noiseChunk, sampleChunk, vertexChunk } from '../shaderChunks/helpersChunk.js';
 import { shapeChunk    } from '../shaderChunks/shapeChunk.js';
 import { surfaceChunk  } from '../shaderChunks/surfaceChunk.js';
 import { STATE_TEX_W, glslFloat } from '../src/constants.js';
@@ -17,6 +15,9 @@ uniform vec2      resolution;
 uniform vec3      camPos;
 uniform sampler2D envMap;
 uniform sampler2D stateTex;
+uniform float     metaballBlend;
+uniform float     clusterBlend;
+uniform float     burstBlend;
 
 
 // ──── HELPER FUNCTIONS - STATE TEXTURE UNPACKING ─────────────────────────────────
@@ -42,7 +43,7 @@ void loadBalls() {
 }
 
 ${noiseChunk}
-${colorChunk}
+${sampleChunk}
 ${shapeChunk}
 ${surfaceChunk}
 

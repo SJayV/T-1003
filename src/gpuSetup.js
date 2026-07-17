@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { vertexChunk } from '../shaderChunks/vertexChunk.js';
+import { vertexChunk } from '../shaderChunks/helpersChunk.js';
 
 // ──── CONSTANTS ───────────────────────────────────────────────────────────────────
 

@@ -17,7 +17,7 @@ const float ORBIT_OMEGA_MOTION = 9.0;
 const float ORIGIN_PULL      = 0.00012;
 
 const float BURST_DIST_EPSILON = 0.01;
-const float BURST_FALLOFF      = 2.2;
+const float BURST_FALLOFF      = 1.2;
 const float BURST_FORCE_BASE   = 0.0030;
 const float BURST_FORCE_SCALE  = 0.0070;
 const float BURST_FORCE_OFFSET = 0.0062;
@@ -94,20 +94,21 @@ float radiusMod(vec3 c, float r0) {
 }
 
 
-// ──── PHASE POSITION ──────────────────────────────────────────────────────
+// ──── PHASE VELOCITY ──────────────────────────────────────────────────────
 
 
-vec3 _metaballPosition(vec3 pos, vec4 orb) {
-  float phi_near = _phiOnOrbit(pos, orb);
-  vec3  nearPt   = orbitPoint(orb, phi_near);
-  return (nearPt - pos) * ORBIT_SNAP_RATE + _orbitTangentStep(pos, orb);
+vec3 _metaballVelocity(vec3 pos, vec3 vel, vec4 orb) {
+  float phi_near  = _phiOnOrbit(pos, orb);
+  vec3  nearPt    = orbitPoint(orb, phi_near);
+  vec3  targetVel = (nearPt - pos) * ORBIT_SNAP_RATE + _orbitTangentStep(pos, orb);
+  return targetVel - vel;
 }
 
-vec3 _clusterPosition(vec3 pos) {
+vec3 _clusterVelocity(vec3 pos) {
   return -pos * ORIGIN_PULL;
 }
 
-vec3 _burstPosition(vec3 pos, vec3 cen) {
+vec3 _burstVelocity(vec3 pos, vec3 cen) {
   vec3  dir      = pos - cen;
   float dist     = length(dir) + BURST_DIST_EPSILON;
   float peak     = BURST_FORCE_BASE + motionSpeed * BURST_FORCE_SCALE;
@@ -122,11 +123,11 @@ vec3 _burstPosition(vec3 pos, vec3 cen) {
 void blendPosition(inout vec3 pos, inout vec3 vel, vec4 orb) {
   vec3 cen = _computeCentroid();
 
-  vel += _clusterPosition(pos)    * clusterBlend
-       + _burstPosition(pos, cen) * burstBlend;
+  vel += _metaballVelocity(pos, vel, orb) * metaballBlend
+       + _clusterVelocity(pos)            * clusterBlend
+       + _burstVelocity(pos, cen)         * burstBlend;
 
-  pos += vel * (clusterBlend + burstBlend)
-       + _metaballPosition(pos, orb) * metaballBlend;
+  pos += vel;
 
   vel *= VEL_DECAY_META    * metaballBlend
        + VEL_DECAY_CLUSTER * clusterBlend

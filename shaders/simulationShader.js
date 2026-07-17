@@ -1,5 +1,4 @@
-import { vertexChunk   } from '../shaderChunks/vertexChunk.js';
-import { noiseChunk    } from '../shaderChunks/noiseChunk.js';
+import { noiseChunk, vertexChunk } from '../shaderChunks/helpersChunk.js';
 import { positionChunk } from '../shaderChunks/positionChunk.js';
 import { STATE_TEX_W, glslFloat } from '../src/constants.js';
 

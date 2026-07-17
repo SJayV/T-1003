@@ -81,3 +81,38 @@ float dualOctaveNoise(vec2 sampleA, float weightA, vec2 sampleB, float weightB) 
   return perlin2D(sampleA) * weightA + perlin2D(sampleB) * weightB;
 }
 `;
+
+
+// ──── RAYS & SAMPLING ─────────────────────────────────────────────────────────────
+
+
+export const sampleChunk = `
+
+vec2 _dirToUV(vec3 dir) {
+  const float PI = 3.14159265;
+  return vec2(atan(dir.z, dir.x) / (2.0 * PI) + 0.5,
+              asin(clamp(dir.y, -1.0, 1.0)) / PI + 0.5);
+}
+
+vec3 _uvToDir(vec2 uv) {
+  const float PI = 3.14159265;
+  float phi   = (uv.x - 0.5) * 2.0 * PI;
+  float theta = (uv.y - 0.5) * PI;
+  float cosT  = cos(theta);
+  return vec3(cosT * cos(phi), sin(theta), cosT * sin(phi));
+}
+
+vec2 _envUV(vec3 dir) {
+  return _dirToUV(dir);
+}
+`;
+
+
+// ──── VERTEX SHADER ───────────────────────────────────────────────────────────────
+
+
+export const vertexChunk = `
+void main() {
+  gl_Position = vec4(position, 1.0);
+}
+`;
