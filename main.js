@@ -10,7 +10,7 @@ import {
 import { initializeInput,  updateInput  }                                   from './src/input.js';
 import { initializeAudio, updateAudio }                               from './src/audio.js';
 import { mainVert, buildMainFrag }                                    from './shaders/raymarchShader.js';
-import { CLUSTER_SHAPE_VARIANTS, CAMERA_START_POSITION } from './src/constants.js';
+import { CLUSTER_SHAPE_VARIANTS } from './src/constants.js';
 import { initializeClusterShapeUI, initializeClusterEnvMapUI, initializeMetaballEnvMapUI } from './src/ui.js';
 import { makeBloomSetup }                                             from './src/gpuSetup.js';
 import { brightExtractFrag, blurFrag, compositeFrag }                 from './shaders/bloomShader.js';
@@ -22,6 +22,8 @@ const BLOOM_INTENSITY_BASE        = 1.2;
 const BLOOM_INTENSITY_BURST_BOOST = 1.5;
 const BLOOM_THRESHOLD_BASE        = 0.65;
 const BLOOM_THRESHOLD_BURST_DROP  = 0.25;
+
+const CAMERA_START_POSITION = [-0.4, -0.2, 3.0];
 
 
 // ──── INITIALIZATION - MATERIAL & UNIFORMS ───────────────────────────────────────────────────

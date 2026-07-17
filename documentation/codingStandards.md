@@ -90,7 +90,7 @@ Document required preconditions (uniforms, functions) at the top of each chunk s
 
 When the same computation appears more than once, extract it — but the *scope* of the extraction should match the scope of the duplication:
 
-- **Duplicated only within one file** (e.g. `_envSample` used solely by `_envSampleLod` inside `surfaceChunk.js`, or `_rotateYX(p, ry, rx)` in `shapeChunk.js`, factored out once the same two-axis rotation matrix math started appearing in more than one Cluster shape helper): a `_camelCase` internal helper defined in that same file, next to its callers.
+- **Duplicated only within one file** (e.g. `_envSample` used by several callers inside `surfaceChunk.js`, or `_rotateYX(p, ry, rx)` in `shapeChunk.js`, factored out once the same two-axis rotation matrix math started appearing in more than one Cluster shape helper): a `_camelCase` internal helper defined in that same file, next to its callers.
 - **Duplicated across files/chunks** (e.g. `perlin2D`, or `dualOctaveNoise`, the "two weighted perlin octaves" shape shared by `raymarchShader.js` and `environmentShader.js`): a public `camelCase` function added to the relevant shared chunk (`noiseChunk.js` for noise primitives) so every consumer imports the one definition instead of re-deriving it.
 
 Not every superficially similar expression is worth extracting — if two call sites only *look* alike but don't share an invariant that could drift out of sync, and a shared helper would need as many parameters as the inline expression has terms, leaving them inline is the better call.
