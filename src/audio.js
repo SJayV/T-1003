@@ -3,10 +3,10 @@ import { getWeights, onPhaseTransition } from './phase.js';
 // ──── CONSTANTS ───────────────────────────────────────────────────────────────────
 
 
-const SOUNDS_URL       = './resources/sounds';
-const CLUSTER_FILE     = 'cluster.mp3';
-const METABALL_FILE    = 'metaball.mp3';
-const BURST_FILE       = 'burst.mp3';
+const SOUNDS_URL = './resources/sounds';
+const CLUSTER_FILE = 'cluster.mp3';
+const METABALL_FILE = 'metaball.mp3';
+const BURST_FILE = 'burst.mp3';
 const BURST_SOUND_FILE = 'burstSound.mp3';
 
 const MASTER_GAIN = 0.35;
@@ -18,18 +18,18 @@ const CLUSTER_VOLUME = 3.0;
 // ──── INITIALIZATION ────────────────────────────────────────────────────────────────
 
 
-let _ctx           = null;
-let _masterGain     = null;
-let _clusterGain   = null;
-let _metaballGain  = null;
-let _burstGain     = null;
-let _clusterSource  = null;
+let _ctx = null;
+let _masterGain = null;
+let _clusterGain = null;
+let _metaballGain = null;
+let _burstGain = null;
+let _clusterSource = null;
 let _metaballSource = null;
-let _burstSource    = null;
+let _burstSource = null;
 let _burstSoundBuffer = null;
 
 async function _loadBuffer(ctx, filename) {
-  const response   = await fetch(`${SOUNDS_URL}/${filename}`);
+  const response = await fetch(`${SOUNDS_URL}/${filename}`);
   const arrayBuffer = await response.arrayBuffer();
   return ctx.decodeAudioData(arrayBuffer);
 }
@@ -37,7 +37,7 @@ async function _loadBuffer(ctx, filename) {
 function _startLoop(ctx, buffer, destination) {
   const source = ctx.createBufferSource();
   source.buffer = buffer;
-  source.loop   = true;
+  source.loop = true;
   source.connect(destination);
   source.start();
   return source;
@@ -72,9 +72,9 @@ export async function initializeAudio() {
   ]);
 
   _burstSoundBuffer = burstSoundBuffer;
-  _clusterSource  = _startLoop(_ctx, clusterBuffer, _clusterGain);
+  _clusterSource = _startLoop(_ctx, clusterBuffer, _clusterGain);
   _metaballSource = _startLoop(_ctx, metaballBuffer, _metaballGain);
-  _burstSource    = _startLoop(_ctx, burstBuffer, _burstGain);
+  _burstSource = _startLoop(_ctx, burstBuffer, _burstGain);
 }
 
 
@@ -85,7 +85,7 @@ export function updateAudio() {
   if (!_ctx || !_clusterSource || !_metaballSource || !_burstSource) return;
 
   const weights = getWeights();
-  const now      = _ctx.currentTime;
+  const now = _ctx.currentTime;
 
   _clusterGain.gain.setTargetAtTime(CLUSTER_VOLUME * weights.clusterWeight, now, GAIN_SMOOTHING_TIME_CONSTANT);
   _metaballGain.gain.setTargetAtTime(weights.metaballWeight, now, GAIN_SMOOTHING_TIME_CONSTANT);

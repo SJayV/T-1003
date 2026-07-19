@@ -8,7 +8,7 @@ describe('balls — Struktur', () => {
 
   it('alle Felder vorhanden und vom Typ number', () => {
     for (const b of balls) {
-      expect(typeof b.r0).toBe('number');
+      expect(typeof b.initialRadius).toBe('number');
       expect(typeof b.orbitRadius).toBe('number');
       expect(typeof b.orbitSpeed).toBe('number');
       expect(typeof b.orbitInclination).toBe('number');
@@ -17,8 +17,8 @@ describe('balls — Struktur', () => {
 });
 
 describe('balls — Wertebereiche', () => {
-  it('r0 ist positiv', () => {
-    for (const b of balls) expect(b.r0).toBeGreaterThan(0);
+  it('initialRadius ist positiv', () => {
+    for (const b of balls) expect(b.initialRadius).toBeGreaterThan(0);
   });
 
   it('orbitRadius ist positiv', () => {

@@ -1,52 +1,50 @@
-import * as faceapi                       from 'face-api.js';
+import * as faceapi from 'face-api.js';
 import { reportGazeDetected, reportMotionEnergy } from './phase.js';
+
 
 // ──── CONSTANTS ───────────────────────────────────────────────────────────────────
 
 
-const ENERGY_SENSITIVITY     = 20;
+const ENERGY_SENSITIVITY = 20;
 const ENERGY_PIXEL_THRESHOLD = 10;
-const CANVAS_W                = 80;
-const CANVAS_H                = 60;
+const CANVAS_WIDTH = 80;
+const CANVAS_HEIGHT = 60;
 
-const FACE_MODEL_URL           = './resources/weights';
-const FACE_DETECT_INPUT_SIZE   = 224;
+const FACE_MODEL_URL = './resources/weights';
+const FACE_DETECT_INPUT_SIZE = 224;
 const FACE_DETECT_SCORE_THRESHOLD = 0.5;
-const GAZE_DETECT_INTERVAL_FRAMES = 4;   
-const GAZE_PERSIST_CYCLES      = 2;
-const GAZE_CENTER_FRACTION     = 0.30;
-const GAZE_FRONTAL_THRESHOLD   = 0.15;
+const GAZE_DETECT_INTERVAL_FRAMES = 2;
+const GAZE_PERSIST_CYCLES = 2;
+const GAZE_CENTER_FRACTION = 0.35;
+const GAZE_FRONTAL_THRESHOLD = 0.15;
 
 
 // ──── INITIALIZATION ────────────────────────────────────────────────────────────────
 
 
-let _video        = null;
-let _canvas       = null;
-let _ctx          = null;
-let _prevPixels   = null;
-let _ready        = false;
+let _video = null;
+let _context = null;
+let _previousPixels = null;
+let _ready = false;
 
-let _modelsReady        = false;
-let _frameCount          = 0;
-let _detectionInFlight   = false;
-let _gazePersistCount    = 0;
-let _lastGazeDetected    = false;
+let _modelsReady = false;
+let _frameCount = 0;
+let _detectionInFlight = false;
+let _gazePersistCount = 0;
+let _lastGazeDetected = false;
 
+function _initializeCanvas() {
+  const canvas = document.createElement('canvas');
+  canvas.width = CANVAS_WIDTH;
+  canvas.height = CANVAS_HEIGHT;
+  _context = canvas.getContext('2d', { willReadFrequently: true });
+}
 
-// ──── PUBLIC INTERFACE ────────────────────────────────────────────────────────────
-
-
-export function initializeInput() {
-  _canvas = document.createElement('canvas');
-  _canvas.width  = CANVAS_W;
-  _canvas.height = CANVAS_H;
-  _ctx = _canvas.getContext('2d', { willReadFrequently: true });
-
+function _initializeVideoStream() {
   _video = document.createElement('video');
-  _video.autoplay    = true;
+  _video.autoplay = true;
   _video.playsInline = true;
-  _video.muted       = true;
+  _video.muted = true;
 
   navigator.mediaDevices
     .getUserMedia({ video: { facingMode: 'user' } })
@@ -54,18 +52,34 @@ export function initializeInput() {
       _video.srcObject = stream;
       _video.onloadedmetadata = () => { _video.play(); _ready = true; };
     })
-    .catch(err => console.warn('[input] camera unavailable:', err));
+    .catch(error => console.warn('[input] camera unavailable:', error));
+}
 
+function _initializeFaceModels() {
   Promise.all([
     faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_URL),
     faceapi.nets.faceLandmark68TinyNet.loadFromUri(FACE_MODEL_URL),
   ])
     .then(() => { _modelsReady = true; })
-    .catch(err => console.warn('[input] face-api models unavailable:', err));
+    .catch(error => console.warn('[input] face-api models unavailable:', error));
+}
+
+
+// ──── PUBLIC INTERFACE ────────────────────────────────────────────────────────────
+
+
+export function initializeInput() {
+  _initializeCanvas();
+  _initializeVideoStream();
+  _initializeFaceModels();
+}
+
+function _inputIsNotReady() {
+  return !_ready || _video.readyState < 2;
 }
 
 export function updateInput() {
-  if (!_ready || _video.readyState < 2) return;
+  if (_inputIsNotReady()) return;
 
   _updateMotionEnergy();
   _updateGaze();
@@ -77,58 +91,84 @@ export function updateInput() {
 // ──── RAW MOTION ENERGY ─────────────────────────────────────
 
 
+function _updateContext() {
+  _context.save();
+  _context.scale(-1, 1);
+  _context.drawImage(_video, -CANVAS_WIDTH, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  _context.restore();
+}
+
+function _computeDifference(pixels) {
+  let difference = 0;
+  for (let i = 0; i < pixels.length; i += 4) {
+    difference += Math.max(0, Math.abs(pixels[i] - _previousPixels[i]) - ENERGY_PIXEL_THRESHOLD)
+                + Math.max(0, Math.abs(pixels[i+1] - _previousPixels[i+1]) - ENERGY_PIXEL_THRESHOLD)
+                + Math.max(0, Math.abs(pixels[i+2] - _previousPixels[i+2]) - ENERGY_PIXEL_THRESHOLD);
+  }
+  return difference;
+}
+
+function _computeSpeed(difference) {
+  const pixelCount = CANVAS_WIDTH * CANVAS_HEIGHT;
+  return Math.min(1, (difference / (pixelCount * 3 * (255 - ENERGY_PIXEL_THRESHOLD))) * ENERGY_SENSITIVITY);
+}
+
 function _updateMotionEnergy() {
-  _ctx.save();
-  _ctx.scale(-1, 1);
-  _ctx.drawImage(_video, -CANVAS_W, 0, CANVAS_W, CANVAS_H);
-  _ctx.restore();
+  _updateContext();
 
-  const pixels = _ctx.getImageData(0, 0, CANVAS_W, CANVAS_H).data;
+  const pixels = _context.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT).data;
 
-  if (_prevPixels) {
-    let diff = 0;
-    const n = CANVAS_W * CANVAS_H;
-    for (let i = 0; i < pixels.length; i += 4) {
-      diff += Math.max(0, Math.abs(pixels[i]   - _prevPixels[i])   - ENERGY_PIXEL_THRESHOLD)
-            + Math.max(0, Math.abs(pixels[i+1] - _prevPixels[i+1]) - ENERGY_PIXEL_THRESHOLD)
-            + Math.max(0, Math.abs(pixels[i+2] - _prevPixels[i+2]) - ENERGY_PIXEL_THRESHOLD);
-    }
-    const speed = Math.min(1, (diff / (n * 3 * (255 - ENERGY_PIXEL_THRESHOLD))) * ENERGY_SENSITIVITY);
-    reportMotionEnergy(speed);
+  if (_previousPixels) {
+    reportMotionEnergy(_computeSpeed(_computeDifference(pixels)));
   }
 
-  _prevPixels = new Uint8ClampedArray(pixels);
+  _previousPixels = new Uint8ClampedArray(pixels);
 }
 
 
 // ──── GAZE DETECTION ────────────────────────────────────
 
 
-function _updateGaze() {
-  _frameCount++;
-  if (!_modelsReady || _detectionInFlight || _frameCount % GAZE_DETECT_INTERVAL_FRAMES !== 0) return;
+function _gazeDetectionIsNotReady() {
+  return !_modelsReady || _detectionInFlight || _frameCount % GAZE_DETECT_INTERVAL_FRAMES !== 0;
+}
 
-  _detectionInFlight = true;
-  const options = new faceapi.TinyFaceDetectorOptions({
+function _setOptions() {
+  return new faceapi.TinyFaceDetectorOptions({
     inputSize: FACE_DETECT_INPUT_SIZE,
     scoreThreshold: FACE_DETECT_SCORE_THRESHOLD,
   });
+}
+
+function _updateGazePersistence(gazing) {
+  if (gazing) {
+    _gazePersistCount++;
+    if (_gazePersistCount >= GAZE_PERSIST_CYCLES) _lastGazeDetected = true;
+  } else {
+    _gazePersistCount = 0;
+    _lastGazeDetected = false;
+  }
+}
+
+function _detectGaze(options) {
+  _detectionInFlight = true;
 
   faceapi.detectAllFaces(_video, options).withFaceLandmarks(true)
-    .then(detections => {
-      const gazing = detections.some(_isGazing);
-
-      if (gazing) {
-        _gazePersistCount++;
-        if (_gazePersistCount >= GAZE_PERSIST_CYCLES) _lastGazeDetected = true;
-      } else {
-        _gazePersistCount = 0;
-        _lastGazeDetected = false;
-      }
-    })
-    .catch(err => console.warn('[input] face detection failed:', err))
+    .then(detections => _updateGazePersistence(detections.some(_isGazing)))
+    .catch(error => console.warn('[input] face detection failed:', error))
     .finally(() => { _detectionInFlight = false; });
 }
+
+function _updateGaze() {
+  _frameCount++;
+  if (_gazeDetectionIsNotReady()) return;
+
+  _detectGaze(_setOptions());
+}
+
+
+// ──── HELPER FUNCTIONS - GAZE COMPUTATION ──────────────────────────────────────────
+
 
 function _isGazing(detection) {
   return _isCentered(detection) && _isFrontal(detection);
@@ -136,33 +176,33 @@ function _isGazing(detection) {
 
 function _isCentered({ detection }) {
   const { x, y, width, height } = detection.box;
-  const videoW = _video.videoWidth;
-  const videoH = _video.videoHeight;
-  if (!videoW || !videoH) return false;
+  const videoWidth = _video.videoWidth;
+  const videoHeight = _video.videoHeight;
+  if (!videoWidth || !videoHeight) return false;
 
-  const cx = (x + width  / 2) / videoW;
-  const cy = (y + height / 2) / videoH;
+  const centerX = (x + width / 2) / videoWidth;
+  const centerY = (y + height / 2) / videoHeight;
 
-  const nx = 1 - cx - 0.5;
-  const ny = cy - 0.5;
+  const offsetX = 1 - centerX - 0.5;
+  const offsetY = centerY - 0.5;
 
-  return Math.abs(nx) < GAZE_CENTER_FRACTION / 2 && Math.abs(ny) < GAZE_CENTER_FRACTION / 2;
+  return Math.abs(offsetX) < GAZE_CENTER_FRACTION / 2 && Math.abs(offsetY) < GAZE_CENTER_FRACTION / 2;
 }
 
 function _isFrontal({ landmarks }) {
-  const leftEye  = _averagePoint(landmarks.getLeftEye());
+  const leftEye = _averagePoint(landmarks.getLeftEye());
   const rightEye = _averagePoint(landmarks.getRightEye());
-  const nose     = _averagePoint(landmarks.getNose());
+  const nose = _averagePoint(landmarks.getNose());
 
-  const eyeMidX     = (leftEye.x + rightEye.x) / 2;
-  const interEyeDist = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y);
-  if (interEyeDist === 0) return false;
+  const eyeCenterX = (leftEye.x + rightEye.x) / 2;
+  const interEyeDistance = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y);
+  if (interEyeDistance === 0) return false;
 
-  const frontalOffset = (nose.x - eyeMidX) / interEyeDist;
+  const frontalOffset = (nose.x - eyeCenterX) / interEyeDistance;
   return Math.abs(frontalOffset) < GAZE_FRONTAL_THRESHOLD;
 }
 
 function _averagePoint(points) {
-  const sum = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+  const sum = points.reduce((accumulator, point) => ({ x: accumulator.x + point.x, y: accumulator.y + point.y }), { x: 0, y: 0 });
   return { x: sum.x / points.length, y: sum.y / points.length };
 }

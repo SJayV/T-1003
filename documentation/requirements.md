@@ -136,7 +136,8 @@ $\mu_i$ ist nie fallend (`mu = max(mu, t_now)`) und wird bei Aktivierung nicht a
 | `METABALL_MIN_HOLD` | Mindestverweildauer in Metaball, unabhängig von Input |
 | `METABALL_SILENCE_HOLD` | Stille-Dauer (nach `METABALL_MIN_HOLD`) vor Rückkehr zu Cluster |
 | `METABALL_HANDOFF_LEAD` | `0` (nicht `LEAD`) — Metabolls Aktivierung beim Burst-Handoff, siehe unten |
-| `CLUSTER_COOLDOWN` | Sperrzeit nach Burst vor dem nächsten — aktuell `0` (keine Sperre); der Vergleich lebt im Scheduler (`_scheduleTick`), Reaktivierung ist eine reine Konstantenänderung |
+
+Kein Cooldown nach Burst: erkannter Blick löst aus Cluster sofort wieder Burst aus, auch unmittelbar nach einem vollen Zyklus — bewusste Verhaltensänderung ggü. der alten FSM (siehe `tests/phase.test.js`).
 
 **Wichtig — Hold-Dauer ≠ Abklingbreite:** Wie lange eine Phase aktiv gehalten wird, ist eine rein verhaltensbezogene Entscheidung, unabhängig von `σ` (das nur die *visuelle* Anstiegs-/Abklinggeschwindigkeit eines Bumps bestimmt). Die nächste Phase wird immer **exakt** beim Ablauf der aktuellen Hold-Dauer aktiviert — nie erst nach einer zusätzlichen "erst abklingen lassen"-Verzögerung.
 
