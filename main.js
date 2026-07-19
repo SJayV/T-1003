@@ -1,111 +1,76 @@
 import * as THREE from 'three';
-import { scene, camera, renderer }                                    from './src/renderer.js';
-import { tick, getTime, getWeights, getMotionSpeed, getShapeVariant, getShapeIndex } from './src/phase.js';
-import { getUniformDefs as simDefs, initializeSimulation, stepSimulation, applyStateToMaterial as applySimState } from './src/simulation.js';
-import {
-  getUniformDefs as envDefs, initializeEnvMap, applyStateToMaterial as applyEnvState,
-  ENV_MAP_FILES, CLUSTER_ENV_MAP_DEFAULT, METABALL_ENV_MAP_DEFAULT,
-  setClusterEnvMapFile, setMetaballEnvMapFile,
-} from './src/environment.js';
-import { initializeInput,  updateInput  }                                   from './src/input.js';
-import { initializeAudio, updateAudio }                               from './src/audio.js';
-import { mainVert, buildMainFrag }                                    from './shaders/raymarchShader.js';
-import { CLUSTER_SHAPE_VARIANTS } from './src/constants.js';
-import { initializeClusterShapeUI, initializeClusterEnvMapUI, initializeMetaballEnvMapUI } from './src/ui.js';
-import { makeBloomSetup }                                             from './src/gpuSetup.js';
-import { brightExtractFrag, blurFrag, compositeFrag }                 from './shaders/bloomShader.js';
+import { scene, camera, renderer, initializeRenderer, getUniformDefinitions as getRendererUniformDefinitions, applyStateToMaterial as applyRendererState } from './src/renderer.js';
+import { initializeInput, updateInput } from './src/input.js';
+import { initializeAudio, updateAudio } from './src/audio.js';
+import { tick, getWeights, getUniformDefinitions as getPhaseUniformDefinitions, applyStateToMaterial as applyPhaseState } from './src/phase.js';
+import { getUniformDefinitions as getSimulationUniformDefinitions, initializeSimulation, stepSimulation, applyStateToMaterial as applySimulationState } from './src/simulation.js';
+import { getUniformDefinitions as getEnvironmentUniformDefinitions, initializeEnvironmentMap, applyStateToMaterial as applyEnvironmentState } from './src/environment.js';
+import { makeBloomSetup } from './src/gpuSetup.js';
+import { mainVertex, mainFragment } from './shaders/raymarchShader.js';
+import { brightExtractFragment, blurFragment, compositeFragment } from './shaders/bloomShader.js';
+
 
 // ──── CONSTANTS ───────────────────────────────────────────────────────────────────
 
 
-const BLOOM_INTENSITY_BASE        = 1.2;
+const BLOOM_INTENSITY_BASE = 1.2;
 const BLOOM_INTENSITY_BURST_BOOST = 1.5;
-const BLOOM_THRESHOLD_BASE        = 0.65;
-const BLOOM_THRESHOLD_BURST_DROP  = 0.25;
+const BLOOM_THRESHOLD_BASE = 0.65;
+const BLOOM_THRESHOLD_BURST_DROP = 0.25;
 
-const CAMERA_START_POSITION = [-0.4, -0.2, 3.0];
-
-
-// ──── INITIALIZATION - MATERIAL & UNIFORMS ───────────────────────────────────────────────────
-
+const CAMERA_START_POSITION = [0.0, 0.0, 5.0];
 
 const material = new THREE.ShaderMaterial({
   uniforms: {
-    time:          { value: 0 },
-    resolution:    { value: new THREE.Vector2() },
-    camPos:        { value: new THREE.Vector3() },
-    metaballBlend: { value: 1 },
-    clusterBlend:  { value: 0 },
-    burstBlend:    { value: 0 },
-    motionSpeed:   { value: 0 },
-    clusterShapeIndex: { value: 0 },
-    ...simDefs(),
-    ...envDefs(),
+    ...getPhaseUniformDefinitions(),
+    ...getRendererUniformDefinitions(),
+    ...getSimulationUniformDefinitions(),
+    ...getEnvironmentUniformDefinitions(),
   },
-  vertexShader:   mainVert,
-  fragmentShader: buildMainFrag(),
+  vertexShader: mainVertex,
+  fragmentShader: mainFragment,
 });
 
 
-// ──── INITIALIZATION - SCENE & MODULE ───────────────────────────────────────────────
+// ──── INITIALIZATION ───────────────────────────────────────────────
 
 
-scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material));
+const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+mesh.frustumCulled = false;
+scene.add(mesh);
 
-initializeEnvMap(renderer);
 camera.position.set(...CAMERA_START_POSITION);
-camera.lookAt(0, 0, 0);
+initializeRenderer();
+initializeEnvironmentMap(renderer);
 initializeInput();
 initializeAudio();
 initializeSimulation(renderer);
-let _appliedShapeIndex = getShapeIndex();
 
-const shapeUI = initializeClusterShapeUI(CLUSTER_SHAPE_VARIANTS, (variant) => {
-  const idx = CLUSTER_SHAPE_VARIANTS.indexOf(variant);
-  material.uniforms.clusterShapeIndex.value = idx;
-  _appliedShapeIndex = idx;
-});
-initializeClusterEnvMapUI(ENV_MAP_FILES, CLUSTER_ENV_MAP_DEFAULT, setClusterEnvMapFile);
-initializeMetaballEnvMapUI(ENV_MAP_FILES, METABALL_ENV_MAP_DEFAULT, setMetaballEnvMapFile);
-const bloom = makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeFrag });
+const bloom = makeBloomSetup(renderer, { brightExtractFragment, blurFragment, compositeFragment });
 
 
 // ──── ANIMATION LOOP ──────────────────────────────────────────────────────────────
 
 
 function animate() {
-  const t_now = performance.now() / 1000;
-  tick(t_now);
-  const t           = getTime();
-  const motionSpeed = getMotionSpeed();
+  const currentTimeSeconds = performance.now() / 1000;
+  tick(currentTimeSeconds);
 
-  const { clusterWeight: clusterBlend, metaballWeight: metaballBlend, burstWeight: burstBlend } = getWeights();
-
-  const shapeIndex = getShapeIndex();
-  if (shapeIndex !== _appliedShapeIndex) {
-    material.uniforms.clusterShapeIndex.value = shapeIndex;
-    shapeUI.select(getShapeVariant());
-    _appliedShapeIndex = shapeIndex;
-  }
+  const { burstWeight } = getWeights();
 
   stepSimulation();
-  applySimState(material);
-  applyEnvState(material);
+  applyPhaseState(material);
+  applyRendererState(material);
+  applySimulationState(material);
+  applyEnvironmentState(material);
   updateInput();
   updateAudio();
 
-  material.uniforms.time.value          = t;
-  material.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
-  material.uniforms.camPos.value.copy(camera.position);
-  material.uniforms.metaballBlend.value = metaballBlend;
-  material.uniforms.clusterBlend.value  = clusterBlend;
-  material.uniforms.burstBlend.value    = burstBlend;
-  material.uniforms.motionSpeed.value   = motionSpeed;
-
   bloom.render(scene, camera, {
-    intensity: BLOOM_INTENSITY_BASE + burstBlend * BLOOM_INTENSITY_BURST_BOOST,
-    threshold: BLOOM_THRESHOLD_BASE - burstBlend * BLOOM_THRESHOLD_BURST_DROP,
+    intensity: BLOOM_INTENSITY_BASE + burstWeight * BLOOM_INTENSITY_BURST_BOOST,
+    threshold: BLOOM_THRESHOLD_BASE - burstWeight * BLOOM_THRESHOLD_BURST_DROP
   });
+
   requestAnimationFrame(animate);
 }
 

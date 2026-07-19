@@ -4,28 +4,28 @@ import { CLUSTER_SHAPE_VARIANTS, glslFloat } from '../src/constants.js';
 // ──── CONSTANTS ───────────────────────────────────────────────────────────────────
 
 
-const CLUSTER_CYL_RADIUS      = 0.35;
-const CLUSTER_CYL_HALF_HEIGHT = 0.5;
+const CLUSTER_CYL_RADIUS      = 0.5;
+const CLUSTER_CYL_HALF_HEIGHT = 0.7;
 const CLUSTER_CYL_ROTATION_Y  = 0.4;
 const CLUSTER_CYL_ROTATION_X  = 0.5;
 
 const CLUSTER_SPHERE_RADIUS = 0.7;
 
-const CLUSTER_BOX_HALF_EXTENT = 0.46;
+const CLUSTER_BOX_HALF_EXTENT = 0.66;
 const CLUSTER_BOX_ROTATION_Y  = 0.4;
 const CLUSTER_BOX_ROTATION_X  = 0.5;
 
-const CLUSTER_TORUS_RING_RADIUS = 0.5;
+const CLUSTER_TORUS_RING_RADIUS = 0.7;
 const CLUSTER_TORUS_TUBE_RADIUS = 0.18;
 const CLUSTER_TORUS_ROTATION_Y  = -0.3;
 const CLUSTER_TORUS_ROTATION_X  = 0.8;
 
-const CLUSTER_CAPSULE_HALF_LENGTH = 0.35;
-const CLUSTER_CAPSULE_RADIUS      = 0.38;
+const CLUSTER_CAPSULE_HALF_LENGTH = 0.45;
+const CLUSTER_CAPSULE_RADIUS      = 0.56;
 const CLUSTER_CAPSULE_ROTATION_Y  = -0.4;
 const CLUSTER_CAPSULE_ROTATION_X  = 0.5;
 
-const CLUSTER_PYRAMID_SCALE      = 1.1;
+const CLUSTER_PYRAMID_SCALE      = 1.3;
 const CLUSTER_PYRAMID_HEIGHT     = 0.9;
 const CLUSTER_PYRAMID_ROTATION_Y = 0.6;
 const CLUSTER_PYRAMID_ROTATION_X = -0.3;
@@ -208,10 +208,6 @@ float _metaballShape(vec3 p) {
   return _noisyBallUnion(p, SMIN_K);
 }
 
-// GLSL ES 1.00 has no function pointers/first-class functions, so a runtime index can't index
-// into an array of function references the way CLUSTER_SHAPE_VARIANTS is indexed in JS -- the
-// mapping is still reused, just one level up: this if-chain is generated from that very array,
-// so the JS-side name list and the GLSL-side dispatch order can never drift apart.
 uniform int clusterShapeIndex;
 
 float _clusterShape(vec3 p) {

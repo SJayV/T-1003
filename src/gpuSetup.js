@@ -1,12 +1,6 @@
 import * as THREE from 'three';
 import { vertexChunk } from '../shaderChunks/helpersChunk.js';
 
-// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
-
-
-const DEFAULT_BLOOM_INTENSITY = 1.5;
-const DEFAULT_BLOOM_THRESHOLD = 0.6;
-
 
 // ──── FULLSCREEN QUAD FACTORY ──────────────────────────────────────────────────────
 
@@ -22,67 +16,67 @@ export function makeGpuSetup(material) {
 // ──── BLOOM PIPELINE ───────────────────────────────────────────────────────────────
 
 
-export function makeBloomSetup(renderer, { brightExtractFrag, blurFrag, compositeFrag }) {
-  const W  = renderer.domElement.width;
-  const H  = renderer.domElement.height;
+export function makeBloomSetup(renderer, { brightExtractFragment, blurFragment, compositeFragment }) {
+  const W = renderer.domElement.width;
+  const H = renderer.domElement.height;
   const BW = Math.floor(W / 2);
   const BH = Math.floor(H / 2);
 
   function _rt(w, h) {
     return new THREE.WebGLRenderTarget(w, h, {
-      type:        THREE.HalfFloatType,
-      format:      THREE.RGBAFormat,
-      minFilter:   THREE.LinearFilter,
-      magFilter:   THREE.LinearFilter,
+      type: THREE.HalfFloatType,
+      format: THREE.RGBAFormat,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
       depthBuffer: false,
     });
   }
 
-  const mainTarget    = _rt(W,  H );
+  const mainTarget = _rt(W, H);
   const extractTarget = _rt(BW, BH);
-  const blurATarget   = _rt(BW, BH);
-  const blurBTarget   = _rt(BW, BH);
+  const blurATarget = _rt(BW, BH);
+  const blurBTarget = _rt(BW, BH);
 
-  const extractMat = new THREE.ShaderMaterial({
+  const extractMaterial = new THREE.ShaderMaterial({
     uniforms: {
-      mainTex:    { value: null },
+      mainTexture: { value: null },
       resolution: { value: new THREE.Vector2(BW, BH) },
-      threshold:  { value: DEFAULT_BLOOM_THRESHOLD },
+      threshold: { value: 0 },
     },
-    vertexShader:   vertexChunk,
-    fragmentShader: brightExtractFrag,
+    vertexShader: vertexChunk,
+    fragmentShader: brightExtractFragment,
     depthTest: false, depthWrite: false,
   });
 
-  const blurMat = new THREE.ShaderMaterial({
+  const blurMaterial = new THREE.ShaderMaterial({
     uniforms: {
-      blurTex:    { value: null },
+      blurTexture: { value: null },
       resolution: { value: new THREE.Vector2(BW, BH) },
-      blurDir:    { value: new THREE.Vector2(1, 0) },
+      blurDir: { value: new THREE.Vector2(1, 0) },
     },
-    vertexShader:   vertexChunk,
-    fragmentShader: blurFrag,
+    vertexShader: vertexChunk,
+    fragmentShader: blurFragment,
     depthTest: false, depthWrite: false,
   });
 
-  const compositeMat = new THREE.ShaderMaterial({
+  const compositeMaterial = new THREE.ShaderMaterial({
     uniforms: {
-      mainTex:    { value: null },
-      bloomTex:   { value: null },
+      mainTexture: { value: null },
+      bloomTexture: { value: null },
       resolution: { value: new THREE.Vector2(W, H) },
-      intensity:  { value: DEFAULT_BLOOM_INTENSITY },
+      intensity: { value: 0 },
     },
-    vertexShader:   vertexChunk,
-    fragmentShader: compositeFrag,
+    vertexShader: vertexChunk,
+    fragmentShader: compositeFragment,
     depthTest: false, depthWrite: false,
   });
 
-  const { scene: extractScene,   camera: extractCam   } = makeGpuSetup(extractMat);
-  const { scene: blurScene,      camera: blurCam      } = makeGpuSetup(blurMat);
-  const { scene: compositeScene, camera: compositeCam } = makeGpuSetup(compositeMat);
+  const { scene: extractScene, camera: extractCamera } = makeGpuSetup(extractMaterial);
+  const { scene: blurScene, camera: blurCamera } = makeGpuSetup(blurMaterial);
+  const { scene: compositeScene, camera: compositeCamera } = makeGpuSetup(compositeMaterial);
 
   return {
-    render(scene, camera, { intensity = DEFAULT_BLOOM_INTENSITY, threshold = DEFAULT_BLOOM_THRESHOLD } = {}) {
+    render(scene, camera, { intensity, threshold }) {
       const cW = renderer.domElement.width;
       const cH = renderer.domElement.height;
       if (cW !== mainTarget.width || cH !== mainTarget.height) {
@@ -92,35 +86,35 @@ export function makeBloomSetup(renderer, { brightExtractFrag, blurFrag, composit
         extractTarget.setSize(bW, bH);
         blurATarget.setSize(bW, bH);
         blurBTarget.setSize(bW, bH);
-        extractMat.uniforms.resolution.value.set(bW, bH);
-        blurMat.uniforms.resolution.value.set(bW, bH);
-        compositeMat.uniforms.resolution.value.set(cW, cH);
+        extractMaterial.uniforms.resolution.value.set(bW, bH);
+        blurMaterial.uniforms.resolution.value.set(bW, bH);
+        compositeMaterial.uniforms.resolution.value.set(cW, cH);
       }
 
-      extractMat.uniforms.threshold.value   = threshold;
-      compositeMat.uniforms.intensity.value = intensity;
+      extractMaterial.uniforms.threshold.value = threshold;
+      compositeMaterial.uniforms.intensity.value = intensity;
 
       renderer.setRenderTarget(mainTarget);
       renderer.render(scene, camera);
 
-      extractMat.uniforms.mainTex.value = mainTarget.texture;
+      extractMaterial.uniforms.mainTexture.value = mainTarget.texture;
       renderer.setRenderTarget(extractTarget);
-      renderer.render(extractScene, extractCam);
+      renderer.render(extractScene, extractCamera);
 
-      blurMat.uniforms.blurTex.value = extractTarget.texture;
-      blurMat.uniforms.blurDir.value.set(1, 0);
+      blurMaterial.uniforms.blurTexture.value = extractTarget.texture;
+      blurMaterial.uniforms.blurDir.value.set(1, 0);
       renderer.setRenderTarget(blurATarget);
-      renderer.render(blurScene, blurCam);
+      renderer.render(blurScene, blurCamera);
 
-      blurMat.uniforms.blurTex.value = blurATarget.texture;
-      blurMat.uniforms.blurDir.value.set(0, 1);
+      blurMaterial.uniforms.blurTexture.value = blurATarget.texture;
+      blurMaterial.uniforms.blurDir.value.set(0, 1);
       renderer.setRenderTarget(blurBTarget);
-      renderer.render(blurScene, blurCam);
+      renderer.render(blurScene, blurCamera);
 
-      compositeMat.uniforms.mainTex.value  = mainTarget.texture;
-      compositeMat.uniforms.bloomTex.value = blurBTarget.texture;
+      compositeMaterial.uniforms.mainTexture.value = mainTarget.texture;
+      compositeMaterial.uniforms.bloomTexture.value = blurBTarget.texture;
       renderer.setRenderTarget(null);
-      renderer.render(compositeScene, compositeCam);
+      renderer.render(compositeScene, compositeCamera);
     },
   };
 }

@@ -1,9 +1,9 @@
 import { sampleChunk, vertexChunk } from '../shaderChunks/helpersChunk.js';
 import { colorChunk   } from '../shaderChunks/colorChunk.js';
 
-export const environmentVert = vertexChunk;
+export const environmentVertex = vertexChunk;
 
-export const environmentFrag = `
+export const environmentFragment = `
 precision highp float;
 
 uniform float     time;

@@ -74,7 +74,7 @@ describe('Cluster → Burst', () => {
 describe('Burst → Metaball', () => {
   it('metaballWeight übernimmt bald nach Ablauf der Hold-Dauer', () => {
     reportGazeDetected();
-    advance(1.0);
+    advance(1.3);
     expect(getWeights().burstWeight).toBeGreaterThan(0.5);
     advance(2.0);
     expect(getWeights().metaballWeight).toBeGreaterThan(0.5);
@@ -83,7 +83,7 @@ describe('Burst → Metaball', () => {
   it('Burst-Hold-Dauer ist unabhängig von wiederholten Gaze-Meldungen beim Trigger', () => {
     reportGazeDetected();
     reportGazeDetected();
-    advance(1.0);
+    advance(1.3);
     expect(getWeights().burstWeight).toBeGreaterThan(0.5);
   });
 });
@@ -119,7 +119,7 @@ describe('kein Cooldown (bewusste Verhaltensänderung ggü. der alten FSM)', () 
     expect(getWeights().clusterWeight).toBeGreaterThan(0.5);
 
     reportGazeDetected();
-    advance(1.0);
+    advance(1.3);
     expect(getWeights().burstWeight).toBeGreaterThan(0.5);
   });
 });

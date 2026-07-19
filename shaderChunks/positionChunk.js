@@ -10,7 +10,7 @@ const float ORBIT_Z_SQUASH = ${glslFloat(ORBIT_Z_SQUASH)};
 
 
 const float ORBIT_DT           = ${glslFloat(FRAME_TIME_STEP)};
-const float ORBIT_SNAP_RATE    = 0.012;
+const float ORBIT_SNAP_RATE    = 0.004;
 const float ORBIT_OMEGA_SCALE  = 18.0;
 const float ORBIT_OMEGA_MOTION = 9.0;
 
@@ -18,12 +18,11 @@ const float ORIGIN_PULL      = 0.00012;
 
 const float BURST_DIST_EPSILON = 0.01;
 const float BURST_FALLOFF      = 1.2;
-const float BURST_FORCE_BASE   = 0.0030;
-const float BURST_FORCE_SCALE  = 0.0070;
-const float BURST_FORCE_OFFSET = 0.0062;
+const float BURST_FORCE_BASE   = 0.002;
+const float BURST_FORCE_SCALE  = 0.017;
+const float BURST_FORCE_OFFSET = 0.009;
 
-const float VEL_DECAY_META    = 0.99;
-const float VEL_DECAY_CLUSTER = 0.995;
+const float VELOCITY_DECAY    = 0.99;
 
 
 // ──── HELPER FUNCTIONS - ORBITING ───────────────────────────────────
@@ -36,7 +35,7 @@ vec3 _orbitBasisE2(float iSin) {
 
 vec3 _computeCentroid() {
   vec3 c = vec3(0.0);
-  for (int i = 0; i < BALL_COUNT; i++) c += texture2D(stateTex, stateUV(i * 3)).xyz;
+  for (int i = 0; i < BALL_COUNT; i++) c += texture2D(stateTexture, stateUV(i * 3)).xyz;
   return c / float(BALL_COUNT);
 }
 
@@ -79,7 +78,7 @@ void _reflectBounds(inout vec3 pos, inout vec3 vel) {
 // ──── HELPER FUNCTIONS - RADIUS MODULATION ─────────────────────────────────────────
 
 
-float radiusMod(vec3 c, float r0) {
+float radiusMod(vec3 c, float initialRadius) {
   const float NOISE_FREQ         = 2.0;
   const float NOISE_TIME_SCALE_1 = 0.6;
   const float NOISE_TIME_SCALE_2 = 0.5;
@@ -90,7 +89,7 @@ float radiusMod(vec3 c, float r0) {
   float n = dualOctaveNoise(c.xy * NOISE_FREQ + time * NOISE_TIME_SCALE_1, 1.0,
                             c.yz * NOISE_FREQ + time * NOISE_TIME_SCALE_2, 1.0);
   float ampFactor = metaballBlend * AMPLITUDE_METABALL + clusterBlend * AMPLITUDE_CLUSTER + burstBlend * AMPLITUDE_BURST;
-  return r0 + n * 0.5 * ampFactor;
+  return initialRadius + n * 0.5 * ampFactor;
 }
 
 
@@ -129,8 +128,8 @@ void blendPosition(inout vec3 pos, inout vec3 vel, vec4 orb) {
 
   pos += vel;
 
-  vel *= VEL_DECAY_META    * metaballBlend
-       + VEL_DECAY_CLUSTER * clusterBlend
+  vel *= VELOCITY_DECAY    * metaballBlend
+       + VELOCITY_DECAY * clusterBlend
        + 1.0               * burstBlend;
 
   _reflectBounds(pos, vel);

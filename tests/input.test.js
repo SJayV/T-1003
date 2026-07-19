@@ -8,7 +8,7 @@ const CANVAS_H = 60;
 const VIDEO_W  = 640;
 const VIDEO_H  = 480;
 
-const GAZE_DETECT_INTERVAL_FRAMES = 4;
+const GAZE_DETECT_INTERVAL_FRAMES = 2;
 const GAZE_PERSIST_CYCLES         = 2;
 
 let updateInput;

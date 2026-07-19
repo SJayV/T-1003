@@ -20,7 +20,7 @@ Kontinuierliches Gauß-Gewichtssystem. Einzige autoritative Quelle für Phasenge
 | `reportMotionEnergy(speed)` | `speed: float ∈ [0,1]` | Von `input.js` (Frame-Differencing): setzt `_motionSpeed = speed`, unabhängig vom Gaze-Signal — treibt ausschließlich `getMotionSpeed()` | `void` | — |
 | `onPhaseTransition(fn)` | `fn: (name: 'cluster'\|'metaball'\|'burst') → void` | Feuert bei jedem Regime-Wechsel mit dem Namen der Zielphase; einziger Kanal, über den `phase.js` Konsumenten erreicht, ohne selbst welche zu importieren | `void` | — |
 
-Bump-Konstanten (`LEAD`, `CLUSTER_SIGMA`/`METABALL_SIGMA`/`BURST_SIGMA`, `BURST_HOLD`, `METABALL_MIN_HOLD`/`SILENCE_HOLD`, `METABALL_HANDOFF_LEAD`, `CLUSTER_COOLDOWN`) stehen am Kopf der Datei, erklärt — siehe `requirements.md` → Phasensystem für die Bump-Mathematik und die Handoff-Mechanik (Burst→Metaball aktiviert mit kleinerem Lead als sonst, für mehr Überlappung ohne Bursts Haltedauer zu verändern). `BURST_HOLD` ist fix, nicht mit `motionSpeed` skaliert.
+Bump-Konstanten (`LEAD`, `CLUSTER_SIGMA`/`METABALL_SIGMA`/`BURST_SIGMA`, `BURST_HOLD`, `METABALL_MIN_HOLD`/`SILENCE_HOLD`, `METABALL_HANDOFF_LEAD`) stehen am Kopf der Datei, erklärt — siehe `requirements.md` → Phasensystem für die Bump-Mathematik und die Handoff-Mechanik (Burst→Metaball aktiviert mit kleinerem Lead als sonst, für mehr Überlappung ohne Bursts Haltedauer zu verändern). `BURST_HOLD` ist fix, nicht mit `motionSpeed` skaliert.
 
 ---
 

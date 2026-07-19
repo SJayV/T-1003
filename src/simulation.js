@@ -1,58 +1,93 @@
 import * as THREE from 'three';
-import { simulationVert, simulationFrag } from '../shaders/simulationShader.js';
+import { simulationVertex, simulationFragment } from '../shaders/simulationShader.js';
 import { makeGpuSetup } from './gpuSetup.js';
-import { getWeights, getTime, getMotionSpeed } from './phase.js';
-import { balls, STATE_TEX_W, ORBIT_Z_SQUASH } from './constants.js';
+import { getSimulationUniformDefinitions, applySimulationState } from './phase.js';
+import { balls, STATE_TEXTURE_WIDTH, ORBIT_Z_SQUASH } from './constants.js';
 
 
 // ──── INITIALIZATION ──────────────────────────────
 
 
-let _renderer   = null;
-let _readTarget  = null;
+let _renderer = null;
+let _readTarget = null;
 let _writeTarget = null;
-let _simScene    = null;
-let _simCamera   = null;
-let _simMat      = null;
-let _initTex     = null;
-let _firstFrame  = true;
+let _simulationScene = null;
+let _simulationCamera = null;
+let _simulationMaterial = null;
+let _initializationTexture = null;
+let _firstFrame = true;
+
+function _initializeData() {
+  const data = new Float32Array(STATE_TEXTURE_WIDTH * 4);
+  balls.forEach((ball, index) => {
+    const offset = index * 12;
+    const initialPhi = Math.random() * Math.PI * 2;
+    const radius = ball.orbitRadius;
+    const inclinationSin = ball.orbitInclination;
+    const inclinationCos = Math.sqrt(Math.max(0, 1 - inclinationSin * inclinationSin));
+
+    data[offset + 0] = radius * Math.cos(initialPhi);
+    data[offset + 1] = radius * Math.sin(initialPhi) * inclinationSin;
+    data[offset + 2] = radius * Math.sin(initialPhi) * inclinationCos * ORBIT_Z_SQUASH;
+    data[offset + 3] = ball.initialRadius;
+    data[offset + 4] = 0;
+    data[offset + 5] = 0;
+    data[offset + 6] = 0;
+    data[offset + 7] = 0;
+    data[offset + 8] = ball.orbitRadius;
+    data[offset + 9] = ball.orbitSpeed;
+    data[offset + 10] = initialPhi;
+    data[offset + 11] = ball.orbitInclination;
+  });
+  return data;
+}
+
+function _initializeTexture() {
+  const texture = new THREE.DataTexture(_initializeData(), STATE_TEXTURE_WIDTH, 1, THREE.RGBAFormat, THREE.FloatType);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+
+// ──── HELPER FUNCTIONS ─────────────────────────────────────────────────────────────
+
 
 function _makeTarget() {
-  return new THREE.WebGLRenderTarget(STATE_TEX_W, 1, {
-    type:          THREE.FloatType,
-    format:        THREE.RGBAFormat,
-    minFilter:     THREE.NearestFilter,
-    magFilter:     THREE.NearestFilter,
-    wrapS:         THREE.ClampToEdgeWrapping,
-    wrapT:         THREE.ClampToEdgeWrapping,
-    depthBuffer:   false,
+  return new THREE.WebGLRenderTarget(STATE_TEXTURE_WIDTH, 1, {
+    type: THREE.FloatType,
+    format: THREE.RGBAFormat,
+    minFilter: THREE.NearestFilter,
+    magFilter: THREE.NearestFilter,
+    wrapS: THREE.ClampToEdgeWrapping,
+    wrapT: THREE.ClampToEdgeWrapping,
+    depthBuffer: false,
     stencilBuffer: false,
   });
 }
 
-function _initializeData() {
-  const data = new Float32Array(STATE_TEX_W * 4);
-  balls.forEach((b, i) => {
-    const t    = i * 12;
-    const phi0 = Math.random() * Math.PI * 2;
-    const r    = b.orbitRadius;
-    const iSin = b.orbitInclination;
-    const iCos = Math.sqrt(Math.max(0, 1 - iSin * iSin));
-
-    data[t + 0] = r * Math.cos(phi0);
-    data[t + 1] = r * Math.sin(phi0) * iSin;
-    data[t + 2] = r * Math.sin(phi0) * iCos * ORBIT_Z_SQUASH;
-    data[t + 3] = b.r0;
-    data[t + 4] = 0;
-    data[t + 5] = 0;
-    data[t + 6] = 0;
-    data[t + 7] = 0;
-    data[t + 8]  = b.orbitRadius;
-    data[t + 9]  = b.orbitSpeed;
-    data[t + 10] = phi0;
-    data[t + 11] = b.orbitInclination;
+function _makeMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      stateTexture: { value: _initializationTexture },
+      ...getSimulationUniformDefinitions(),
+    },
+    vertexShader: simulationVertex,
+    fragmentShader: simulationFragment,
+    depthTest: false,
+    depthWrite: false,
   });
-  return data;
+}
+
+function _swap() {
+  const temporary = _readTarget;
+  _readTarget = _writeTarget;
+  _writeTarget = temporary;
+}
+
+function _renderToTarget(target) {
+  _renderer.setRenderTarget(target);
+  _renderer.render(_simulationScene, _simulationCamera);
+  _renderer.setRenderTarget(null);
 }
 
 
@@ -60,54 +95,31 @@ function _initializeData() {
 
 
 export function initializeSimulation(renderer) {
-  _renderer   = renderer;
-  _readTarget  = _makeTarget();
+  _renderer = renderer;
+  _readTarget = _makeTarget();
   _writeTarget = _makeTarget();
 
-  _initTex = new THREE.DataTexture(_initializeData(), STATE_TEX_W, 1, THREE.RGBAFormat, THREE.FloatType);
-  _initTex.needsUpdate = true;
+  _initializationTexture = _initializeTexture();
 
-  _simMat = new THREE.ShaderMaterial({
-    uniforms: {
-      stateTex:      { value: _initTex },
-      time:          { value: 0.0 },
-      clusterBlend:  { value: 1.0 },
-      metaballBlend: { value: 0.0 },
-      burstBlend:    { value: 0.0 },
-      motionSpeed:   { value: 0.0 },
-    },
-    vertexShader:   simulationVert,
-    fragmentShader: simulationFrag,
-    depthTest:      false,
-    depthWrite:     false,
-  });
-  ({ scene: _simScene, camera: _simCamera } = makeGpuSetup(_simMat));
+  _simulationMaterial = _makeMaterial();
+  ({ scene: _simulationScene, camera: _simulationCamera } = makeGpuSetup(_simulationMaterial));
   _firstFrame = true;
 }
 
 export function stepSimulation() {
-  const { clusterWeight, metaballWeight, burstWeight } = getWeights();
-  _simMat.uniforms.stateTex.value      = _firstFrame ? _initTex : _readTarget.texture;
-  _simMat.uniforms.clusterBlend.value  = clusterWeight;
-  _simMat.uniforms.metaballBlend.value = metaballWeight;
-  _simMat.uniforms.burstBlend.value    = burstWeight;
-  _simMat.uniforms.time.value          = getTime();
-  _simMat.uniforms.motionSpeed.value   = getMotionSpeed();
+  _simulationMaterial.uniforms.stateTexture.value = _firstFrame ? _initializationTexture : _readTarget.texture;
+  applySimulationState(_simulationMaterial);
 
-  _renderer.setRenderTarget(_writeTarget);
-  _renderer.render(_simScene, _simCamera);
-  _renderer.setRenderTarget(null);
+  _renderToTarget(_writeTarget);
 
-  const tmp    = _readTarget;
-  _readTarget  = _writeTarget;
-  _writeTarget = tmp;
-  _firstFrame  = false;
+  _swap();
+  _firstFrame = false;
 }
 
-export function getUniformDefs() {
-  return { stateTex: { value: null } };
+export function getUniformDefinitions() {
+  return { stateTexture: { value: null } };
 }
 
 export function applyStateToMaterial(material) {
-  if (_readTarget) material.uniforms.stateTex.value = _readTarget.texture;
+  material.uniforms.stateTexture.value = _readTarget.texture;
 }
