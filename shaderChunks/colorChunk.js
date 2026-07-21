@@ -1,51 +1,42 @@
 export const colorChunk = `
 
-uniform float metaballBlend;
-uniform float clusterBlend;
-uniform float burstBlend;
-
-
-// ──── HELPER FUNCTIONS - EQUIRECTANGULAR PROJECTION ─────────────────────────────────────
-
-
-vec3 _sampleEquirect(vec3 dir, sampler2D sourceMap) {
-  return texture2D(sourceMap, _dirToUV(dir)).rgb;
-}
-
 
 // ──── PHASE ENVIRONMENT ─────────────────────────────────────────────────────────────
 
 
-const float CLUSTER_ENV_EXPOSURE = 2.5;
-const float METABALL_ENV_EXPOSURE = 3.0;
+const float ENVIRONMENT_EXPOSURE = 4.0;
 
-vec3 _clusterEnvironment(vec3 dir, sampler2D sourceMap) {
-  return _sampleEquirect(dir, sourceMap) * CLUSTER_ENV_EXPOSURE;
+vec3 _clusterEnvironment(vec3 direction, sampler2D sourceMap) {
+  return _sampleDirectionalTexture(sourceMap, direction) * ENVIRONMENT_EXPOSURE;
 }
 
-vec3 _metaballEnvironment(vec3 rDir, sampler2D sourceMap) {
-  return _sampleEquirect(rDir, sourceMap) * METABALL_ENV_EXPOSURE;
+vec3 _metaballEnvironment(vec3 direction, sampler2D sourceMap) {
+  return _sampleDirectionalTexture(sourceMap, direction) * ENVIRONMENT_EXPOSURE;
 }
 
-vec3 _burstEnvironment(vec3 rDir, sampler2D sourceMap) {
-  return _sampleEquirect(rDir, sourceMap) * METABALL_ENV_EXPOSURE;
+vec3 _burstEnvironment(vec3 direction, sampler2D sourceMap) {
+  return _sampleDirectionalTexture(sourceMap, direction) * ENVIRONMENT_EXPOSURE;
 }
 
 
 // ──── WEIGHTED BLENDING ───────────────────────────────────────────────────────────
 
 
-vec3 blendEnvironment(vec2 uv, sampler2D clusterSourceMap, sampler2D metaballSourceMap) {
+vec3 _rotateAroundYAxis(vec3 direction) {
   const float ROTATION_SPEED = 0.018;
+  float angle = time * ROTATION_SPEED;
 
-  vec3  dir  = _uvToDir(uv);
-  float rot  = time * ROTATION_SPEED;
-  float cosR = cos(rot);
-  float sinR = sin(rot);
-  vec3  rDir = vec3(dir.x * cosR - dir.z * sinR, dir.y, dir.x * sinR + dir.z * cosR);
+  float cosineRotation = cos(angle);
+  float sineRotation = sin(angle);
+  return vec3(direction.x * cosineRotation - direction.z * sineRotation, direction.y, direction.x * sineRotation + direction.z * cosineRotation);
+}
 
-  return _metaballEnvironment(rDir, metaballSourceMap) * metaballBlend
-       + _clusterEnvironment(rDir, clusterSourceMap)   * clusterBlend
-       + _burstEnvironment(rDir, metaballSourceMap)    * burstBlend;
+vec3 blendEnvironment(vec2 uv, sampler2D clusterSourceMap, sampler2D metaballSourceMap) {
+  vec3 direction = _uvToDirection(uv);
+  vec3 rotatedDirection = _rotateAroundYAxis(direction);
+
+  return _metaballEnvironment(rotatedDirection, metaballSourceMap) * metaballBlend
+       + _clusterEnvironment(rotatedDirection, clusterSourceMap) * clusterBlend
+       + _burstEnvironment(rotatedDirection, metaballSourceMap) * burstBlend;
 }
 `;

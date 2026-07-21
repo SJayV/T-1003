@@ -10,7 +10,7 @@ const float ORBIT_Z_SQUASH = ${glslFloat(ORBIT_Z_SQUASH)};
 
 
 const float ORBIT_DT = ${glslFloat(FRAME_TIME_STEP)};
-const float ORBIT_SNAP_RATE = 0.004;
+const float ORBIT_SNAP_RATE = 0.04;
 const float ORBIT_OMEGA_SCALE = 18.0;
 const float ORBIT_OMEGA_MOTION = 9.0;
 
@@ -18,10 +18,9 @@ const float ORIGIN_PULL = 0.00012;
 
 const float BURST_DIST_EPSILON = 0.01;
 const float BURST_FALLOFF = 1.3;
-const float BURST_FORCE_BASE = 0.0002;
-const float BURST_FORCE_SCALE = 0.0002;
-const float BURST_FORCE_OFFSET = 0.0055;
-const float BURST_ORBIT_NUDGE = 0.7;
+const float BURST_FORCE_BASE = 0.005;
+const float BURST_FORCE_SCALE = 0.002;
+const float BURST_FORCE_OFFSET = 0.0045;
 
 const float VELOCITY_DECAY = 0.99;
 
@@ -64,7 +63,7 @@ vec3 _computeCenter() {
 vec3 _burstNudgedDirection(vec3 direction, vec3 position, vec4 orbit) {
   vec3 outwardDirection = normalize(direction);
   vec3 orbitDirection = normalize(_computeOrbitState(position, orbit).tangentStep);
-  return normalize(mix(outwardDirection, orbitDirection, BURST_ORBIT_NUDGE));
+  return normalize(mix(outwardDirection, orbitDirection, 1.0));
 }
 
 float _burstForceMagnitude(float distance) {
@@ -96,7 +95,8 @@ vec3 _burstVelocity(vec3 position, vec3 center, vec4 orbit) {
 // ──── WEIGHTED BLENDING ───────────────────────────────────────────────────────────
 
 
-vec3 _blendVelocity(vec3 position, vec3 velocity, vec3 center, vec4 orbit) {
+vec3 _blendVelocity(vec3 position, vec3 velocity, vec4 orbit) {
+  vec3 center = _computeCenter();
   return velocity + _metaballVelocity(position, velocity, orbit) * metaballBlend
                    + _clusterVelocity(position) * clusterBlend
                    + _burstVelocity(position, center, orbit) * burstBlend;
@@ -107,8 +107,7 @@ void _decayVelocity(inout vec3 velocity) {
 }
 
 void blendPosition(inout vec3 position, inout vec3 velocity, vec4 orbit) {
-  vec3 center = _computeCenter();
-  velocity = _blendVelocity(position, velocity, center, orbit);
+  velocity = _blendVelocity(position, velocity, orbit);
   position += velocity;
   _decayVelocity(velocity);
 }
