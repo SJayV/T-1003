@@ -11,7 +11,7 @@ const float SURFACE_ROUGHNESS = 0.05;
 
 
 vec3 _environmentSample(vec3 direction) {
-  vec3 raw = texture2D(environmentMap, _envUV(direction)).rgb;
+  vec3 raw = _sampleDirectionalTexture(environmentMap, direction);
   return raw / (raw + 1.0);
 }
 
@@ -22,7 +22,7 @@ vec3 _environmentSample(vec3 direction) {
 float _distributionGGX(float normalDotHalf) {
   const float ALPHA_SQUARED = SURFACE_ROUGHNESS * SURFACE_ROUGHNESS * SURFACE_ROUGHNESS * SURFACE_ROUGHNESS;
   float denominator = normalDotHalf * normalDotHalf * (ALPHA_SQUARED - 1.0) + 1.0;
-  return ALPHA_SQUARED / (3.14159265 * denominator * denominator);
+  return ALPHA_SQUARED / (PI * denominator * denominator);
 }
 
 float _geometrySchlickGGX(float normalDot) {

@@ -1,84 +1,39 @@
 export const noiseChunk = `
 
 
-// ──── 2D PERLIN NOISE ─────────────────────────────────────────────────────────────
-
-
-vec2  _fade(vec2 t)  { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
-float _hash1(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
-vec2  _grad(vec2 p)  { float h = _hash1(p) * 6.2831853; return vec2(cos(h), sin(h)); }
-
-float perlin2D(vec2 p) {
-  vec2 i = floor(p); vec2 f = fract(p); vec2 u = _fade(f);
-  float a = dot(_grad(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0));
-  float b = dot(_grad(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));
-  float c = dot(_grad(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));
-  float d = dot(_grad(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));
-  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-
-
 // ──── 3D PERLIN NOISE ─────────────────────────────────────────────────────────────
 
 
-vec3 _fade3(vec3 t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+vec3 _fade3(vec3 fractionalPosition) {
+  return fractionalPosition * fractionalPosition * fractionalPosition * (fractionalPosition * (fractionalPosition * 6.0 - 15.0) + 10.0);
+}
 
-vec3 _grad3(vec3 p) {
-  vec3 h = fract(sin(vec3(
-    dot(p, vec3(127.1, 311.7,  74.7)),
-    dot(p, vec3(269.5, 183.3, 246.1)),
-    dot(p, vec3(113.5, 271.9, 124.6))
+vec3 _gradient3(vec3 cellCorner) {
+  vec3 hash = fract(sin(vec3(
+    dot(cellCorner, vec3(127.1, 311.7,  74.7)),
+    dot(cellCorner, vec3(269.5, 183.3, 246.1)),
+    dot(cellCorner, vec3(113.5, 271.9, 124.6))
   )) * 43758.5453);
-  return normalize(h * 2.0 - 1.0);
+  return normalize(hash * 2.0 - 1.0);
 }
 
-float perlin3D(vec3 p) {
-  vec3 i  = floor(p);
-  vec3 fr = fract(p);
-  vec3 u  = _fade3(fr);
-  float v000 = dot(_grad3(i + vec3(0,0,0)), fr - vec3(0,0,0));
-  float v100 = dot(_grad3(i + vec3(1,0,0)), fr - vec3(1,0,0));
-  float v010 = dot(_grad3(i + vec3(0,1,0)), fr - vec3(0,1,0));
-  float v110 = dot(_grad3(i + vec3(1,1,0)), fr - vec3(1,1,0));
-  float v001 = dot(_grad3(i + vec3(0,0,1)), fr - vec3(0,0,1));
-  float v101 = dot(_grad3(i + vec3(1,0,1)), fr - vec3(1,0,1));
-  float v011 = dot(_grad3(i + vec3(0,1,1)), fr - vec3(0,1,1));
-  float v111 = dot(_grad3(i + vec3(1,1,1)), fr - vec3(1,1,1));
+float perlin3D(vec3 position) {
+  vec3 cell = floor(position);
+  vec3 fractionalPosition = fract(position);
+  vec3 fade = _fade3(fractionalPosition);
+  float corner000 = dot(_gradient3(cell + vec3(0, 0, 0)), fractionalPosition - vec3(0, 0, 0));
+  float corner100 = dot(_gradient3(cell + vec3(1, 0, 0)), fractionalPosition - vec3(1, 0, 0));
+  float corner010 = dot(_gradient3(cell + vec3(0, 1, 0)), fractionalPosition - vec3(0, 1, 0));
+  float corner110 = dot(_gradient3(cell + vec3(1, 1, 0)), fractionalPosition - vec3(1, 1, 0));
+  float corner001 = dot(_gradient3(cell + vec3(0, 0, 1)), fractionalPosition - vec3(0, 0, 1));
+  float corner101 = dot(_gradient3(cell + vec3(1, 0, 1)), fractionalPosition - vec3(1, 0, 1));
+  float corner011 = dot(_gradient3(cell + vec3(0, 1, 1)), fractionalPosition - vec3(0, 1, 1));
+  float corner111 = dot(_gradient3(cell + vec3(1, 1, 1)), fractionalPosition - vec3(1, 1, 1));
   return mix(
-    mix(mix(v000, v100, u.x), mix(v010, v110, u.x), u.y),
-    mix(mix(v001, v101, u.x), mix(v011, v111, u.x), u.y),
-    u.z
+    mix(mix(corner000, corner100, fade.x), mix(corner010, corner110, fade.x), fade.y),
+    mix(mix(corner001, corner101, fade.x), mix(corner011, corner111, fade.x), fade.y),
+    fade.z
   );
-}
-
-
-// ──── WORLEY NOISE ────────────────────────────────────────────────────────────────
-
-
-vec2 _hash2(vec2 p) {
-  p = fract(p * vec2(127.1, 311.7));
-  p += dot(p, p + 19.19);
-  return fract(vec2(p.x * p.y, p.x + p.y));
-}
-
-float worley2D(vec2 p) {
-  vec2  cell = floor(p);
-  float minD = 1e10;
-  for (int y = -1; y <= 1; y++) {
-    for (int x = -1; x <= 1; x++) {
-      vec2 nb = cell + vec2(float(x), float(y));
-      minD = min(minD, length(p - nb - _hash2(nb)));
-    }
-  }
-  return minD;
-}
-
-
-// ──── COMBINED NOISE ──────────────────────────────────────────────────────────────
-
-
-float dualOctaveNoise(vec2 sampleA, float weightA, vec2 sampleB, float weightB) {
-  return perlin2D(sampleA) * weightA + perlin2D(sampleB) * weightB;
 }
 `;
 
@@ -87,23 +42,22 @@ float dualOctaveNoise(vec2 sampleA, float weightA, vec2 sampleB, float weightB) 
 
 
 export const sampleChunk = `
+const float PI = 3.14159265;
 
-vec2 _dirToUV(vec3 dir) {
-  const float PI = 3.14159265;
-  return vec2(atan(dir.z, dir.x) / (2.0 * PI) + 0.5,
-              asin(clamp(dir.y, -1.0, 1.0)) / PI + 0.5);
+vec2 _directionToUV(vec3 direction) {
+  return vec2(atan(direction.z, direction.x) / (2.0 * PI) + 0.5,
+              asin(clamp(direction.y, -1.0, 1.0)) / PI + 0.5);
 }
 
-vec3 _uvToDir(vec2 uv) {
-  const float PI = 3.14159265;
-  float phi   = (uv.x - 0.5) * 2.0 * PI;
+vec3 _uvToDirection(vec2 uv) {
+  float phi = (uv.x - 0.5) * 2.0 * PI;
   float theta = (uv.y - 0.5) * PI;
-  float cosT  = cos(theta);
-  return vec3(cosT * cos(phi), sin(theta), cosT * sin(phi));
+  float cosineTheta = cos(theta);
+  return vec3(cosineTheta * cos(phi), sin(theta), cosineTheta * sin(phi));
 }
 
-vec2 _envUV(vec3 dir) {
-  return _dirToUV(dir);
+vec3 _sampleDirectionalTexture(sampler2D map, vec3 direction) {
+  return texture2D(map, _directionToUV(direction)).rgb;
 }
 `;
 

@@ -6,11 +6,6 @@ export const shapeChunk = `
 // ──── HELPER FUNCTIONS - PRIMITIVES ──────────────────────────────────────────────
 
 
-float _smoothMin(float distanceA, float distanceB, float smoothing) {
-  float blend = clamp(0.5 + 0.5 * (distanceB - distanceA) / smoothing, 0.0, 1.0);
-  return mix(distanceB, distanceA, blend) - smoothing * blend * (1.0 - blend);
-}
-
 float _signedDistanceCylinder(vec3 point, float radius, float halfHeight) {
   vec2 outsideDistance = abs(vec2(length(point.xz), point.y)) - vec2(radius, halfHeight);
   return min(max(outsideDistance.x, outsideDistance.y), 0.0) + length(max(outsideDistance, 0.0));
@@ -68,6 +63,11 @@ vec3 _rotateYX(vec3 point, float rotationY, float rotationX) {
 
 // ──── HELPER FUNCTIONS - BALL UNION ──────────────────────────────
 
+
+float _smoothMin(float distanceA, float distanceB, float smoothing) {
+  float blend = clamp(0.5 + 0.5 * (distanceB - distanceA) / smoothing, 0.0, 1.0);
+  return mix(distanceB, distanceA, blend) - smoothing * blend * (1.0 - blend);
+}
 
 float _foldBall(float accumulatedDistance, vec3 point, vec3 center, float radius, float smoothing) {
   return _smoothMin(accumulatedDistance, _signedDistanceSphere(point - center, radius), smoothing);

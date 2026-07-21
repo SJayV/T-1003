@@ -1,4 +1,4 @@
-import { noiseChunk, vertexChunk } from '../shaderChunks/helpersChunk.js';
+import { vertexChunk } from '../shaderChunks/helpersChunk.js';
 import { positionChunk } from '../shaderChunks/positionChunk.js';
 import { STATE_TEXTURE_WIDTH, TEXELS_PER_BALL, glslFloat } from '../src/constants.js';
 
@@ -29,7 +29,6 @@ float readInitialRadius(int ball) { return texture2D(stateTexture, stateUV(ball 
 vec3 readVelocity(int ball) { return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL + 1)).xyz; }
 vec4 readOrbit(int ball) { return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL + 2)); }
 
-${noiseChunk}
 ${positionChunk}
 
 
