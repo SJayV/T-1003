@@ -62,6 +62,16 @@ vec3 _sampleDirectionalTexture(sampler2D map, vec3 direction) {
 `;
 
 
+// ──── SCREEN SPACE ────────────────────────────────────────────────────────────────
+
+
+export const screenChunk = `
+vec2 _screenUV() {
+  return gl_FragCoord.xy / resolution;
+}
+`;
+
+
 // ──── VERTEX SHADER ───────────────────────────────────────────────────────────────
 
 

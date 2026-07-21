@@ -1,4 +1,4 @@
-import { sampleChunk, vertexChunk } from '../shaderChunks/helpersChunk.js';
+import { sampleChunk, screenChunk, vertexChunk } from '../shaderChunks/helpersChunk.js';
 import { colorChunk } from '../shaderChunks/colorChunk.js';
 
 export const environmentVertex = vertexChunk;
@@ -15,10 +15,11 @@ uniform float clusterBlend;
 uniform float burstBlend;
 
 ${sampleChunk}
+${screenChunk}
 ${colorChunk}
 
 void main() {
-  vec2 uv = gl_FragCoord.xy / resolution;
+  vec2 uv = _screenUV();
   gl_FragColor = vec4(blendEnvironment(uv, clusterSourceMap, metaballSourceMap), 1.0);
 }
 `;
