@@ -74,18 +74,18 @@ float _foldBall(float accumulatedDistance, vec3 point, vec3 center, float radius
 }
 
 float _ballUnion(vec3 point, float smoothing) {
-  float distance = _signedDistanceSphere(point - gC0, gRad0);
-  distance = _foldBall(distance, point, gC1, gRad1, smoothing);
-  distance = _foldBall(distance, point, gC2, gRad2, smoothing);
-  distance = _foldBall(distance, point, gC3, gRad3, smoothing);
-  distance = _foldBall(distance, point, gC4, gRad4, smoothing);
-  distance = _foldBall(distance, point, gC5, gRad5, smoothing);
-  distance = _foldBall(distance, point, gC6, gRad6, smoothing);
-  distance = _foldBall(distance, point, gC7, gRad7, smoothing);
-  distance = _foldBall(distance, point, gC8, gRad8, smoothing);
-  distance = _foldBall(distance, point, gC9, gRad9, smoothing);
-  distance = _foldBall(distance, point, gC10, gRad10, smoothing);
-  distance = _foldBall(distance, point, gC11, gRad11, smoothing);
+  float distance = _signedDistanceSphere(point - _ballCenter0, _ballRadius0);
+  distance = _foldBall(distance, point, _ballCenter1, _ballRadius1, smoothing);
+  distance = _foldBall(distance, point, _ballCenter2, _ballRadius2, smoothing);
+  distance = _foldBall(distance, point, _ballCenter3, _ballRadius3, smoothing);
+  distance = _foldBall(distance, point, _ballCenter4, _ballRadius4, smoothing);
+  distance = _foldBall(distance, point, _ballCenter5, _ballRadius5, smoothing);
+  distance = _foldBall(distance, point, _ballCenter6, _ballRadius6, smoothing);
+  distance = _foldBall(distance, point, _ballCenter7, _ballRadius7, smoothing);
+  distance = _foldBall(distance, point, _ballCenter8, _ballRadius8, smoothing);
+  distance = _foldBall(distance, point, _ballCenter9, _ballRadius9, smoothing);
+  distance = _foldBall(distance, point, _ballCenter10, _ballRadius10, smoothing);
+  distance = _foldBall(distance, point, _ballCenter11, _ballRadius11, smoothing);
   return distance;
 }
 

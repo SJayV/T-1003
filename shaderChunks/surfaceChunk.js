@@ -73,14 +73,14 @@ struct GlassExit { vec3 position; vec3 normal; float distance; };
 
 GlassExit _clusterTraceInterior(vec3 point, vec3 rayDirection) {
   const int GLASS_TRACE_STEPS = 20;
-  const float GLASS_TRACE_MAX_DISTANCE = 3.0;
+  const float GLASS_TRACE_MAXIMUM_DISTANCE = 3.0;
 
   float accumulatedDistance = GLASS_TRACE_EPSILON * 2.0;
   for (int stepIndex = 0; stepIndex < GLASS_TRACE_STEPS; stepIndex++) {
     float signedDistance = _clusterShape(point + rayDirection * accumulatedDistance);
     if (signedDistance > 0.0) break;
     accumulatedDistance += max(-signedDistance, GLASS_TRACE_EPSILON);
-    if (accumulatedDistance > GLASS_TRACE_MAX_DISTANCE) break;
+    if (accumulatedDistance > GLASS_TRACE_MAXIMUM_DISTANCE) break;
   }
   vec3 exitPosition = point + rayDirection * accumulatedDistance;
   return GlassExit(exitPosition, normal(exitPosition), accumulatedDistance);
