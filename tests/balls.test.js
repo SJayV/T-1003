@@ -1,38 +1,38 @@
 import { describe, it, expect } from 'vitest';
-import { balls } from '../src/constants.js';
+import { BALLS } from '../src/constants.js';
 
 describe('balls — Struktur', () => {
   it('enthält genau 12 Einträge', () => {
-    expect(balls).toHaveLength(12);
+    expect(BALLS).toHaveLength(12);
   });
 
   it('alle Felder vorhanden und vom Typ number', () => {
-    for (const b of balls) {
-      expect(typeof b.initialRadius).toBe('number');
-      expect(typeof b.orbitRadius).toBe('number');
-      expect(typeof b.orbitSpeed).toBe('number');
-      expect(typeof b.orbitInclination).toBe('number');
+    for (const ball of BALLS) {
+      expect(typeof ball.initialRadius).toBe('number');
+      expect(typeof ball.orbitRadius).toBe('number');
+      expect(typeof ball.orbitSpeed).toBe('number');
+      expect(typeof ball.orbitInclination).toBe('number');
     }
   });
 });
 
 describe('balls — Wertebereiche', () => {
   it('initialRadius ist positiv', () => {
-    for (const b of balls) expect(b.initialRadius).toBeGreaterThan(0);
+    for (const ball of BALLS) expect(ball.initialRadius).toBeGreaterThan(0);
   });
 
   it('orbitRadius ist positiv', () => {
-    for (const b of balls) expect(b.orbitRadius).toBeGreaterThan(0);
+    for (const ball of BALLS) expect(ball.orbitRadius).toBeGreaterThan(0);
   });
 
   it('orbitSpeed ist positiv', () => {
-    for (const b of balls) expect(b.orbitSpeed).toBeGreaterThan(0);
+    for (const ball of BALLS) expect(ball.orbitSpeed).toBeGreaterThan(0);
   });
 
   it('orbitInclination liegt im Sinus-Wertebereich [-1, 1]', () => {
-    for (const b of balls) {
-      expect(b.orbitInclination).toBeGreaterThanOrEqual(-1);
-      expect(b.orbitInclination).toBeLessThanOrEqual(1);
+    for (const ball of BALLS) {
+      expect(ball.orbitInclination).toBeGreaterThanOrEqual(-1);
+      expect(ball.orbitInclination).toBeLessThanOrEqual(1);
     }
   });
 });

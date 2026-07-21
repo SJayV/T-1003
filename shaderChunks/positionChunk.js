@@ -17,10 +17,10 @@ const float ORBIT_OMEGA_MOTION = 9.0;
 const float ORIGIN_PULL      = 0.00012;
 
 const float BURST_DIST_EPSILON = 0.01;
-const float BURST_FALLOFF      = 1.2;
-const float BURST_FORCE_BASE   = 0.002;
-const float BURST_FORCE_SCALE  = 0.017;
-const float BURST_FORCE_OFFSET = 0.009;
+const float BURST_FALLOFF      = 0.8;
+const float BURST_FORCE_BASE   = 0.0004;
+const float BURST_FORCE_SCALE  = 0.004;
+const float BURST_FORCE_OFFSET = 0.0075;
 
 const float VELOCITY_DECAY    = 0.99;
 

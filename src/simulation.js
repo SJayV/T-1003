@@ -2,7 +2,14 @@ import * as THREE from 'three';
 import { simulationVertex, simulationFragment } from '../shaders/simulationShader.js';
 import { makeGpuSetup } from './gpuSetup.js';
 import { getSimulationUniformDefinitions, applySimulationState } from './phase.js';
-import { balls, STATE_TEXTURE_WIDTH, ORBIT_Z_SQUASH } from './constants.js';
+import { BALLS, TEXELS_PER_BALL, STATE_TEXTURE_WIDTH, ORBIT_Z_SQUASH } from './constants.js';
+
+
+// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
+
+
+const FLOATS_PER_TEXEL = 4;
+const FLOATS_PER_BALL = TEXELS_PER_BALL * FLOATS_PER_TEXEL;
 
 
 // ──── INITIALIZATION ──────────────────────────────
@@ -18,9 +25,9 @@ let _initializationTexture = null;
 let _firstFrame = true;
 
 function _initializeData() {
-  const data = new Float32Array(STATE_TEXTURE_WIDTH * 4);
-  balls.forEach((ball, index) => {
-    const offset = index * 12;
+  const data = new Float32Array(STATE_TEXTURE_WIDTH * FLOATS_PER_TEXEL);
+  BALLS.forEach((ball, index) => {
+    const offset = index * FLOATS_PER_BALL;
     const initialPhi = Math.random() * Math.PI * 2;
     const radius = ball.orbitRadius;
     const inclinationSin = ball.orbitInclination;

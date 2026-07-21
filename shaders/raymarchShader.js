@@ -12,7 +12,7 @@ precision highp sampler2D;
 uniform float     time;
 uniform vec2      resolution;
 uniform vec3      cameraWorldPosition;
-uniform sampler2D envMap;
+uniform sampler2D environmentMap;
 uniform sampler2D stateTexture;
 uniform float     metaballBlend;
 uniform float     clusterBlend;
