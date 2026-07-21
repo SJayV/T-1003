@@ -24,10 +24,10 @@ export const blurFragment = `
 precision highp float;
 uniform sampler2D blurTexture;
 uniform vec2      resolution;
-uniform vec2      blurDir;
+uniform vec2      blurDirection;
 void main() {
   vec2 uv   = gl_FragCoord.xy / resolution;
-  vec2 step = blurDir / resolution;
+  vec2 step = blurDirection / resolution;
   vec4 sum  = vec4(0.0);
   sum += texture2D(blurTexture, uv + step * -4.0) * 0.0162;
   sum += texture2D(blurTexture, uv + step * -3.0) * 0.0540;

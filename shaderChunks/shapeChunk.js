@@ -143,7 +143,7 @@ float _noisyBallUnion(vec3 p, float k) {
 // ──── CLUSTER SHAPE - SDFS ────────────────────────────────────────────────────────────────
 
 
-float clusterCylinder(vec3 p) {
+float cylinder(vec3 p) {
   const float RADIUS      = ${glslFloat(CLUSTER_CYL_RADIUS)};
   const float HALF_HEIGHT = ${glslFloat(CLUSTER_CYL_HALF_HEIGHT)};
   const float ROTATION_Y  = ${glslFloat(CLUSTER_CYL_ROTATION_Y)};
@@ -153,12 +153,12 @@ float clusterCylinder(vec3 p) {
   return _sdCappedCylinder(pr, RADIUS, HALF_HEIGHT);
 }
 
-float clusterSphere(vec3 p) {
+float sphere(vec3 p) {
   const float RADIUS = ${glslFloat(CLUSTER_SPHERE_RADIUS)};
   return _sdSphere(p, RADIUS);
 }
 
-float clusterBox(vec3 p) {
+float box(vec3 p) {
   const float HALF_EXTENT = ${glslFloat(CLUSTER_BOX_HALF_EXTENT)};
   const float ROTATION_Y  = ${glslFloat(CLUSTER_BOX_ROTATION_Y)};
   const float ROTATION_X  = ${glslFloat(CLUSTER_BOX_ROTATION_X)};
@@ -167,7 +167,7 @@ float clusterBox(vec3 p) {
   return _sdBox(pr, vec3(HALF_EXTENT));
 }
 
-float clusterTorus(vec3 p) {
+float torus(vec3 p) {
   const float RING_RADIUS = ${glslFloat(CLUSTER_TORUS_RING_RADIUS)};
   const float TUBE_RADIUS = ${glslFloat(CLUSTER_TORUS_TUBE_RADIUS)};
   const float ROTATION_Y  = ${glslFloat(CLUSTER_TORUS_ROTATION_Y)};
@@ -177,7 +177,7 @@ float clusterTorus(vec3 p) {
   return _sdTorus(pr, vec2(RING_RADIUS, TUBE_RADIUS));
 }
 
-float clusterCapsule(vec3 p) {
+float capsule(vec3 p) {
   const float HALF_LENGTH = ${glslFloat(CLUSTER_CAPSULE_HALF_LENGTH)};
   const float RADIUS      = ${glslFloat(CLUSTER_CAPSULE_RADIUS)};
   const float ROTATION_Y  = ${glslFloat(CLUSTER_CAPSULE_ROTATION_Y)};
@@ -187,7 +187,7 @@ float clusterCapsule(vec3 p) {
   return _sdCapsule(pr, vec3(0.0, -HALF_LENGTH, 0.0), vec3(0.0, HALF_LENGTH, 0.0), RADIUS);
 }
 
-float clusterPyramid(vec3 p) {
+float pyramid(vec3 p) {
   const float SCALE       = ${glslFloat(CLUSTER_PYRAMID_SCALE)};
   const float HEIGHT      = ${glslFloat(CLUSTER_PYRAMID_HEIGHT)};
   const float ROTATION_Y  = ${glslFloat(CLUSTER_PYRAMID_ROTATION_Y)};

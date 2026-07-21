@@ -4,7 +4,7 @@ import { FRAME_TIME_STEP, CLUSTER_SHAPE_VARIANTS } from './constants.js';
 // ──── CONSTANTS ───────────────────────────────────────────────────────────
 
 
-const LEAD_BURST = 4;
+const LEAD_BURST = 3.0;
 const LEAD_METABALL = -2.0;
 
 const SIGMA_CLUSTER = 0.6;

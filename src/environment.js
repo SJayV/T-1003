@@ -4,54 +4,44 @@ import { getWeights, getTime } from './phase.js';
 import { environmentVertex, environmentFragment } from '../shaders/environmentShader.js';
 import { makeGpuSetup } from './gpuSetup.js';
 
-export const ENVIRONMENT_MAP_FILES = [
-  'neonStudio.hdr',
-  'nightSky.hdr',
-  'lightStudio.hdr',
-  'aquarium.hdr',
-];
 
-export const CLUSTER_ENVIRONMENT_MAP_DEFAULT = 'neonStudio.hdr';
-export const METABALL_ENVIRONMENT_MAP_DEFAULT = 'neonStudio.hdr';
+// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
 
-const EQUIRECT_W = 512;
-const EQUIRECT_H = 256;
+
+const CLUSTER_ENVIRONMENT_MAP_DEFAULT = 'neonStudio.hdr';
+const METABALL_ENVIRONMENT_MAP_DEFAULT = 'neonStudio.hdr';
+
+const EQUIRECTANGULAR_HEIGHT = 256;
+const EQUIRECTANGULAR_WIDTH = EQUIRECTANGULAR_HEIGHT * 2;
+
+
+// ──── INITIALIZATION ────────────────────────────────────────────────────────────────
+
 
 let _renderer = null;
-let _equirectTarget = null;
-let _equirectScene = null;
-let _equirectCamera = null;
-let _equirectMaterial = null;
+let _equirectangularTarget = null;
+let _equirectangularScene = null;
+let _equirectangularCamera = null;
+let _equirectangularMaterial = null;
 let _loader = null;
 
-function _regenerate() {
-  const { clusterWeight, metaballWeight, burstWeight } = getWeights();
-  _equirectMaterial.uniforms.time.value = getTime();
-  _equirectMaterial.uniforms.metaballBlend.value = metaballWeight;
-  _equirectMaterial.uniforms.clusterBlend.value = clusterWeight;
-  _equirectMaterial.uniforms.burstBlend.value = burstWeight;
-
-  _renderer.setRenderTarget(_equirectTarget);
-  _renderer.render(_equirectScene, _equirectCamera);
-  _renderer.setRenderTarget(null);
-}
-
-export function initializeEnvironmentMap(renderer, clusterFilename = CLUSTER_ENVIRONMENT_MAP_DEFAULT, metaballFilename = METABALL_ENVIRONMENT_MAP_DEFAULT) {
-  _renderer = renderer;
-
-  _equirectTarget = new THREE.WebGLRenderTarget(EQUIRECT_W, EQUIRECT_H, {
+function _initializeEquirectangularTarget() {
+  const target = new THREE.WebGLRenderTarget(EQUIRECTANGULAR_WIDTH, EQUIRECTANGULAR_HEIGHT, {
     type: THREE.HalfFloatType,
     format: THREE.RGBAFormat,
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
     depthBuffer: false,
   });
-  _equirectTarget.texture.colorSpace = THREE.LinearSRGBColorSpace;
+  target.texture.colorSpace = THREE.LinearSRGBColorSpace;
+  return target;
+}
 
-  _equirectMaterial = new THREE.ShaderMaterial({
+function _initializeEquirectangularMaterial() {
+  return new THREE.ShaderMaterial({
     uniforms: {
       time: { value: 0.0 },
-      resolution: { value: new THREE.Vector2(EQUIRECT_W, EQUIRECT_H) },
+      resolution: { value: new THREE.Vector2(EQUIRECTANGULAR_WIDTH, EQUIRECTANGULAR_HEIGHT) },
       metaballBlend: { value: 1.0 },
       clusterBlend: { value: 0.0 },
       burstBlend: { value: 0.0 },
@@ -63,15 +53,24 @@ export function initializeEnvironmentMap(renderer, clusterFilename = CLUSTER_ENV
     depthTest: false,
     depthWrite: false,
   });
-  ({ scene: _equirectScene, camera: _equirectCamera } = makeGpuSetup(_equirectMaterial));
-
-  _loader = new RGBELoader();
-  setClusterEnvironmentMapFile(clusterFilename);
-  setMetaballEnvironmentMapFile(metaballFilename);
 }
 
+export function initializeEnvironmentMap(renderer, clusterFilename = CLUSTER_ENVIRONMENT_MAP_DEFAULT, metaballFilename = METABALL_ENVIRONMENT_MAP_DEFAULT) {
+  _renderer = renderer;
+  _equirectangularTarget = _initializeEquirectangularTarget();
+  _equirectangularMaterial = _initializeEquirectangularMaterial();
+  ({ scene: _equirectangularScene, camera: _equirectangularCamera } = makeGpuSetup(_equirectangularMaterial));
+
+  _loader = new RGBELoader();
+  _applyEnvironmentMapFiles(clusterFilename, metaballFilename);
+}
+
+
+// ──── ENVIRONMENT MAP LOADING ───────────────────────────────────────────────────────
+
+
 function _loadSourceMap(uniformKey, filename) {
-  _equirectMaterial.uniforms[uniformKey].value = _loader.load(
+  _equirectangularMaterial.uniforms[uniformKey].value = _loader.load(
     `resources/environments/${filename}`,
     (texture) => { texture.flipY = true; texture.needsUpdate = true; },
     undefined,
@@ -79,19 +78,47 @@ function _loadSourceMap(uniformKey, filename) {
   );
 }
 
-export function setClusterEnvironmentMapFile(filename) {
-  _loadSourceMap('clusterSourceMap', filename);
+function _applyEnvironmentMapFiles(clusterFilename, metaballFilename) {
+  _loadSourceMap('clusterSourceMap', clusterFilename);
+  _loadSourceMap('metaballSourceMap', metaballFilename);
 }
 
-export function setMetaballEnvironmentMapFile(filename) {
-  _loadSourceMap('metaballSourceMap', filename);
+
+// ──── REGENERATION ──────────────────────────────────────────────────────────────────
+
+
+function _regenerateEquirectangularMap() {
+  _applyWeightUniforms(getWeights());
+  _applyTimeUniform(getTime());
+  _renderEquirectangularPass();
 }
+
+function _applyWeightUniforms(weights) {
+  const { clusterWeight, metaballWeight, burstWeight } = weights;
+  _equirectangularMaterial.uniforms.metaballBlend.value = metaballWeight;
+  _equirectangularMaterial.uniforms.clusterBlend.value = clusterWeight;
+  _equirectangularMaterial.uniforms.burstBlend.value = burstWeight;
+}
+
+function _applyTimeUniform(time) {
+  _equirectangularMaterial.uniforms.time.value = time;
+}
+
+function _renderEquirectangularPass() {
+  _renderer.setRenderTarget(_equirectangularTarget);
+  _renderer.render(_equirectangularScene, _equirectangularCamera);
+  _renderer.setRenderTarget(null);
+}
+
+
+// ──── PUBLIC INTERFACE ──────────────────────────────────────────────────────────────
+
 
 export function getUniformDefinitions() {
-  return { envMap: { value: null } };
+  return { environmentMap: { value: null } };
 }
 
 export function applyStateToMaterial(material) {
-  _regenerate();
-  material.uniforms.envMap.value = _equirectTarget.texture;
+  _regenerateEquirectangularMap();
+  material.uniforms.environmentMap.value = _equirectangularTarget.texture;
 }

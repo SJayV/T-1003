@@ -1,6 +1,6 @@
 import { noiseChunk, vertexChunk } from '../shaderChunks/helpersChunk.js';
 import { positionChunk } from '../shaderChunks/positionChunk.js';
-import { STATE_TEXTURE_WIDTH, glslFloat } from '../src/constants.js';
+import { STATE_TEXTURE_WIDTH, TEXELS_PER_BALL, glslFloat } from '../src/constants.js';
 
 export const simulationVertex = vertexChunk;
 
@@ -15,7 +15,8 @@ uniform float     metaballBlend;
 uniform float     burstBlend;
 uniform float     motionSpeed;
 
-const float TEXTURE_WIDTH = ${glslFloat(STATE_TEXTURE_WIDTH)};
+const float TEXTURE_WIDTH   = ${glslFloat(STATE_TEXTURE_WIDTH)};
+const int   TEXELS_PER_BALL = ${TEXELS_PER_BALL};
 
 
 // ──── HELPER FUNCTIONS - STATE TEXTURE ACCESS ────────────────────────────────────
@@ -23,10 +24,10 @@ const float TEXTURE_WIDTH = ${glslFloat(STATE_TEXTURE_WIDTH)};
 
 vec2 stateUV(int i) { return vec2((float(i) + 0.5) / TEXTURE_WIDTH, 0.5); }
 
-vec3  readPos(int b) { return texture2D(stateTexture, stateUV(b * 3    )).xyz; }
-float readInitialRadius(int b) { return texture2D(stateTexture, stateUV(b * 3    )).w; }
-vec3  readVel(int b) { return texture2D(stateTexture, stateUV(b * 3 + 1)).xyz; }
-vec4  readOrb(int b) { return texture2D(stateTexture, stateUV(b * 3 + 2));     }
+vec3  readPos(int ball) { return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL    )).xyz; }
+float readInitialRadius(int ball) { return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL    )).w; }
+vec3  readVel(int ball) { return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL + 1)).xyz; }
+vec4  readOrb(int ball) { return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL + 2));     }
 
 ${noiseChunk}
 ${positionChunk}
@@ -37,10 +38,10 @@ ${positionChunk}
 
 void main() {
   int texelIndex = int(gl_FragCoord.x);
-  int ballIndex  = texelIndex / 3;
-  int subIndex   = texelIndex - ballIndex * 3;
+  int ballIndex  = texelIndex / TEXELS_PER_BALL;
+  int subIndex   = texelIndex - ballIndex * TEXELS_PER_BALL;
 
-  if (subIndex == 2) { gl_FragColor = texture2D(stateTexture, stateUV(texelIndex)); return; }
+  if (subIndex == TEXELS_PER_BALL - 1) { gl_FragColor = texture2D(stateTexture, stateUV(texelIndex)); return; }
 
   vec3 pos = readPos(ballIndex);
   vec3 vel = readVel(ballIndex);
