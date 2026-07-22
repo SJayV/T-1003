@@ -9,42 +9,42 @@ precision highp float;
 precision highp sampler2D;
 
 uniform sampler2D stateTexture;
-uniform float clusterBlend;
-uniform float metaballBlend;
-uniform float burstBlend;
+uniform float clusterWeight;
+uniform float metaballWeight;
+uniform float burstWeight;
 uniform float motionSpeed;
 
 const float TEXTURE_WIDTH = ${glslFloat(STATE_TEXTURE_WIDTH)};
 const int TEXELS_PER_BALL = ${TEXELS_PER_BALL};
 
 
-// ──── HELPER FUNCTIONS - STATE TEXTURE ACCESS ────────────────────────────────────
+// ──── HELPER FUNCTIONS - STATE TEXTURE ACCESS ──────────────────────────────
 
 
 vec2 stateUV(int index) {
   return vec2((float(index) + 0.5) / TEXTURE_WIDTH, 0.5);
 }
 
-vec3 readPosition(int ball) {
+vec3 fetchPosition(int ball) {
   return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL)).xyz;
 }
 
-float readInitialRadius(int ball) {
+float fetchInitialRadius(int ball) {
   return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL)).w;
 }
 
-vec3 readVelocity(int ball) {
+vec3 fetchVelocity(int ball) {
   return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL + 1)).xyz;
 }
 
-vec4 readOrbit(int ball) {
+vec4 fetchOrbit(int ball) {
   return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL + 2));
 }
 
 ${positionChunk}
 
 
-// ──── HELPER FUNCTIONS - ENTRY POINT ─────────────────────────────────────────────
+// ──── HELPER FUNCTIONS - ENTRY POINT ───────────────────────────────────────
 
 
 struct TexelIndices { int texelIndex; int ballIndex; int subIndex; };
@@ -58,8 +58,8 @@ TexelIndices _computeIndices() {
 
 struct BallState { vec3 position; vec3 velocity; float initialRadius; vec4 orbit; };
 
-BallState _readBallState(int ball) {
-  return BallState(readPosition(ball), readVelocity(ball), readInitialRadius(ball), readOrbit(ball));
+BallState _fetchBallState(int ball) {
+  return BallState(fetchPosition(ball), fetchVelocity(ball), fetchInitialRadius(ball), fetchOrbit(ball));
 }
 
 bool _isOrbitTexel(int subIndex) {
@@ -71,7 +71,7 @@ bool _isPositionTexel(int subIndex) {
 }
 
 
-// ──── ENTRY POINT ─────────────────────────────────────────────────────────────────
+// ──── ENTRY POINT ──────────────────────────────────────────────────────────
 
 
 void main() {
@@ -82,7 +82,7 @@ void main() {
     return;
   }
 
-  BallState ballState = _readBallState(indices.ballIndex);
+  BallState ballState = _fetchBallState(indices.ballIndex);
 
   blendPosition(ballState.position, ballState.velocity, ballState.orbit);
 

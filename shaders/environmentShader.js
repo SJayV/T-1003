@@ -10,9 +10,9 @@ uniform float time;
 uniform vec2 resolution;
 uniform sampler2D clusterSourceMap;
 uniform sampler2D metaballSourceMap;
-uniform float metaballBlend;
-uniform float clusterBlend;
-uniform float burstBlend;
+uniform float metaballWeight;
+uniform float clusterWeight;
+uniform float burstWeight;
 
 ${sampleChunk}
 ${screenChunk}

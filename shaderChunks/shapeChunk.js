@@ -3,7 +3,7 @@ import { CLUSTER_SHAPE_VARIANTS } from '../src/constants.js';
 export const shapeChunk = `
 
 
-// ──── HELPER FUNCTIONS - PRIMITIVES ──────────────────────────────────────────────
+// ──── HELPER FUNCTIONS - PRIMITIVES ────────────────────────────────────────
 
 
 float _signedDistanceCylinder(vec3 point, float radius, float halfHeight) {
@@ -49,7 +49,7 @@ float _signedDistancePyramid(vec3 point, float height) {
 }
 
 
-// ──── HELPER FUNCTIONS - TRANSFORMATIONS ─────────────────────────────────────────
+// ──── HELPER FUNCTIONS - TRANSFORMATIONS ───────────────────────────────────
 
 
 vec3 _rotateYX(vec3 point, float rotationY, float rotationX) {
@@ -61,7 +61,7 @@ vec3 _rotateYX(vec3 point, float rotationY, float rotationX) {
 }
 
 
-// ──── HELPER FUNCTIONS - BALL UNION ──────────────────────────────
+// ──── HELPER FUNCTIONS - BALL UNION ────────────────────────────────────────
 
 
 float _smoothMin(float distanceA, float distanceB, float smoothing) {
@@ -100,7 +100,7 @@ float _noisyBallUnion(vec3 point, float smoothing) {
 }
 
 
-// ──── CLUSTER SHAPE - SDFS ────────────────────────────────────────────────────────────────
+// ──── CLUSTER SHAPE - SDFS ─────────────────────────────────────────────────
 
 
 float cylinder(vec3 point) {
@@ -114,7 +114,7 @@ float cylinder(vec3 point) {
 }
 
 float sphere(vec3 point) {
-  const float RADIUS = 0.7;
+  const float RADIUS = 1.2;
   return _signedDistanceSphere(point, RADIUS);
 }
 
@@ -148,7 +148,7 @@ float capsule(vec3 point) {
 }
 
 float pyramid(vec3 point) {
-  const float SCALE = 1.3;
+  const float SCALE = 1.8;
   const float HEIGHT = 0.9;
   const float ROTATION_Y = 0.6;
   const float ROTATION_X = -0.3;
@@ -160,7 +160,7 @@ float pyramid(vec3 point) {
 }
 
 
-// ──── PHASE SHAPE ─────────────────────────────────────────────────
+// ──── PHASE SHAPE ──────────────────────────────────────────────────────────
 
 
 float _metaballShape(vec3 point) {
@@ -181,17 +181,17 @@ float _burstShape(vec3 point) {
 }
 
 
-// ──── WEIGHTED BLENDING ───────────────────────────────────────────────────────────
+// ──── WEIGHTED BLENDING ────────────────────────────────────────────────────
 
 
 float blendShape(vec3 point) {
-  return _metaballShape(point) * metaballBlend
-       + _clusterShape(point) * clusterBlend
-       + _burstShape(point) * burstBlend;
+  return _metaballShape(point) * metaballWeight
+       + _clusterShape(point) * clusterWeight
+       + _burstShape(point) * burstWeight;
 }
 
 
-// ──── HELPER FUNCTIONS - NORMALS ─────────────────────────────────────────────────
+// ──── HELPER FUNCTIONS - NORMALS ───────────────────────────────────────────
 
 
 float _centralDifference(vec3 point, vec3 offset) {

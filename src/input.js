@@ -2,7 +2,7 @@ import * as faceapi from 'face-api.js';
 import { reportGazeDetected, reportMotionEnergy } from './phase.js';
 
 
-// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
+// ──── CONSTANTS ────────────────────────────────────────────────────────────
 
 
 const ENERGY_SENSITIVITY = 20;
@@ -19,7 +19,7 @@ const GAZE_CENTER_FRACTION = 0.35;
 const GAZE_FRONTAL_THRESHOLD = 0.15;
 
 
-// ──── INITIALIZATION ────────────────────────────────────────────────────────────────
+// ──── INITIALIZATION ───────────────────────────────────────────────────────
 
 
 let _video = null;
@@ -65,30 +65,7 @@ function _initializeFaceModels() {
 }
 
 
-// ──── PUBLIC INTERFACE ────────────────────────────────────────────────────────────
-
-
-export function initializeInput() {
-  _initializeCanvas();
-  _initializeVideoStream();
-  _initializeFaceModels();
-}
-
-function _inputIsNotReady() {
-  return !_ready || _video.readyState < 2;
-}
-
-export function updateInput() {
-  if (_inputIsNotReady()) return;
-
-  _updateMotionEnergy();
-  _updateGaze();
-
-  if (_lastGazeDetected) reportGazeDetected();
-}
-
-
-// ──── RAW MOTION ENERGY ─────────────────────────────────────
+// ──── RAW MOTION ENERGY ────────────────────────────────────────────────────
 
 
 function _updateContext() {
@@ -126,7 +103,7 @@ function _updateMotionEnergy() {
 }
 
 
-// ──── GAZE DETECTION ────────────────────────────────────
+// ──── GAZE DETECTION ───────────────────────────────────────────────────────
 
 
 function _gazeDetectionIsNotReady() {
@@ -167,7 +144,7 @@ function _updateGaze() {
 }
 
 
-// ──── HELPER FUNCTIONS - GAZE COMPUTATION ──────────────────────────────────────────
+// ──── HELPER FUNCTIONS - GAZE COMPUTATION ──────────────────────────────────
 
 
 function _isGazing(detection) {
@@ -205,4 +182,27 @@ function _isFrontal({ landmarks }) {
 function _averagePoint(points) {
   const sum = points.reduce((accumulator, point) => ({ x: accumulator.x + point.x, y: accumulator.y + point.y }), { x: 0, y: 0 });
   return { x: sum.x / points.length, y: sum.y / points.length };
+}
+
+
+// ──── PUBLIC INTERFACE ─────────────────────────────────────────────────────
+
+
+function _inputIsNotReady() {
+  return !_ready || _video.readyState < 2;
+}
+
+export function initializeInput() {
+  _initializeCanvas();
+  _initializeVideoStream();
+  _initializeFaceModels();
+}
+
+export function updateInput() {
+  if (_inputIsNotReady()) return;
+
+  _updateMotionEnergy();
+  _updateGaze();
+
+  if (_lastGazeDetected) reportGazeDetected();
 }

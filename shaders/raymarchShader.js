@@ -14,18 +14,18 @@ uniform vec2 resolution;
 uniform vec3 cameraWorldPosition;
 uniform sampler2D environmentMap;
 uniform sampler2D stateTexture;
-uniform float metaballBlend;
-uniform float clusterBlend;
-uniform float burstBlend;
+uniform float metaballWeight;
+uniform float clusterWeight;
+uniform float burstWeight;
 
 
-// ──── HELPER FUNCTIONS - STATE TEXTURE UNPACKING ─────────────────────────────────
+// ──── HELPER FUNCTIONS - STATE TEXTURE UNPACKING ───────────────────────────
 
 
 vec3 _ballCenter0, _ballCenter1, _ballCenter2, _ballCenter3, _ballCenter4, _ballCenter5, _ballCenter6, _ballCenter7, _ballCenter8, _ballCenter9, _ballCenter10, _ballCenter11;
 float _ballRadius0, _ballRadius1, _ballRadius2, _ballRadius3, _ballRadius4, _ballRadius5, _ballRadius6, _ballRadius7, _ballRadius8, _ballRadius9, _ballRadius10, _ballRadius11;
 
-void loadBalls() {
+void fetchBalls() {
   const float texelSize = 1.0 / ${glslFloat(STATE_TEXTURE_WIDTH)};
   _ballCenter0 = texture2D(stateTexture, vec2(0.5 * texelSize, 0.5)).xyz; _ballRadius0 = texture2D(stateTexture, vec2(1.5 * texelSize, 0.5)).w;
   _ballCenter1 = texture2D(stateTexture, vec2(3.5 * texelSize, 0.5)).xyz; _ballRadius1 = texture2D(stateTexture, vec2(4.5 * texelSize, 0.5)).w;
@@ -47,11 +47,11 @@ ${shapeChunk}
 ${surfaceChunk}
 
 
-// ──── RAYMARCHING ─────────────────────────────────────────────────────────────────
+// ──── RAYMARCHING ──────────────────────────────────────────────────────────
 
 
 float _computeStepSafety() {
-  float blendRisk = clusterBlend * (metaballBlend + burstBlend);
+  float blendRisk = clusterWeight * (metaballWeight + burstWeight);
   return mix(1.0, 0.85, min(blendRisk * 4.0, 1.0));
 }
 
@@ -79,11 +79,11 @@ float raymarch(vec3 rayOrigin, vec3 rayDirection) {
 }
 
 
-// ──── ENTRY POINT ─────────────────────────────────────────────────────────────────
+// ──── ENTRY POINT ──────────────────────────────────────────────────────────
 
 
 void main() {
-  loadBalls();
+  fetchBalls();
 
   vec3 rayOrigin = cameraWorldPosition;
   vec3 rayDirection = _primaryRayDirection();

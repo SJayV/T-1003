@@ -6,7 +6,7 @@ const int BALL_COUNT = ${BALL_COUNT};
 const float ORBIT_Z_SQUASH = ${glslFloat(ORBIT_Z_SQUASH)};
 
 
-// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
+// ──── CONSTANTS ────────────────────────────────────────────────────────────
 
 
 const float ORBIT_DT = ${glslFloat(FRAME_TIME_STEP)};
@@ -25,7 +25,7 @@ const float BURST_FORCE_OFFSET = 0.0045;
 const float VELOCITY_DECAY = 0.99;
 
 
-// ──── HELPER FUNCTIONS - ORBIT ───────────────────────────────────
+// ──── HELPER FUNCTIONS - ORBIT ─────────────────────────────────────────────
 
 
 vec3 _orbitBasisE2(float inclinationSine) {
@@ -40,16 +40,16 @@ vec3 _orbitPoint(vec4 orbit, float phi, vec3 basisE2) {
 struct OrbitState { vec3 point; vec3 tangentStep; };
 
 OrbitState _computeOrbitState(vec3 position, vec4 orbit) {
-  vec3 normalizedBasisE2 = normalize(_orbitBasisE2(orbit.a));
-  float nearestPhi = atan(dot(position, normalizedBasisE2), position.x);
-  vec3 nearestPoint = _orbitPoint(orbit, nearestPhi, normalizedBasisE2);
+  vec3 basisE2 = _orbitBasisE2(orbit.a);
+  float nearestPhi = atan(dot(position, normalize(basisE2)), position.x);
+  vec3 nearestPoint = _orbitPoint(orbit, nearestPhi, basisE2);
   float omega = orbit.g * ORBIT_OMEGA_SCALE + motionSpeed * ORBIT_OMEGA_MOTION;
-  vec3 tangentStep = _orbitPoint(orbit, nearestPhi + omega * ORBIT_DT, normalizedBasisE2) - nearestPoint;
+  vec3 tangentStep = _orbitPoint(orbit, nearestPhi + omega * ORBIT_DT, basisE2) - nearestPoint;
   return OrbitState(nearestPoint, tangentStep);
 }
 
 
-// ──── HELPER FUNCTIONS - BURST ───────────────────────────────────
+// ──── HELPER FUNCTIONS - BURST ─────────────────────────────────────────────
 
 
 vec3 _computeCenter() {
@@ -72,7 +72,7 @@ float _burstForceMagnitude(float distance) {
 }
 
 
-// ──── PHASE VELOCITY ──────────────────────────────────────────────────────
+// ──── PHASE VELOCITY ───────────────────────────────────────────────────────
 
 
 vec3 _metaballVelocity(vec3 position, vec3 velocity, vec4 orbit) {
@@ -92,18 +92,18 @@ vec3 _burstVelocity(vec3 position, vec3 center, vec4 orbit) {
 }
 
 
-// ──── WEIGHTED BLENDING ───────────────────────────────────────────────────────────
+// ──── WEIGHTED BLENDING ────────────────────────────────────────────────────
 
 
 vec3 _blendVelocity(vec3 position, vec3 velocity, vec4 orbit) {
   vec3 center = _computeCenter();
-  return velocity + _metaballVelocity(position, velocity, orbit) * metaballBlend
-                   + _clusterVelocity(position) * clusterBlend
-                   + _burstVelocity(position, center, orbit) * burstBlend;
+  return velocity + _metaballVelocity(position, velocity, orbit) * metaballWeight
+                   + _clusterVelocity(position) * clusterWeight
+                   + _burstVelocity(position, center, orbit) * burstWeight;
 }
 
 void _decayVelocity(inout vec3 velocity) {
-  velocity *= VELOCITY_DECAY * (metaballBlend + clusterBlend) + burstBlend;
+  velocity *= VELOCITY_DECAY * (metaballWeight + clusterWeight) + burstWeight;
 }
 
 void blendPosition(inout vec3 position, inout vec3 velocity, vec4 orbit) {

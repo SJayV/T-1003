@@ -1,22 +1,22 @@
 export const surfaceChunk = `
 
 
-// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
+// ──── CONSTANTS ────────────────────────────────────────────────────────────
 
 
 const float SURFACE_ROUGHNESS = 0.05;
 
 
-// ──── HELPER FUNCTIONS - ENVIRONMENT MAPPING ─────────────────────────────────────
+// ──── HELPER FUNCTIONS - ENVIRONMENT MAPPING ───────────────────────────────
 
 
-vec3 _environmentSample(vec3 direction) {
-  vec3 raw = _sampleDirectionalTexture(environmentMap, direction);
+vec3 _fetchEnvironment(vec3 direction) {
+  vec3 raw = _fetchDirectionalTexture(environmentMap, direction);
   return raw / (raw + 1.0);
 }
 
 
-// ──── HELPER FUNCTIONS - COOK-TORRANCE PHYSICALLY-BASED RENDERING ───────────────────
+// ──── HELPER FUNCTIONS - COOK-TORRANCE PHYSICALLY-BASED RENDERING ──────────
 
 
 float _distributionGGX(float normalDotHalf) {
@@ -35,7 +35,7 @@ float _geometrySmith(float normalDotView, float normalDotLight) {
 }
 
 
-// ──── HELPER FUNCTIONS - REFLECTIVE SHADING ──────────────────────────────────
+// ──── HELPER FUNCTIONS - REFLECTIVE SHADING ────────────────────────────────
 
 
 vec3 _shadeReflective(vec3 surfaceNormal, vec3 rayDirection, float normalDotView) {
@@ -53,13 +53,13 @@ vec3 _shadeReflective(vec3 surfaceNormal, vec3 rayDirection, float normalDotView
   float geometry = _geometrySmith(normalDotView, normalDotLight);
   vec3 specular = (distribution * geometry * HIGHLIGHT_FRESNEL) / max(4.0 * normalDotView * normalDotLight, 0.001);
 
-  vec3 environmentColor = _environmentSample(reflect(rayDirection, surfaceNormal));
+  vec3 environmentColor = _fetchEnvironment(reflect(rayDirection, surfaceNormal));
 
   return specular * normalDotLight + environmentColor * AMBIENT_FRESNEL;
 }
 
 
-// ──── HELPER FUNCTIONS - GLASS SHADING ────────────────────────────────────────────
+// ──── HELPER FUNCTIONS - GLASS SHADING ─────────────────────────────────────
 
 
 const float GLASS_INDEX_OF_REFRACTION = 1.35;
@@ -100,18 +100,18 @@ vec3 _clusterRefractedColor(vec3 point, vec3 surfaceNormal, vec3 rayDirection) {
   const vec3 GLASS_TINT_COLOR = vec3(0.06, 0.1, 0.15);
 
   vec3 incomingRay = refract(rayDirection, surfaceNormal, 1.0 / GLASS_INDEX_OF_REFRACTION);
-  if (_isDegenerateRefraction(incomingRay)) return _environmentSample(reflect(rayDirection, surfaceNormal));
+  if (_isDegenerateRefraction(incomingRay)) return _fetchEnvironment(reflect(rayDirection, surfaceNormal));
 
   GlassExit glassExit = _clusterTraceInterior(point - surfaceNormal * GLASS_TRACE_EPSILON, incomingRay);
   vec3 exitingRay = _exitRefractedRay(incomingRay, glassExit);
 
-  vec3 transmitted = _environmentSample(exitingRay);
+  vec3 transmitted = _fetchEnvironment(exitingRay);
   float absorption = exp(-glassExit.distance * GLASS_ABSORPTION);
   return mix(GLASS_TINT_COLOR, transmitted, absorption);
 }
 
 
-// ──── PHASE SHADING ───────────────────────────────────────────────────────────────────
+// ──── PHASE SHADING ────────────────────────────────────────────────────────
 
 
 vec3 _metaballShading(vec3 surfaceNormal, vec3 rayDirection, float normalDotView) {
@@ -122,7 +122,7 @@ vec3 _clusterShading(vec3 point, vec3 surfaceNormal, vec3 rayDirection, float no
   const float GLASS_FRESNEL_POWER = 2.5;
   float fresnel = _fresnelFactor(normalDotView, GLASS_FRESNEL_POWER);
 
-  vec3 reflected = _environmentSample(reflect(rayDirection, surfaceNormal));
+  vec3 reflected = _fetchEnvironment(reflect(rayDirection, surfaceNormal));
   vec3 refracted = _clusterRefractedColor(point, surfaceNormal, rayDirection);
   return mix(refracted, reflected, fresnel);
 }
@@ -132,13 +132,13 @@ vec3 _burstShading(vec3 surfaceNormal, vec3 rayDirection, float normalDotView) {
 }
 
 
-// ──── WEIGHTED BLENDING ───────────────────────────────────────────────────────────────
+// ──── WEIGHTED BLENDING ────────────────────────────────────────────────────
 
 
 vec3 blendShading(vec3 point, vec3 surfaceNormal, vec3 rayDirection) {
   float normalDotView = max(dot(surfaceNormal, -rayDirection), 0.0);
-  return _metaballShading(surfaceNormal, rayDirection, normalDotView) * metaballBlend
-       + _clusterShading(point, surfaceNormal, rayDirection, normalDotView) * clusterBlend
-       + _burstShading(surfaceNormal, rayDirection, normalDotView) * burstBlend;
+  return _metaballShading(surfaceNormal, rayDirection, normalDotView) * metaballWeight
+       + _clusterShading(point, surfaceNormal, rayDirection, normalDotView) * clusterWeight
+       + _burstShading(surfaceNormal, rayDirection, normalDotView) * burstWeight;
 }
 `;
