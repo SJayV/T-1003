@@ -1,18 +1,18 @@
 import * as THREE from 'three';
 import { simulationVertex, simulationFragment } from '../shaders/simulationShader.js';
-import { makeGpuSetup } from './gpuSetup.js';
+import { initializeGpuSetup, renderPass } from './gpuSetup.js';
 import { getSimulationUniformDefinitions, applySimulationState } from './phase.js';
 import { BALLS, TEXELS_PER_BALL, STATE_TEXTURE_WIDTH, ORBIT_Z_SQUASH } from './constants.js';
 
 
-// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
+// ──── CONSTANTS ────────────────────────────────────────────────────────────
 
 
 const FLOATS_PER_TEXEL = 4;
 const FLOATS_PER_BALL = TEXELS_PER_BALL * FLOATS_PER_TEXEL;
 
 
-// ──── INITIALIZATION ──────────────────────────────
+// ──── INITIALIZATION ───────────────────────────────────────────────────────
 
 
 let _renderer = null;
@@ -56,10 +56,10 @@ function _initializeTexture() {
 }
 
 
-// ──── HELPER FUNCTIONS ─────────────────────────────────────────────────────────────
+// ──── HELPER FUNCTIONS ─────────────────────────────────────────────────────
 
 
-function _makeTarget() {
+function _initializeTarget() {
   return new THREE.WebGLRenderTarget(STATE_TEXTURE_WIDTH, 1, {
     type: THREE.FloatType,
     format: THREE.RGBAFormat,
@@ -72,7 +72,7 @@ function _makeTarget() {
   });
 }
 
-function _makeMaterial() {
+function _initializeMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: {
       stateTexture: { value: _initializationTexture },
@@ -91,25 +91,19 @@ function _swap() {
   _writeTarget = temporary;
 }
 
-function _renderToTarget(target) {
-  _renderer.setRenderTarget(target);
-  _renderer.render(_simulationScene, _simulationCamera);
-  _renderer.setRenderTarget(null);
-}
 
-
-// ──── PUBLIC INTERFACE ────────────────────────────────────────────────────────────
+// ──── PUBLIC INTERFACE ─────────────────────────────────────────────────────
 
 
 export function initializeSimulation(renderer) {
   _renderer = renderer;
-  _readTarget = _makeTarget();
-  _writeTarget = _makeTarget();
+  _readTarget = _initializeTarget();
+  _writeTarget = _initializeTarget();
 
   _initializationTexture = _initializeTexture();
 
-  _simulationMaterial = _makeMaterial();
-  ({ scene: _simulationScene, camera: _simulationCamera } = makeGpuSetup(_simulationMaterial));
+  _simulationMaterial = _initializeMaterial();
+  ({ scene: _simulationScene, camera: _simulationCamera } = initializeGpuSetup(_simulationMaterial));
   _firstFrame = true;
 }
 
@@ -117,7 +111,7 @@ export function stepSimulation() {
   _simulationMaterial.uniforms.stateTexture.value = _firstFrame ? _initializationTexture : _readTarget.texture;
   applySimulationState(_simulationMaterial);
 
-  _renderToTarget(_writeTarget);
+  renderPass(_renderer, _writeTarget, { scene: _simulationScene, camera: _simulationCamera });
 
   _swap();
   _firstFrame = false;

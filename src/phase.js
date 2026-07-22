@@ -1,7 +1,7 @@
 import { FRAME_TIME_STEP, CLUSTER_SHAPE_VARIANTS } from './constants.js';
 
 
-// ──── CONSTANTS ───────────────────────────────────────────────────────────
+// ──── CONSTANTS ────────────────────────────────────────────────────────────
 
 
 const LEAD_BURST = 3.0;
@@ -22,7 +22,7 @@ const STATE_BURST = 1;
 const STATE_METABALL = 2;
 
 
-// ──── INITIALIZATION ────────────────────────────────────────────
+// ──── INITIALIZATION ───────────────────────────────────────────────────────
 
 
 let _state = STATE_CLUSTER;
@@ -35,7 +35,7 @@ let _bumps = {
 };
 
 
-// ──── INPUT - GAZE & MOTION ─────────────────────────────────────────────────────
+// ──── HELPER FUNCTIONS - GAZE & MOTION ─────────────────────────────────────
 
 
 let _gazeThisFrame = false;
@@ -61,7 +61,17 @@ function _resetFrameInputs() {
 }
 
 
-// ──── PHASE TRANSITION LISTENERS ─────────────────────────────────────────────────
+// ──── HELPER FUNCTIONS - SHAPES ────────────────────────────────────────────
+
+
+let _shapeIndex = 0;
+
+function _pickRandomShapeIndex() {
+  return Math.floor(Math.random() * CLUSTER_SHAPE_VARIANTS.length);
+}
+
+
+// ──── HELPER FUNCTIONS - PHASE TRANSITION LISTENERS ────────────────────────
 
 
 const _listeners = [];
@@ -75,17 +85,7 @@ function _fireTransition(name) {
 }
 
 
-// ──── SHAPES ──────────────────────────────────────────────────────────────────
-
-
-let _shapeIndex = 0;
-
-function _pickRandomShapeIndex() {
-  return Math.floor(Math.random() * CLUSTER_SHAPE_VARIANTS.length);
-}
-
-
-// ──── DISPATCHER ─────────────────────────────────────────────────────────────────
+// ──── DISPATCHER ───────────────────────────────────────────────────────────
 
 
 function _activate(bump, currentTime, lead = LEAD_BURST) {
@@ -144,18 +144,8 @@ function _burstHold(currentTime) {
 }
 
 
-// ──── SCHEDULER ──────────────────────────────────────────────────────────────────
+// ──── SCHEDULER ────────────────────────────────────────────────────────────
 
-
-function _scheduleTick(currentTime, gazeDetected) {
-  if (_state === STATE_METABALL) {
-    _scheduleMetaball(currentTime, gazeDetected);
-  } else if (_state === STATE_CLUSTER) {
-    _scheduleCluster(currentTime, gazeDetected);
-  } else if (_state === STATE_BURST) {
-    _scheduleBurst(currentTime, gazeDetected);
-  }
-}
 
 function _scheduleMetaball(currentTime, gazeDetected) {
   if (_metaballShouldHold(currentTime, gazeDetected)) {
@@ -181,19 +171,29 @@ function _scheduleBurst(currentTime, gazeDetected) {
   }
 }
 
+function _scheduleTick(currentTime, gazeDetected) {
+  if (_state === STATE_METABALL) {
+    _scheduleMetaball(currentTime, gazeDetected);
+  } else if (_state === STATE_CLUSTER) {
+    _scheduleCluster(currentTime, gazeDetected);
+  } else if (_state === STATE_BURST) {
+    _scheduleBurst(currentTime, gazeDetected);
+  }
+}
 
-// ──── WEIGHT EVALUATION ──────────────────────────────────────────────────────────
+
+// ──── HELPER FUNCTIONS - WEIGHT COMPUTATION ────────────────────────────────
 
 
-function _evaluateWeight(bump, currentTime) {
+function _computeWeight(bump, currentTime) {
   return bump.activated ? Math.exp(-((currentTime - bump.mu) ** 2) / (2 * bump.sigma * bump.sigma)) : 0;
 }
 
-function _evaluateWeights(currentTime, bumps) {
+function _computeWeights(currentTime, bumps) {
   const EPSILON = 1e-6;
   const raw = {};
   for (const key of ['cluster', 'metaball', 'burst']) {
-    raw[key] = _evaluateWeight(bumps[key], currentTime);
+    raw[key] = _computeWeight(bumps[key], currentTime);
   }
   const sum = raw.cluster + raw.metaball + raw.burst + EPSILON;
   return {
@@ -204,7 +204,7 @@ function _evaluateWeights(currentTime, bumps) {
 }
 
 
-// ──── PUBLIC INTERFACE ───────────────────────────────────────────────────────────
+// ──── PUBLIC INTERFACE ─────────────────────────────────────────────────────
 
 
 let _weights = { clusterWeight: 1, metaballWeight: 0, burstWeight: 0 };
@@ -212,7 +212,7 @@ let _weights = { clusterWeight: 1, metaballWeight: 0, burstWeight: 0 };
 export function tick(currentTime) {
   const gazeDetected = _gazeThisFrame;
   _scheduleTick(currentTime, gazeDetected);
-  _weights = _evaluateWeights(currentTime, _bumps);
+  _weights = _computeWeights(currentTime, _bumps);
   _updateMotionSpeed();
   _resetFrameInputs();
 
@@ -229,9 +229,9 @@ export function getTime() { return _time; }
 export function getSimulationUniformDefinitions() {
   return {
     time: { value: 0 },
-    metaballBlend: { value: 1 },
-    clusterBlend: { value: 0 },
-    burstBlend: { value: 0 },
+    metaballWeight: { value: 1 },
+    clusterWeight: { value: 0 },
+    burstWeight: { value: 0 },
     motionSpeed: { value: 0 },
   };
 }
@@ -246,9 +246,9 @@ export function getUniformDefinitions() {
 export function applySimulationState(material) {
   const { clusterWeight, metaballWeight, burstWeight } = getWeights();
   material.uniforms.time.value = getTime();
-  material.uniforms.metaballBlend.value = metaballWeight;
-  material.uniforms.clusterBlend.value = clusterWeight;
-  material.uniforms.burstBlend.value = burstWeight;
+  material.uniforms.metaballWeight.value = metaballWeight;
+  material.uniforms.clusterWeight.value = clusterWeight;
+  material.uniforms.burstWeight.value = burstWeight;
   material.uniforms.motionSpeed.value = getMotionSpeed();
 }
 

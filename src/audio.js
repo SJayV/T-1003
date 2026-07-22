@@ -1,7 +1,7 @@
 import { getWeights, onPhaseTransition } from './phase.js';
 
 
-// ──── CONSTANTS ───────────────────────────────────────────────────────────────────
+// ──── CONSTANTS ────────────────────────────────────────────────────────────
 
 
 const SOUNDS_URL = './resources/sounds';
@@ -16,7 +16,7 @@ const GAIN_SMOOTHING_TIME_CONSTANT = 0.15;
 const CLUSTER_VOLUME = 3.0;
 
 
-// ──── INITIALIZATION ────────────────────────────────────────────────────────────────
+// ──── INITIALIZATION ───────────────────────────────────────────────────────
 
 
 let _audioContext = null;
@@ -27,32 +27,24 @@ let _burstGain = null;
 let _burstSignalBuffer = null;
 let _ready = false;
 
-export async function initializeAudio() {
-  _makeAudioContext();
-  _makeGains();
-  _registerBurstSignalListener();
-
-  const [clusterBuffer, metaballBuffer, burstBuffer, burstSignalBuffer] = await _loadBuffers();
-
-  _burstSignalBuffer = burstSignalBuffer;
-  _startLoops(clusterBuffer, metaballBuffer, burstBuffer);
-
-  _ready = true;
-}
-
-function _makeAudioContext() {
+function _initializeAudioContext() {
   _audioContext = new AudioContext();
 }
 
-function _makeGains() {
-  _masterGain = _makeGain(_audioContext.destination, MASTER_GAIN);
-  _clusterGain = _makeGain(_masterGain, 1);
-  _metaballGain = _makeGain(_masterGain, 0);
-  _burstGain = _makeGain(_masterGain, 0);
+function _initializeGains() {
+  _masterGain = _initializeGain(_audioContext.destination, MASTER_GAIN);
+  _clusterGain = _initializeGain(_masterGain, 1);
+  _metaballGain = _initializeGain(_masterGain, 0);
+  _burstGain = _initializeGain(_masterGain, 0);
+}
+
+function _fireBurstSound() {
+  if (_audioIsNotReady()) return;
+  _playBuffer(_audioContext, _burstSignalBuffer, _masterGain);
 }
 
 function _registerBurstSignalListener() {
-  onPhaseTransition(name => { if (name === 'burst') _triggerBurstSignal(); });
+  onPhaseTransition(name => { if (name === 'burst') _fireBurstSound(); });
 }
 
 function _loadBuffers() {
@@ -70,8 +62,21 @@ function _startLoops(clusterBuffer, metaballBuffer, burstBuffer) {
   _startLoop(_audioContext, burstBuffer, _burstGain);
 }
 
+export async function initializeAudio() {
+  _initializeAudioContext();
+  _initializeGains();
+  _registerBurstSignalListener();
 
-// ──── HELPER FUNCTIONS - SETUP ─────────────────────────────────────────────────────────────
+  const [clusterBuffer, metaballBuffer, burstBuffer, burstSignalBuffer] = await _loadBuffers();
+
+  _burstSignalBuffer = burstSignalBuffer;
+  _startLoops(clusterBuffer, metaballBuffer, burstBuffer);
+
+  _ready = true;
+}
+
+
+// ──── HELPER FUNCTIONS - SETUP ─────────────────────────────────────────────
 
 
 async function _loadBuffer(audioContext, filename) {
@@ -93,7 +98,7 @@ function _startLoop(audioContext, buffer, destination) {
   return _playBuffer(audioContext, buffer, destination, true);
 }
 
-function _makeGain(destination, initialValue) {
+function _initializeGain(destination, initialValue) {
   const gain = _audioContext.createGain();
   gain.gain.value = initialValue;
   gain.connect(destination);
@@ -101,7 +106,7 @@ function _makeGain(destination, initialValue) {
 }
 
 
-// ──── HELPER FUNCTIONS - RUNTIME STATE ─────────────────────────────────────────────
+// ──── HELPER FUNCTIONS - RUNTIME STATE ─────────────────────────────────────
 
 
 function _audioIsNotReady() {
@@ -113,33 +118,24 @@ function _getTime() {
 }
 
 
-// ──── HELPER FUNCTIONS - GAIN UPDATE ─────────────────────────────────────────────────────────────────
+// ──── HELPER FUNCTIONS - GAIN UPDATE ───────────────────────────────────────
 
 
-function _setGain(gain, value, time) {
+function _applyGain(gain, value, time) {
   gain.gain.setTargetAtTime(value, time, GAIN_SMOOTHING_TIME_CONSTANT);
 }
 
 function _applyGainWeights(weights, time) {
-  _setGain(_clusterGain, CLUSTER_VOLUME * weights.clusterWeight, time);
-  _setGain(_metaballGain, weights.metaballWeight, time);
-  _setGain(_burstGain, weights.burstWeight, time);
+  _applyGain(_clusterGain, CLUSTER_VOLUME * weights.clusterWeight, time);
+  _applyGain(_metaballGain, weights.metaballWeight, time);
+  _applyGain(_burstGain, weights.burstWeight, time);
 }
 
 
-// ──── PUBLIC INTERFACE ────────────────────────────────────────────────────────────
+// ──── PUBLIC INTERFACE ─────────────────────────────────────────────────────
 
 
 export function updateAudio() {
   if (_audioIsNotReady()) return;
   _applyGainWeights(getWeights(), _getTime());
-}
-
-
-// ──── BURST SIGNAL ────────────────────────────────────────────────────────────────
-
-
-function _triggerBurstSignal() {
-  if (_audioIsNotReady()) return;
-  _playBuffer(_audioContext, _burstSignalBuffer, _masterGain);
 }

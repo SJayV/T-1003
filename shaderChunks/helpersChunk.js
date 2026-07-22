@@ -1,7 +1,7 @@
 export const noiseChunk = `
 
 
-// ──── 3D PERLIN NOISE ─────────────────────────────────────────────────────────────
+// ──── 3D PERLIN NOISE ──────────────────────────────────────────────────────
 
 
 vec3 _fade3(vec3 fractionalPosition) {
@@ -38,7 +38,7 @@ float perlin3D(vec3 position) {
 `;
 
 
-// ──── RAYS & SAMPLING ─────────────────────────────────────────────────────────────
+// ──── RAYS & SAMPLING ──────────────────────────────────────────────────────
 
 
 export const sampleChunk = `
@@ -56,13 +56,13 @@ vec3 _uvToDirection(vec2 uv) {
   return vec3(cosineTheta * cos(phi), sin(theta), cosineTheta * sin(phi));
 }
 
-vec3 _sampleDirectionalTexture(sampler2D map, vec3 direction) {
+vec3 _fetchDirectionalTexture(sampler2D map, vec3 direction) {
   return texture2D(map, _directionToUV(direction)).rgb;
 }
 `;
 
 
-// ──── SCREEN SPACE ────────────────────────────────────────────────────────────────
+// ──── SCREEN SPACE ─────────────────────────────────────────────────────────
 
 
 export const screenChunk = `
@@ -72,7 +72,7 @@ vec2 _screenUV() {
 `;
 
 
-// ──── VERTEX SHADER ───────────────────────────────────────────────────────────────
+// ──── VERTEX SHADER ────────────────────────────────────────────────────────
 
 
 export const vertexChunk = `

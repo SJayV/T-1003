@@ -1,7 +1,7 @@
 import { screenChunk } from '../shaderChunks/helpersChunk.js';
 
 
-// ──── BRIGHT-PASS EXTRACTION ───────────────────────────────────────────────────────
+// ──── BRIGHT-PASS EXTRACTION ───────────────────────────────────────────────
 
 
 export const brightExtractFragment = `
@@ -25,7 +25,7 @@ void main() {
 `;
 
 
-// ──── GAUSSIAN BLUR ────────────────────────────────────────────────────────────────
+// ──── GAUSSIAN BLUR ────────────────────────────────────────────────────────
 
 
 export const blurFragment = `
@@ -55,7 +55,7 @@ void main() {
 `;
 
 
-// ──── COMPOSITE ────────────────────────────────────────────────────────────────────
+// ──── COMPOSITE ────────────────────────────────────────────────────────────
 
 
 export const compositeFragment = `
