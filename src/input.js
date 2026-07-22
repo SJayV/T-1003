@@ -7,14 +7,14 @@ import { reportGazeDetected, reportMotionEnergy } from './phase.js';
 
 const ENERGY_SENSITIVITY = 20;
 const ENERGY_PIXEL_THRESHOLD = 10;
-const CANVAS_WIDTH = 80;
-const CANVAS_HEIGHT = 60;
+export const CANVAS_WIDTH = 80;
+export const CANVAS_HEIGHT = 60;
 
 const FACE_MODEL_URL = './resources/weights';
 const FACE_DETECT_INPUT_SIZE = 224;
 const FACE_DETECT_SCORE_THRESHOLD = 0.5;
-const GAZE_DETECT_INTERVAL_FRAMES = 2;
-const GAZE_PERSIST_CYCLES = 2;
+export const GAZE_DETECT_INTERVAL_FRAMES = 2;
+export const GAZE_PERSIST_CYCLES = 2;
 const GAZE_CENTER_FRACTION = 0.35;
 const GAZE_FRONTAL_THRESHOLD = 0.15;
 
