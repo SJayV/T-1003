@@ -93,7 +93,7 @@ beforeEach(async () => {
 });
 
 
-// ──── UPDATE INPUT ────────────────────────────────────────────────────────
+// ──── UPDATE INPUT ─────────────────────────────────────────────────────────
 
 
 describe('updateInput: Motion-Energie (frame-differencing, unabhängig von Gaze)', () => {

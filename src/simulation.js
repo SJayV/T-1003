@@ -30,12 +30,12 @@ function _initializeData() {
     const offset = index * FLOATS_PER_BALL;
     const initialPhi = Math.random() * Math.PI * 2;
     const radius = ball.orbitRadius;
-    const inclinationSin = ball.orbitInclination;
-    const inclinationCos = Math.sqrt(Math.max(0, 1 - inclinationSin * inclinationSin));
+    const inclinationSine = ball.orbitInclination;
+    const inclinationCosine = Math.sqrt(Math.max(0, 1 - inclinationSine * inclinationSine));
 
     data[offset + 0] = radius * Math.cos(initialPhi);
-    data[offset + 1] = radius * Math.sin(initialPhi) * inclinationSin;
-    data[offset + 2] = radius * Math.sin(initialPhi) * inclinationCos * ORBIT_Z_SQUASH;
+    data[offset + 1] = radius * Math.sin(initialPhi) * inclinationSine;
+    data[offset + 2] = radius * Math.sin(initialPhi) * inclinationCosine * ORBIT_Z_SQUASH;
     data[offset + 3] = ball.initialRadius;
     data[offset + 4] = 0;
     data[offset + 5] = 0;

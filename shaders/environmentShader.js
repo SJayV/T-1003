@@ -1,7 +1,5 @@
-import { sampleChunk, screenChunk, vertexChunk } from '../shaderChunks/helpersChunk.js';
+import { sampleChunk, screenChunk } from '../shaderChunks/helpersChunk.js';
 import { colorChunk } from '../shaderChunks/colorChunk.js';
-
-export const environmentVertex = vertexChunk;
 
 export const environmentFragment = `
 precision highp float;

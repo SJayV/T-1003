@@ -65,7 +65,7 @@ function _initializeFaceModels() {
 }
 
 
-// ──── RAW MOTION ENERGY ────────────────────────────────────────────────────
+// ──── HELPER FUNCTIONS - RAW MOTION ENERGY ─────────────────────────────────
 
 
 function _updateContext() {
@@ -77,10 +77,10 @@ function _updateContext() {
 
 function _computeDifference(pixels) {
   let difference = 0;
-  for (let i = 0; i < pixels.length; i += 4) {
-    difference += Math.max(0, Math.abs(pixels[i] - _previousPixels[i]) - ENERGY_PIXEL_THRESHOLD)
-                + Math.max(0, Math.abs(pixels[i+1] - _previousPixels[i+1]) - ENERGY_PIXEL_THRESHOLD)
-                + Math.max(0, Math.abs(pixels[i+2] - _previousPixels[i+2]) - ENERGY_PIXEL_THRESHOLD);
+  for (let byteIndex = 0; byteIndex < pixels.length; byteIndex += 4) {
+    difference += Math.max(0, Math.abs(pixels[byteIndex] - _previousPixels[byteIndex]) - ENERGY_PIXEL_THRESHOLD)
+                + Math.max(0, Math.abs(pixels[byteIndex+1] - _previousPixels[byteIndex+1]) - ENERGY_PIXEL_THRESHOLD)
+                + Math.max(0, Math.abs(pixels[byteIndex+2] - _previousPixels[byteIndex+2]) - ENERGY_PIXEL_THRESHOLD);
   }
   return difference;
 }
@@ -103,14 +103,14 @@ function _updateMotionEnergy() {
 }
 
 
-// ──── GAZE DETECTION ───────────────────────────────────────────────────────
+// ──── HELPER FUNCTIONS - GAZE DETECTION ────────────────────────────────────
 
 
 function _gazeDetectionIsNotReady() {
   return !_modelsReady || _detectionInFlight || _frameCount % GAZE_DETECT_INTERVAL_FRAMES !== 0;
 }
 
-function _setOptions() {
+function _initializeOptions() {
   return new faceapi.TinyFaceDetectorOptions({
     inputSize: FACE_DETECT_INPUT_SIZE,
     scoreThreshold: FACE_DETECT_SCORE_THRESHOLD,
@@ -140,7 +140,7 @@ function _updateGaze() {
   _frameCount++;
   if (_gazeDetectionIsNotReady()) return;
 
-  _detectGaze(_setOptions());
+  _detectGaze(_initializeOptions());
 }
 
 
@@ -167,9 +167,9 @@ function _isCentered({ detection }) {
 }
 
 function _isFrontal({ landmarks }) {
-  const leftEye = _averagePoint(landmarks.getLeftEye());
-  const rightEye = _averagePoint(landmarks.getRightEye());
-  const nose = _averagePoint(landmarks.getNose());
+  const leftEye = _computeAveragePoint(landmarks.getLeftEye());
+  const rightEye = _computeAveragePoint(landmarks.getRightEye());
+  const nose = _computeAveragePoint(landmarks.getNose());
 
   const eyeCenterX = (leftEye.x + rightEye.x) / 2;
   const interEyeDistance = Math.hypot(rightEye.x - leftEye.x, rightEye.y - leftEye.y);
@@ -179,7 +179,7 @@ function _isFrontal({ landmarks }) {
   return Math.abs(frontalOffset) < GAZE_FRONTAL_THRESHOLD;
 }
 
-function _averagePoint(points) {
+function _computeAveragePoint(points) {
   const sum = points.reduce((accumulator, point) => ({ x: accumulator.x + point.x, y: accumulator.y + point.y }), { x: 0, y: 0 });
   return { x: sum.x / points.length, y: sum.y / points.length };
 }
