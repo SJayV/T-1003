@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { getWeights, getTime } from './phase.js';
-import { environmentVertex, environmentFragment } from '../shaders/environmentShader.js';
-import { initializeGpuSetup, initializeRenderTarget, renderPass } from './gpuSetup.js';
+import { environmentFragment } from '../shaders/environmentShader.js';
+import { initializeGpuSetup, initializeRenderTarget, initializeFullscreenMaterial, renderPass } from './gpuSetup.js';
 
 
 // ──── CONSTANTS ────────────────────────────────────────────────────────────
@@ -32,21 +32,15 @@ function _initializeEquirectangularTarget() {
 }
 
 function _initializeEquirectangularMaterial() {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      time: { value: 0.0 },
-      resolution: { value: new THREE.Vector2(EQUIRECTANGULAR_WIDTH, EQUIRECTANGULAR_HEIGHT) },
-      metaballWeight: { value: 1.0 },
-      clusterWeight: { value: 0.0 },
-      burstWeight: { value: 0.0 },
-      clusterSourceMap: { value: null },
-      metaballSourceMap: { value: null },
-    },
-    vertexShader: environmentVertex,
-    fragmentShader: environmentFragment,
-    depthTest: false,
-    depthWrite: false,
-  });
+  return initializeFullscreenMaterial({
+    time: { value: 0.0 },
+    resolution: { value: new THREE.Vector2(EQUIRECTANGULAR_WIDTH, EQUIRECTANGULAR_HEIGHT) },
+    metaballWeight: { value: 1.0 },
+    clusterWeight: { value: 0.0 },
+    burstWeight: { value: 0.0 },
+    clusterSourceMap: { value: null },
+    metaballSourceMap: { value: null },
+  }, environmentFragment);
 }
 
 export function initializeEnvironmentMap(renderer, clusterFilename = CLUSTER_ENVIRONMENT_MAP_DEFAULT, metaballFilename = METABALL_ENVIRONMENT_MAP_DEFAULT) {

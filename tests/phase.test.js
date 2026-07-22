@@ -59,7 +59,7 @@ describe('Gewichte: Startzustand', () => {
 });
 
 
-// ──── REGIME-ÜBERGÄNGE ──────────────────────────────────────────────────────
+// ──── REGIME-ÜBERGÄNGE ─────────────────────────────────────────────────────
 
 
 describe('Cluster → Burst', () => {
@@ -133,7 +133,7 @@ describe('kein Cooldown (bewusste Verhaltensänderung ggü. der alten FSM)', () 
 });
 
 
-// ──── TRANSITION ────────────────────────────────────────────────────────────
+// ──── TRANSITION ───────────────────────────────────────────────────────────
 
 
 describe('onPhaseTransition', () => {
@@ -150,7 +150,7 @@ describe('onPhaseTransition', () => {
 });
 
 
-// ──── OUTPUT-PARAMETER ──────────────────────────────────────────────────────
+// ──── OUTPUT-PARAMETER ─────────────────────────────────────────────────────
 
 
 describe('motionSpeed (unabhängig von reportGazeDetected)', () => {
@@ -193,7 +193,7 @@ describe('getTime', () => {
 });
 
 
-// ──── UNIFORM-DEFINITIONEN ──────────────────────────────────────────────────
+// ──── UNIFORM-DEFINITIONEN ─────────────────────────────────────────────────
 
 
 describe('getSimulationUniformDefinitions', () => {

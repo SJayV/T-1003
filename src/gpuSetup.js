@@ -29,7 +29,7 @@ export function initializeRenderTarget(width, height) {
   });
 }
 
-function _initializeFullscreenMaterial(uniforms, fragmentShader) {
+export function initializeFullscreenMaterial(uniforms, fragmentShader) {
   return new THREE.ShaderMaterial({
     uniforms,
     vertexShader: vertexChunk,
@@ -53,17 +53,17 @@ function _initializeBloomTargets({ width, height, bloomWidth, bloomHeight }) {
 }
 
 function _initializeBloomMaterials({ width, height, bloomWidth, bloomHeight }, { brightExtractFragment, blurFragment, compositeFragment }) {
-  const extractMaterial = _initializeFullscreenMaterial({
+  const extractMaterial = initializeFullscreenMaterial({
     mainTexture: { value: null },
     resolution: { value: new THREE.Vector2(bloomWidth, bloomHeight) },
     threshold: { value: 0 },
   }, brightExtractFragment);
-  const blurMaterial = _initializeFullscreenMaterial({
+  const blurMaterial = initializeFullscreenMaterial({
     blurTexture: { value: null },
     resolution: { value: new THREE.Vector2(bloomWidth, bloomHeight) },
     blurDirection: { value: BLUR_DIRECTION_HORIZONTAL.clone() },
   }, blurFragment);
-  const compositeMaterial = _initializeFullscreenMaterial({
+  const compositeMaterial = initializeFullscreenMaterial({
     mainTexture: { value: null },
     bloomTexture: { value: null },
     resolution: { value: new THREE.Vector2(width, height) },
