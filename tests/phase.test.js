@@ -1,26 +1,34 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 let tick, getTime, getWeights, getMotionSpeed, reportGazeDetected, reportMotionEnergy, onPhaseTransition;
+let getSimulationUniformDefinitions, getUniformDefinitions, applySimulationState, applyStateToMaterial;
 
-let t;
-const DT = 0.05;
+let currentTime;
+const TIME_STEP = 0.05;
 
 function advance(seconds) {
-  const steps = Math.max(1, Math.round(seconds / DT));
-  for (let i = 0; i < steps; i++) {
-    t += DT;
-    tick(t);
+  const steps = Math.max(1, Math.round(seconds / TIME_STEP));
+  for (let stepIndex = 0; stepIndex < steps; stepIndex++) {
+    currentTime += TIME_STEP;
+    tick(currentTime);
   }
+}
+
+function makeMaterial(uniformDefinitions) {
+  return { uniforms: uniformDefinitions };
 }
 
 beforeEach(async () => {
   vi.resetModules();
-  const m = await import('../src/phase.js');
-  ({ tick, getTime, getWeights, getMotionSpeed, reportGazeDetected, reportMotionEnergy, onPhaseTransition } = m);
-  t = 0;
+  const phaseModule = await import('../src/phase.js');
+  ({ tick, getTime, getWeights, getMotionSpeed, reportGazeDetected, reportMotionEnergy, onPhaseTransition,
+     getSimulationUniformDefinitions, getUniformDefinitions, applySimulationState, applyStateToMaterial } = phaseModule);
+  currentTime = 0;
 });
 
-// ──── GEWICHTE — INVARIANTE & STARTZUSTAND ─────────────────────────────────────
+
+// ──── GEWICHTE — INVARIANTE & STARTZUSTAND ─────────────────────────────────
+
 
 describe('Gewichte: Invariante (Summe = 1, alle ≥ 0)', () => {
   it('gilt im Startzustand, während Burst und während Metaball', () => {
@@ -51,7 +59,7 @@ describe('Gewichte: Startzustand', () => {
 });
 
 
-// ──── REGIME-ÜBERGÄNGE ───────────────────────────────────────────────────────────
+// ──── REGIME-ÜBERGÄNGE ──────────────────────────────────────────────────────
 
 
 describe('Cluster → Burst', () => {
@@ -64,10 +72,10 @@ describe('Cluster → Burst', () => {
   it('kein erneuter Burst-Trigger während eines laufenden Bursts', () => {
     reportGazeDetected();
     advance(0.1);
-    const w1 = getWeights().burstWeight;
+    const burstWeightBeforeSecondTrigger = getWeights().burstWeight;
     reportGazeDetected();
     advance(0.05);
-    expect(getWeights().burstWeight).toBeGreaterThanOrEqual(w1 - 0.05);
+    expect(getWeights().burstWeight).toBeGreaterThanOrEqual(burstWeightBeforeSecondTrigger - 0.05);
   });
 });
 
@@ -106,7 +114,7 @@ describe('Metaball → Cluster', () => {
   it('anhaltend erkannter Blick in Metaball verzögert die Rückkehr zu Cluster', () => {
     reportGazeDetected();
     advance(2.0);
-    for (let i = 0; i < 20; i++) { reportGazeDetected(); advance(1.0); }
+    for (let cycleIndex = 0; cycleIndex < 20; cycleIndex++) { reportGazeDetected(); advance(1.0); }
     expect(getWeights().metaballWeight).toBeGreaterThan(0.5);
   });
 });
@@ -125,7 +133,7 @@ describe('kein Cooldown (bewusste Verhaltensänderung ggü. der alten FSM)', () 
 });
 
 
-// ──── TRANSITION ───────────────────────────────────────────────────────────
+// ──── TRANSITION ────────────────────────────────────────────────────────────
 
 
 describe('onPhaseTransition', () => {
@@ -141,8 +149,8 @@ describe('onPhaseTransition', () => {
   });
 });
 
- 
-// ──── OUTPUT-PARAMETER ────────────────────────────────────────────────────────────
+
+// ──── OUTPUT-PARAMETER ──────────────────────────────────────────────────────
 
 
 describe('motionSpeed (unabhängig von reportGazeDetected)', () => {
@@ -159,27 +167,78 @@ describe('motionSpeed (unabhängig von reportGazeDetected)', () => {
 
   it('zerfällt exponentiell ohne weiteres reportMotionEnergy', () => {
     reportMotionEnergy(1.0);
-    advance(DT);
-    const v0 = getMotionSpeed();
+    advance(TIME_STEP);
+    const initialSpeed = getMotionSpeed();
     advance(1.0);
-    expect(getMotionSpeed()).toBeLessThan(v0);
+    expect(getMotionSpeed()).toBeLessThan(initialSpeed);
     expect(getMotionSpeed()).toBeGreaterThan(0);
   });
 
   it('bleibt unbeeinflusst von reportGazeDetected allein', () => {
     reportGazeDetected();
-    advance(DT);
+    advance(TIME_STEP);
     expect(getMotionSpeed()).toBe(0);
   });
 });
 
 describe('getTime', () => {
   it('steigt monoton mit jedem Tick', () => {
-    const t0 = getTime();
-    advance(DT);
-    const t1 = getTime();
+    const firstTime = getTime();
+    advance(TIME_STEP);
+    const secondTime = getTime();
     advance(0.5);
-    expect(t1).toBeGreaterThan(t0);
-    expect(getTime()).toBeGreaterThan(t1);
+    expect(secondTime).toBeGreaterThan(firstTime);
+    expect(getTime()).toBeGreaterThan(secondTime);
+  });
+});
+
+
+// ──── UNIFORM-DEFINITIONEN ──────────────────────────────────────────────────
+
+
+describe('getSimulationUniformDefinitions', () => {
+  it('liefert genau die von positionChunk/simulationShader erwarteten Uniform-Namen', () => {
+    const definitions = getSimulationUniformDefinitions();
+    expect(Object.keys(definitions).sort()).toEqual(
+      ['burstWeight', 'clusterWeight', 'metaballWeight', 'motionSpeed', 'time'].sort()
+    );
+  });
+});
+
+describe('getUniformDefinitions', () => {
+  it('erweitert getSimulationUniformDefinitions um clusterShapeIndex', () => {
+    const definitions = getUniformDefinitions();
+    expect(Object.keys(definitions).sort()).toEqual(
+      ['burstWeight', 'clusterShapeIndex', 'clusterWeight', 'metaballWeight', 'motionSpeed', 'time'].sort()
+    );
+  });
+});
+
+describe('applySimulationState', () => {
+  it('schreibt Gewichte, Zeit und motionSpeed in die Material-Uniforms', () => {
+    const material = makeMaterial(getSimulationUniformDefinitions());
+    reportGazeDetected();
+    advance(1.5);
+    reportMotionEnergy(0.6);
+
+    applySimulationState(material);
+
+    const { clusterWeight, metaballWeight, burstWeight } = getWeights();
+    expect(material.uniforms.clusterWeight.value).toBe(clusterWeight);
+    expect(material.uniforms.metaballWeight.value).toBe(metaballWeight);
+    expect(material.uniforms.burstWeight.value).toBe(burstWeight);
+    expect(material.uniforms.time.value).toBe(getTime());
+    expect(material.uniforms.motionSpeed.value).toBeCloseTo(getMotionSpeed());
+  });
+});
+
+describe('applyStateToMaterial', () => {
+  it('setzt clusterShapeIndex zusätzlich zu den Simulations-Uniforms', () => {
+    const material = makeMaterial(getUniformDefinitions());
+
+    applyStateToMaterial(material);
+
+    expect(typeof material.uniforms.clusterShapeIndex.value).toBe('number');
+    expect(material.uniforms.time.value).toBe(getTime());
   });
 });
