@@ -64,7 +64,7 @@ function _resetFrameInputs() {
 // ──── HELPER FUNCTIONS - SHAPES ────────────────────────────────────────────
 
 
-let _shapeIndex = 0;
+let _shapeIndex = 6;
 
 function _pickRandomShapeIndex() {
   return Math.floor(Math.random() * CLUSTER_SHAPE_VARIANTS.length);

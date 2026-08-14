@@ -184,11 +184,13 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 | GLSL-Funktion | Semantik |
 |---|---|
 | `_signedDistanceSphere`/`_signedDistanceBox`/`_signedDistanceCylinder`/`_signedDistanceTorus`/`_signedDistanceCapsule`/`_signedDistancePyramid` | reine, formunabhängige Distanzfunktionen |
+| `_generalizedNorm2D(valueA, valueB, exponent)` | Lp-Norm zweier Werte (`(|a|^p+|b|^p)^(1/p)`) — geteilter Baustein der Superquadric-Distanzfunktion |
+| `_signedDistanceSuperquadric(point, halfExtents, exponentEastWest, exponentNorthSouth)` | Pseudo-Distanz eines Superquadrics (Barr 1981) über Komposition zweier `_generalizedNorm2D`-Aufrufe (äquatorial, dann meridional) — approximativ, exakt nur für Exponenten, die eine echte Norm ergeben (`2/exponent ≥ 1`) |
 | `_ballUnion(point, smoothing)` | `smin`-Verschmelzung der 12 Metaball-Kugeln mit Glättungsradius `smoothing` |
 | `_noisyBallUnion(point, smoothing)` | `_ballUnion` + additives `perlin3D`-Oberflächenrauschen |
 | `_metaballShape(point)` | `_noisyBallUnion` mit `SMIN_K = 0.35` (lose fusioniert) |
 | `_burstShape(point)` | `_noisyBallUnion` mit `SMIN_K = 0.10` (enger fusioniert — liest sich „explodiert") |
-| `_clusterShape(point)` | Verzweigung über `clusterShapeIndex` auf eine von sechs Grundkörperfunktionen (`cylinder`/`sphere`/`box`/`torus`/`capsule`/`pyramid`) |
+| `_clusterShape(point)` | Verzweigung über `clusterShapeIndex` auf eine von sieben Grundkörperfunktionen (`cylinder`/`sphere`/`box`/`torus`/`capsule`/`pyramid`/`superquadric`) — `superquadric` variiert seine beiden Exponenten kontinuierlich über `time` (Lissajous-Pfad mit irrationalem Frequenzverhältnis durch den Formraum von rundlich bis konkav-spitz) |
 | `blendShape(point)` (öffentlich) | gewichtete Summe aus `_clusterShape`/`_metaballShape`/`_burstShape` — zeitliche Überblendung, keine räumliche Vereinigung |
 | `normal(point)` (öffentlich) | zentrale finite Differenzen auf `blendShape` |
 

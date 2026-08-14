@@ -72,7 +72,7 @@ float _fresnelFactor(float normalDotView, float power) {
 struct GlassExit { vec3 position; vec3 normal; float distance; };
 
 GlassExit _clusterTraceInterior(vec3 point, vec3 rayDirection) {
-  const int GLASS_TRACE_STEPS = 20;
+  const int GLASS_TRACE_STEPS = 30;
   const float GLASS_TRACE_MAXIMUM_DISTANCE = 3.0;
 
   float accumulatedDistance = GLASS_TRACE_EPSILON * 2.0;

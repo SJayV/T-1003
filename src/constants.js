@@ -42,6 +42,7 @@ export const CLUSTER_SHAPE_VARIANTS = [
   'torus',
   'capsule',
   'pyramid',
+  'superquadric',
 ];
 
 
