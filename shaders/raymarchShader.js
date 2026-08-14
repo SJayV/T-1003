@@ -43,6 +43,35 @@ void fetchBalls() {
 
 ${noiseChunk}
 ${sampleChunk}
+
+
+// ──── HELPER FUNCTIONS - RADIUS MODULATION ─────────────────────────────────
+
+
+const float RADIUS_NOISE_FREQUENCY = 1.5;
+const float RADIUS_NOISE_TIME_SCALE = 2.6;
+const float RADIUS_NOISE_AMPLITUDE = 0.2;
+
+float _modulatedRadius(vec3 center, float baseRadius) {
+  float noise = perlin3D(center * RADIUS_NOISE_FREQUENCY + time * RADIUS_NOISE_TIME_SCALE);
+  return baseRadius + RADIUS_NOISE_AMPLITUDE * noise;
+}
+
+void modulateRadius() {
+  _ballRadius0 = _modulatedRadius(_ballCenter0, _ballRadius0);
+  _ballRadius1 = _modulatedRadius(_ballCenter1, _ballRadius1);
+  _ballRadius2 = _modulatedRadius(_ballCenter2, _ballRadius2);
+  _ballRadius3 = _modulatedRadius(_ballCenter3, _ballRadius3);
+  _ballRadius4 = _modulatedRadius(_ballCenter4, _ballRadius4);
+  _ballRadius5 = _modulatedRadius(_ballCenter5, _ballRadius5);
+  _ballRadius6 = _modulatedRadius(_ballCenter6, _ballRadius6);
+  _ballRadius7 = _modulatedRadius(_ballCenter7, _ballRadius7);
+  _ballRadius8 = _modulatedRadius(_ballCenter8, _ballRadius8);
+  _ballRadius9 = _modulatedRadius(_ballCenter9, _ballRadius9);
+  _ballRadius10 = _modulatedRadius(_ballCenter10, _ballRadius10);
+  _ballRadius11 = _modulatedRadius(_ballCenter11, _ballRadius11);
+}
+
 ${shapeChunk}
 ${surfaceChunk}
 
@@ -84,6 +113,7 @@ float raymarch(vec3 rayOrigin, vec3 rayDirection) {
 
 void main() {
   fetchBalls();
+  modulateRadius();
 
   vec3 rayOrigin = cameraWorldPosition;
   vec3 rayDirection = _primaryRayDirection();

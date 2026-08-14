@@ -147,10 +147,6 @@ function _updateGaze() {
 // ──── HELPER FUNCTIONS - GAZE COMPUTATION ──────────────────────────────────
 
 
-function _isGazing(detection) {
-  return _isCentered(detection) && _isFrontal(detection);
-}
-
 function _isCentered({ detection }) {
   const { x, y, width, height } = detection.box;
   const videoWidth = _video.videoWidth;
@@ -177,6 +173,10 @@ function _isFrontal({ landmarks }) {
 
   const frontalOffset = (nose.x - eyeCenterX) / interEyeDistance;
   return Math.abs(frontalOffset) < GAZE_FRONTAL_THRESHOLD;
+}
+
+function _isGazing(detection) {
+  return _isCentered(detection) && _isFrontal(detection);
 }
 
 function _computeAveragePoint(points) {
