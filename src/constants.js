@@ -36,11 +36,8 @@ export const FRAME_TIME_STEP = 0.004;
 
 
 export const CLUSTER_SHAPE_VARIANTS = [
-  'cylinder',
-  'sphere',
   'box',
   'torus',
-  'capsule',
   'pyramid',
   'superquadric',
 ];

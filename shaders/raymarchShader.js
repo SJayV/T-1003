@@ -50,7 +50,7 @@ ${sampleChunk}
 
 float _modulatedRadius(vec3 center, float baseRadius) {
   const float RADIUS_NOISE_FREQUENCY = 1.5;
-  const float RADIUS_NOISE_TIME_SCALE = 2.6;
+  const float RADIUS_NOISE_TIME_SCALE = 0.6;
   const float RADIUS_NOISE_AMPLITUDE = 0.2;
 
   float noise = perlin3D(center * RADIUS_NOISE_FREQUENCY + time * RADIUS_NOISE_TIME_SCALE);

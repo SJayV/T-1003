@@ -1,4 +1,4 @@
-import { FRAME_TIME_STEP, CLUSTER_SHAPE_VARIANTS } from './constants.js';
+import { CLUSTER_SHAPE_VARIANTS } from './constants.js';
 
 
 // ──── CONSTANTS ────────────────────────────────────────────────────────────
@@ -64,7 +64,7 @@ function _resetFrameInputs() {
 // ──── HELPER FUNCTIONS - SHAPES ────────────────────────────────────────────
 
 
-let _shapeIndex = 6;
+let _shapeIndex = 3;
 
 function _pickRandomShapeIndex() {
   return Math.floor(Math.random() * CLUSTER_SHAPE_VARIANTS.length);
@@ -216,7 +216,8 @@ export function tick(currentTime) {
   _updateMotionSpeed();
   _resetFrameInputs();
 
-  _time += FRAME_TIME_STEP;
+  _time += currentTime - _lastRealTime;
+  _lastRealTime = currentTime;
 }
 
 export function getWeights() { return _weights; }
@@ -224,6 +225,7 @@ export function getWeights() { return _weights; }
 export function getMotionSpeed() { return _motionSpeed; }
 
 let _time = 0;
+let _lastRealTime = 0;
 export function getTime() { return _time; }
 
 export function getSimulationUniformDefinitions() {

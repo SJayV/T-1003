@@ -18,11 +18,6 @@ float _faceDistance(float absoluteCoordinate, float pointY, float height, float 
 // ──── HELPER FUNCTIONS - SIGNED DISTANCES ──────────────────────────────────
 
 
-float _signedDistanceCylinder(vec3 point, float radius, float halfHeight) {
-  vec2 outsideDistance = abs(vec2(length(point.xz), point.y)) - vec2(radius, halfHeight);
-  return min(max(outsideDistance.x, outsideDistance.y), 0.0) + length(max(outsideDistance, 0.0));
-}
-
 float _signedDistanceSphere(vec3 point, float radius) {
   return length(point) - radius;
 }
@@ -35,13 +30,6 @@ float _signedDistanceBox(vec3 point, vec3 halfExtents) {
 float _signedDistanceTorus(vec3 point, vec2 radii) {
   vec2 torusOffset = vec2(length(point.xz) - radii.x, point.y);
   return length(torusOffset) - radii.y;
-}
-
-float _signedDistanceCapsule(vec3 point, vec3 segmentStart, vec3 segmentEnd, float radius) {
-  vec3 pointOffset = point - segmentStart;
-  vec3 segmentVector = segmentEnd - segmentStart;
-  float projection = clamp(dot(pointOffset, segmentVector) / dot(segmentVector, segmentVector), 0.0, 1.0);
-  return length(pointOffset - segmentVector * projection) - radius;
 }
 
 float _signedDistanceSuperquadric(vec3 point, vec3 halfExtents, float exponentEastWest, float exponentNorthSouth) {
@@ -67,12 +55,27 @@ float _signedDistancePyramid(vec3 point, float height) {
 // ──── HELPER FUNCTIONS - TRANSFORMATIONS ───────────────────────────────────
 
 
-vec3 _rotateYX(vec3 point, float rotationY, float rotationX) {
+vec3 _rotateYX(vec3 point, float speedY, float speedX) {
+  float rotationY = speedY * time;
+  float rotationX = speedX * time;
   float cosineY = cos(rotationY), sineY = sin(rotationY);
   float cosineX = cos(rotationX), sineX = sin(rotationX);
   point.xz = mat2(cosineY, -sineY, sineY, cosineY) * point.xz;
   point.yz = mat2(cosineX, -sineX, sineX, cosineX) * point.yz;
   return point;
+}
+
+float _pulse() {
+  const float CYCLE_LENGTH = 1.4345;
+  const float PULSE_GAP = 0.28;
+  const float PULSE_SHARPNESS = 50.0;
+  const float PULSE_AMPLITUDE = 0.02;
+  const float PULSE_OFFSET = 0.5;
+
+  float phase = fract(time / CYCLE_LENGTH);
+  float beatA = pow(max(cos(PI * phase - PULSE_OFFSET), 0.0), PULSE_SHARPNESS);
+  float beatB = pow(max(cos(PI * (phase - PULSE_GAP) - PULSE_OFFSET), 0.0), PULSE_SHARPNESS);
+  return 1.0 + PULSE_AMPLITUDE * (beatA + beatB);
 }
 
 
@@ -106,7 +109,7 @@ float _ballUnion(vec3 point, float smoothing) {
 
 float _noisyBallUnion(vec3 point, float smoothing) {
   const float SURFACE_NOISE_FREQUENCY = 4.0;
-  const float SURFACE_NOISE_TIME_SCALE = 0.75;
+  const float SURFACE_NOISE_TIME_SCALE = 0.15;
   const float SURFACE_NOISE_AMPLITUDE = 0.15;
 
   float distance = _ballUnion(point, smoothing);
@@ -118,76 +121,55 @@ float _noisyBallUnion(vec3 point, float smoothing) {
 // ──── CLUSTER SHAPE - SDFS ─────────────────────────────────────────────────
 
 
-float cylinder(vec3 point) {
-  const float RADIUS = 0.5;
-  const float HALF_HEIGHT = 0.7;
-  const float ROTATION_Y = 0.4;
-  const float ROTATION_X = 0.5;
-
-  vec3 rotatedPoint = _rotateYX(point, ROTATION_Y, ROTATION_X);
-  return _signedDistanceCylinder(rotatedPoint, RADIUS, HALF_HEIGHT);
-}
-
-float sphere(vec3 point) {
-  const float RADIUS = 1.2;
-  return _signedDistanceSphere(point, RADIUS);
-}
-
 float box(vec3 point) {
   const float HALF_EXTENT = 0.66;
-  const float ROTATION_Y = 0.4;
-  const float ROTATION_X = 0.5;
+  const float ROTATION_SPEED_Y = 0.025;
+  const float ROTATION_SPEED_X = 0.05;
 
-  vec3 rotatedPoint = _rotateYX(point, ROTATION_Y, ROTATION_X);
-  return _signedDistanceBox(rotatedPoint, vec3(HALF_EXTENT));
+  float pulse = _pulse();
+  vec3 rotatedPoint = _rotateYX(point, ROTATION_SPEED_Y, ROTATION_SPEED_X);
+  return _signedDistanceBox(rotatedPoint / pulse, vec3(HALF_EXTENT)) * pulse;
 }
 
 float torus(vec3 point) {
   const float RING_RADIUS = 0.7;
   const float TUBE_RADIUS = 0.18;
-  const float ROTATION_Y = -0.3;
-  const float ROTATION_X = 0.8;
+  const float ROTATION_SPEED_Y = -0.025;
+  const float ROTATION_SPEED_X = 0.06;
 
-  vec3 rotatedPoint = _rotateYX(point, ROTATION_Y, ROTATION_X);
-  return _signedDistanceTorus(rotatedPoint, vec2(RING_RADIUS, TUBE_RADIUS));
-}
-
-float capsule(vec3 point) {
-  const float HALF_LENGTH = 0.45;
-  const float RADIUS = 0.56;
-  const float ROTATION_Y = -0.4;
-  const float ROTATION_X = 0.5;
-
-  vec3 rotatedPoint = _rotateYX(point, ROTATION_Y, ROTATION_X);
-  return _signedDistanceCapsule(rotatedPoint, vec3(0.0, -HALF_LENGTH, 0.0), vec3(0.0, HALF_LENGTH, 0.0), RADIUS);
+  float pulse = _pulse();
+  vec3 rotatedPoint = _rotateYX(point, ROTATION_SPEED_Y, ROTATION_SPEED_X);
+  return _signedDistanceTorus(rotatedPoint / pulse, vec2(RING_RADIUS, TUBE_RADIUS)) * pulse;
 }
 
 float pyramid(vec3 point) {
   const float SCALE = 1.8;
   const float HEIGHT = 0.9;
-  const float ROTATION_Y = 0.6;
-  const float ROTATION_X = -0.3;
+  const float ROTATION_SPEED_Y = 0.06;
+  const float ROTATION_SPEED_X = -0.035;
 
-  vec3 rotatedPoint = _rotateYX(point, ROTATION_Y, ROTATION_X);
-  vec3 local = rotatedPoint / SCALE;
+  float totalScale = SCALE * _pulse();
+  vec3 rotatedPoint = _rotateYX(point, ROTATION_SPEED_Y, ROTATION_SPEED_X);
+  vec3 local = rotatedPoint / totalScale;
   local.y += HEIGHT * 0.5;
-  return _signedDistancePyramid(local, HEIGHT) * SCALE;
+  return _signedDistancePyramid(local, HEIGHT) * totalScale;
 }
 
 float superquadric(vec3 point) {
   const vec3 HALF_EXTENTS = vec3(0.9);
   const float EXPONENT_MIN = 0.2;
   const float EXPONENT_RANGE = 2.3;
-  const float FREQUENCY_EAST_WEST = 1.0;
-  const float FREQUENCY_NORTH_SOUTH = 1.41421356;
-  const float ROTATION_SPEED = 0.5;
+  const float FREQUENCY_EAST_WEST = 0.02;
+  const float FREQUENCY_NORTH_SOUTH = 0.0282840492;
+  const float ROTATION_SPEED = 0.02;
   const float STEP_SAFETY = 0.35;
 
   float exponentEastWest = EXPONENT_MIN + 0.5 * EXPONENT_RANGE * (1.0 + sin(FREQUENCY_EAST_WEST * time));
   float exponentNorthSouth = EXPONENT_MIN + 0.5 * EXPONENT_RANGE * (1.0 + sin(FREQUENCY_NORTH_SOUTH * time));
 
-  vec3 rotatedPoint = _rotateYX(point, ROTATION_SPEED * time, ROTATION_SPEED * time);
-  return _signedDistanceSuperquadric(rotatedPoint, HALF_EXTENTS, exponentEastWest, exponentNorthSouth) * STEP_SAFETY;
+  float pulse = _pulse();
+  vec3 rotatedPoint = _rotateYX(point, ROTATION_SPEED, ROTATION_SPEED);
+  return _signedDistanceSuperquadric(rotatedPoint / pulse, HALF_EXTENTS, exponentEastWest, exponentNorthSouth) * STEP_SAFETY * pulse;
 }
 
 
