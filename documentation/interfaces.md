@@ -49,7 +49,7 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 |---|---|---|---|---|
 | `reportGazeDetected()` | — | von `input.js`: Meldung erkannten Blickkontakts für den aktuellen Frame | `void` | — |
 | `reportMotionEnergy(speed)` | `speed: number` | von `input.js`: Meldung der Bewegungsenergie (intern zusätzlich auf [0,1] geklemmt) | `void` | — |
-| `tick(currentTime)` | `currentTime: number` (Sekunden) | Aufruf-Pflicht: einmal pro Frame vor allen anderen Reads; Auswertung von Übergängen, Aktualisierung von Gewichten / `motionSpeed`-Zerfall / interner Zeit; danach Rücksetzen der Frame-Flags beider `report*`-Funktionen | `void` | — |
+| `tick(currentTime)` | `currentTime: number` (Sekunden) | Aufruf-Pflicht: einmal pro Frame vor allen anderen Reads; Auswertung von Übergängen, Aktualisierung von Gewichten / `motionSpeed`-Zerfall / interner Zeit; danach Rücksetzen der Frame-Flags beider `report*`-Funktionen. Uhrenquelle ist Sache der aufrufenden Seite (`tick` selbst ist quellenunabhängig) — `main.js` übergibt `audio.js`s `getAudioTime()`, nicht `performance.now()`, damit Bild & Ton exakt derselben Uhr folgen (Audio-Aussetzer verzögern dann auch die Bewegung, statt zu driften) | `void` | — |
 | `getWeights()` | — | — | `{ clusterWeight, metaballWeight, burstWeight }` | je ≥ 0, Summe ≈ 1 |
 | `getMotionSpeed()` | — | aktueller, evtl. zerfallener Bewegungswert | `number` | [0,1] |
 | `getTime()` | — | interne Simulationszeit, akkumuliert aus der tatsächlichen Differenz aufeinanderfolgender `tick(currentTime)`-Aufrufe (nicht aus einer fixen Schrittweite) — verfolgt reale Wanduhrzeit exakt, unabhängig von Framerate-Schwankungen | `number` | [0,∞) |
@@ -124,10 +124,11 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 
 | Funktion | Semantik |
 |---|---|
-| `initializeAudio()` | Erzeugung von `AudioContext` & Gain-Nodes, Registrierung des Burst-Signal-Listeners via `onPhaseTransition`, Laden & Starten der drei Loop-Buffer (cluster/metaball/burst) |
+| `initializeAudio()` | Erzeugung von `AudioContext` (Best Effort: `try`/`catch`, Auto-`resume()` + einmaliger Freischalt-Listener auf `pointerdown`/`keydown` gegen Browser-Autoplay-Sperren) & Gain-Nodes, Registrierung des Burst-Signal-Listeners via `onPhaseTransition`, Laden & Starten der drei Loop-Buffer (cluster/metaball/burst); No-op-Rückkehr ohne funktionierenden `AudioContext` |
+| `getAudioTime()` | `AudioContext.currentTime` — einzige Uhr des `AudioContext`, exakt synchron zur tatsächlichen Audio-Wiedergabe (Aussetzer dort wirken sich hier identisch aus); Fallback auf `performance.now() / 1000` ohne funktionierenden `AudioContext`. Von `main.js` als Uhrenquelle an `phase.js`s `tick(currentTime)` durchgereicht, nicht nur intern für die Gain-Automation genutzt |
 | `updateAudio()` | pro Frame; No-op ohne bereites Audio; sanfter Abgleich der drei Loop-Gains (`setTargetAtTime`) an `getWeights()` |
 
-- keine Kenntnis von `audio.js` in `phase.js` — Kopplung ausschließlich über den bestehenden `onPhaseTransition(fn)`-Listener (Pattern: direkter Import von gemeinsamem Phasen-Zustand, siehe [codingStandards.md](./codingStandards.md))
+- keine Kenntnis von `audio.js` in `phase.js` — Kopplung ausschließlich über den bestehenden `onPhaseTransition(fn)`-Listener (Pattern: direkter Import von gemeinsamem Phasen-Zustand, siehe [codingStandards.md](./codingStandards.md)); die neue Zeitkopplung läuft über `main.js` als Composition Root (`tick(getAudioTime())`), nicht über einen direkten Import von `audio.js` in `phase.js`
 
 **`src/gpuSetup.js`:** gemeinsame Low-Level-Fabriken für Fullscreen-Quad-Rendering, plus die eigenständige Bloom-Pipeline
 

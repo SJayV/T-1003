@@ -28,7 +28,24 @@ let _burstSignalBuffer = null;
 let _ready = false;
 
 function _initializeAudioContext() {
-  _audioContext = new AudioContext();
+  try {
+    _audioContext = new AudioContext();
+  } catch (error) {
+    console.warn('[audio] AudioContext unavailable:', error);
+    return;
+  }
+  _audioContext.resume();
+  _unlockAudioContextOnGesture();
+}
+
+function _unlockAudioContextOnGesture() {
+  const resume = () => {
+    _audioContext.resume();
+    window.removeEventListener('pointerdown', resume);
+    window.removeEventListener('keydown', resume);
+  };
+  window.addEventListener('pointerdown', resume);
+  window.addEventListener('keydown', resume);
 }
 
 function _initializeGains() {
@@ -64,6 +81,7 @@ function _startLoops(clusterBuffer, metaballBuffer, burstBuffer) {
 
 export async function initializeAudio() {
   _initializeAudioContext();
+  if (_audioContextIsNotReady()) return;
   _initializeGains();
   _registerBurstSignalListener();
 
@@ -113,8 +131,8 @@ function _audioIsNotReady() {
   return !_ready;
 }
 
-function _getTime() {
-  return _audioContext.currentTime;
+function _audioContextIsNotReady() {
+  return !_audioContext;
 }
 
 
@@ -135,7 +153,11 @@ function _applyGainWeights(weights, time) {
 // ──── PUBLIC INTERFACE ─────────────────────────────────────────────────────
 
 
+export function getAudioTime() {
+  return _audioContextIsNotReady() ? performance.now() / 1000 : _audioContext.currentTime;
+}
+
 export function updateAudio() {
   if (_audioIsNotReady()) return;
-  _applyGainWeights(getWeights(), _getTime());
+  _applyGainWeights(getWeights(), getAudioTime());
 }

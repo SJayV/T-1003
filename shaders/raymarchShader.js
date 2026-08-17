@@ -120,9 +120,11 @@ void main() {
   float hit = raymarch(rayOrigin, rayDirection);
 
   vec3 color = vec3(0.0);
+  const float MAX_COLOR = 50.0;
   if (hit > 0.0) {
     vec3 point = rayOrigin + rayDirection * hit;
     color = blendShading(point, normal(point), rayDirection);
+    color = (color == color) ? clamp(color, 0.0, MAX_COLOR) : vec3(0.0);
   }
 
   gl_FragColor = vec4(color, 1.0);

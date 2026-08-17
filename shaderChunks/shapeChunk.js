@@ -66,15 +66,15 @@ vec3 _rotateYX(vec3 point, float speedY, float speedX) {
 }
 
 float _pulse() {
-  const float CYCLE_LENGTH = 1.4345;
-  const float PULSE_GAP = 0.28;
+  const float CYCLE_LENGTH = 1.436;
+  const float PULSE_GAP = 0.3;
   const float PULSE_SHARPNESS = 50.0;
   const float PULSE_AMPLITUDE = 0.02;
   const float PULSE_OFFSET = 0.5;
 
   float phase = fract(time / CYCLE_LENGTH);
-  float beatA = pow(max(cos(PI * phase - PULSE_OFFSET), 0.0), PULSE_SHARPNESS);
-  float beatB = pow(max(cos(PI * (phase - PULSE_GAP) - PULSE_OFFSET), 0.0), PULSE_SHARPNESS);
+  float beatA = pow(max(cos(PI * phase), 0.0), PULSE_SHARPNESS);
+  float beatB = pow(max(cos(PI * (phase - PULSE_GAP)), 0.0), PULSE_SHARPNESS);
   return 1.0 + PULSE_AMPLITUDE * (beatA + beatB);
 }
 
