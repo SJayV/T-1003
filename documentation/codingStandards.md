@@ -78,7 +78,7 @@ export function applyStateToMaterial(material) { material.uniforms.name.value = 
 **Direkter Import gemeinsamen Phasen-Zustands:**
 - **Phasenwerte:**
   - direkter Import aus `phase.js`
-  - Lesen durch jedes konsumierende Modul (`simulation.js`, `environment.js`, `audio.js`)
+  - Lesen durch jedes konsumierende Modul (`simulation.js`, `environment.js`, `audio.js`, `debug.js`)
 - zentrale `animate()`-Schleife: Vermeidung von Prop-Drilling bei mehr Phasen-Zustand-Konsumenten
 - Kosten: implizite globale Kopplung durch `phase.js` als zentrale FSM
 

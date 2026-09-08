@@ -1,6 +1,6 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
-let tick, getTime, getWeights, getMotionSpeed, reportGazeDetected, reportMotionEnergy, onPhaseTransition;
+let tick, getTime, getWeights, getMotionSpeed, getPulse, reportGazeDetected, reportMotionEnergy, onPhaseTransition;
 let getSimulationUniformDefinitions, getUniformDefinitions, applySimulationState, applyStateToMaterial;
 
 let currentTime;
@@ -21,7 +21,7 @@ function makeMaterial(uniformDefinitions) {
 beforeEach(async () => {
   vi.resetModules();
   const phaseModule = await import('../src/phase.js');
-  ({ tick, getTime, getWeights, getMotionSpeed, reportGazeDetected, reportMotionEnergy, onPhaseTransition,
+  ({ tick, getTime, getWeights, getMotionSpeed, getPulse, reportGazeDetected, reportMotionEnergy, onPhaseTransition,
      getSimulationUniformDefinitions, getUniformDefinitions, applySimulationState, applyStateToMaterial } = phaseModule);
   currentTime = 0;
 });
@@ -200,7 +200,7 @@ describe('getSimulationUniformDefinitions', () => {
   it('liefert genau die von positionChunk/simulationShader erwarteten Uniform-Namen', () => {
     const definitions = getSimulationUniformDefinitions();
     expect(Object.keys(definitions).sort()).toEqual(
-      ['burstWeight', 'clusterWeight', 'metaballWeight', 'motionSpeed', 'time'].sort()
+      ['burstWeight', 'clusterWeight', 'metaballWeight', 'motionSpeed', 'pulse', 'time'].sort()
     );
   });
 });
@@ -209,7 +209,7 @@ describe('getUniformDefinitions', () => {
   it('erweitert getSimulationUniformDefinitions um clusterShapeIndex', () => {
     const definitions = getUniformDefinitions();
     expect(Object.keys(definitions).sort()).toEqual(
-      ['burstWeight', 'clusterShapeIndex', 'clusterWeight', 'metaballWeight', 'motionSpeed', 'time'].sort()
+      ['burstWeight', 'clusterShapeIndex', 'clusterWeight', 'metaballWeight', 'motionSpeed', 'pulse', 'time'].sort()
     );
   });
 });
@@ -229,6 +229,27 @@ describe('applySimulationState', () => {
     expect(material.uniforms.burstWeight.value).toBe(burstWeight);
     expect(material.uniforms.time.value).toBe(getTime());
     expect(material.uniforms.motionSpeed.value).toBeCloseTo(getMotionSpeed());
+    expect(material.uniforms.pulse.value).toBe(getPulse());
+  });
+});
+
+
+// ──── PULS ──────────────────────────────────────────────────────────────────
+
+
+describe('getPulse', () => {
+  it('bleibt im erwarteten Bereich [1, 1 + 2 * Amplitude] und variiert über die Zeit', () => {
+    const samples = [];
+    for (let stepIndex = 0; stepIndex < 40; stepIndex++) {
+      advance(0.05);
+      samples.push(getPulse());
+    }
+
+    for (const pulse of samples) {
+      expect(pulse).toBeGreaterThanOrEqual(1);
+      expect(pulse).toBeLessThanOrEqual(1.041);
+    }
+    expect(Math.max(...samples)).toBeGreaterThan(Math.min(...samples));
   });
 });
 

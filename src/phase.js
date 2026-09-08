@@ -17,9 +17,16 @@ const SILENCE_METABALL = 3.2;
 
 const MOTION_SPEED_DECAY = 0.97;
 
+const PULSE_CYCLE_LENGTH = 1.436;
+const PULSE_GAP = 0.3;
+const PULSE_SHARPNESS = 50.0;
+const PULSE_AMPLITUDE = 0.02;
+
 const STATE_CLUSTER = 0;
 const STATE_BURST = 1;
 const STATE_METABALL = 2;
+
+const STATE_NAMES = { [STATE_CLUSTER]: 'cluster', [STATE_METABALL]: 'metaball', [STATE_BURST]: 'burst' };
 
 
 // ──── INITIALIZATION ───────────────────────────────────────────────────────
@@ -204,10 +211,22 @@ function _computeWeights(currentTime, bumps) {
 }
 
 
+// ──── HELPER FUNCTIONS - PULSE COMPUTATION ─────────────────────────────────
+
+
+function _computePulse(currentTime) {
+  const phase = (currentTime / PULSE_CYCLE_LENGTH) % 1;
+  const beatA = Math.max(Math.cos(Math.PI * phase), 0) ** PULSE_SHARPNESS;
+  const beatB = Math.max(Math.cos(Math.PI * (phase - PULSE_GAP)), 0) ** PULSE_SHARPNESS;
+  return 1 + PULSE_AMPLITUDE * (beatA + beatB);
+}
+
+
 // ──── PUBLIC INTERFACE ─────────────────────────────────────────────────────
 
 
 let _weights = { clusterWeight: 1, metaballWeight: 0, burstWeight: 0 };
+let _pulse = 1;
 
 export function tick(currentTime) {
   const gazeDetected = _gazeThisFrame;
@@ -218,11 +237,20 @@ export function tick(currentTime) {
 
   _time += currentTime - _lastRealTime;
   _lastRealTime = currentTime;
+  _pulse = _computePulse(_time);
 }
 
 export function getWeights() { return _weights; }
 
 export function getMotionSpeed() { return _motionSpeed; }
+
+export function getPulse() { return _pulse; }
+
+export function getBumps() { return _bumps; }
+
+export function getShapeIndex() { return _shapeIndex; }
+
+export function getStateName() { return STATE_NAMES[_state]; }
 
 let _time = 0;
 let _lastRealTime = 0;
@@ -235,6 +263,7 @@ export function getSimulationUniformDefinitions() {
     clusterWeight: { value: 0 },
     burstWeight: { value: 0 },
     motionSpeed: { value: 0 },
+    pulse: { value: 1 },
   };
 }
 
@@ -252,6 +281,7 @@ export function applySimulationState(material) {
   material.uniforms.clusterWeight.value = clusterWeight;
   material.uniforms.burstWeight.value = burstWeight;
   material.uniforms.motionSpeed.value = getMotionSpeed();
+  material.uniforms.pulse.value = getPulse();
 }
 
 export function applyStateToMaterial(material) {

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { scene, camera, renderer, initializeRendering, applyMeshToScene, getUniformDefinitions as getRendererUniformDefinitions, applyStateToMaterial as applyRendererState } from './src/renderer.js';
 import { initializeInput, updateInput } from './src/input.js';
 import { initializeAudio, updateAudio, getAudioTime } from './src/audio.js';
+import { initializeDebug, updateDebugOverlay } from './src/debug.js';
 import { tick, getWeights, getUniformDefinitions as getPhaseUniformDefinitions, applyStateToMaterial as applyPhaseState } from './src/phase.js';
 import { getUniformDefinitions as getSimulationUniformDefinitions, initializeSimulation, stepSimulation, applyStateToMaterial as applySimulationState } from './src/simulation.js';
 import { getUniformDefinitions as getEnvironmentUniformDefinitions, initializeEnvironmentMap, applyStateToMaterial as applyEnvironmentState } from './src/environment.js';
@@ -41,6 +42,7 @@ initializeRendering();
 initializeEnvironmentMap(renderer);
 initializeInput();
 initializeAudio();
+initializeDebug();
 initializeSimulation(renderer);
 
 const bloom = initializeBloomSetup(renderer, { brightExtractFragment, blurFragment, compositeFragment });
@@ -61,6 +63,7 @@ function animate() {
   applyEnvironmentState(material);
   updateInput();
   updateAudio();
+  updateDebugOverlay();
 
   bloom.render(scene, camera, {
     intensity: BLOOM_INTENSITY_BASE + burstWeight * BLOOM_INTENSITY_BURST_BOOST,

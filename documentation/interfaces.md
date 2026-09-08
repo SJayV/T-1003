@@ -32,13 +32,10 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 | `CLUSTER_SHAPE_VARIANTS` | — | Namen der SDF-Grundkörper (Übereinstimmung mit Funktionsnamen in `shapeChunk.js` erforderlich) | `string[]` |
 | `glslFloat(value)` | `value: number` | Formatierung einer JS-Zahl als GLSL-`float`-Literal | `string` |
 
-> **Gotcha:** JS stringifiziert ganze Zahlen ohne Dezimalpunkt
-> (`` `${1.0}` === '1' ``), GLSL ES 1.00 verlangt aber einen Dezimalpunkt bei
-> `float`-Literalen — `const float x = 1;` ist auf strikten Validatoren (z. B.
-> ANGLE unter Windows) ein Typfehler, den andere Treiber stillschweigend
-> tolerieren. Immer `glslFloat(n)` verwenden, nie den nackten JS-Wert in einen
-> `float`-Kontext interpolieren; bei Interpolation in einen `int`-Kontext ist
-> kein Wrapping nötig.
+> **Gotcha:**
+> - JS: ganze Zahlen ohne Dezimalpunkt (`` `${1.0}` === '1' ``)
+> - GLSL ES 1.00: Dezimalpunkt bei `float`-Literalen zwingend; `const float x = 1;` Typfehler auf strikten Validatoren (z. B. ANGLE/Windows), von anderen Treibern stillschweigend toleriert
+> - immer `glslFloat(n)`, nie roher JS-Wert in `float`-Kontext; `int`-Kontext ohne Wrapping
 
 **`src/phase.js`:**
 - zentrale Zustandsmaschine für die drei Phasengewichte
@@ -52,11 +49,15 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 | `tick(currentTime)` | `currentTime: number` (Sekunden) | Aufruf-Pflicht: einmal pro Frame vor allen anderen Reads; Auswertung von Übergängen, Aktualisierung von Gewichten / `motionSpeed`-Zerfall / interner Zeit; danach Rücksetzen der Frame-Flags beider `report*`-Funktionen. Uhrenquelle ist Sache der aufrufenden Seite (`tick` selbst ist quellenunabhängig) — `main.js` übergibt `audio.js`s `getAudioTime()`, nicht `performance.now()`, damit Bild & Ton exakt derselben Uhr folgen (Audio-Aussetzer verzögern dann auch die Bewegung, statt zu driften) | `void` | — |
 | `getWeights()` | — | — | `{ clusterWeight, metaballWeight, burstWeight }` | je ≥ 0, Summe ≈ 1 |
 | `getMotionSpeed()` | — | aktueller, evtl. zerfallener Bewegungswert | `number` | [0,1] |
+| `getPulse()` | — | Puls-Skalar aus `getTime()`, Basis für `pulse`-Uniform (`shapeChunk.js`) & synthetische Cluster-Lautstärke (`audio.js`) | `number` | [1, 1.04] |
+| `getBumps()` | — | Gauß-Kernel-Parameter je Phase (`mu`, `sigma`, `activated`), Referenz, nur lesend (z. B. `debug.js`) | `{ cluster, metaball, burst }` | — |
+| `getShapeIndex()` | — | aktuelle Cluster-Formvariante (Index in `CLUSTER_SHAPE_VARIANTS`) | `number` | — |
+| `getStateName()` | — | Name der aktiven Phase | `string` | `'cluster' \| 'metaball' \| 'burst'` |
 | `getTime()` | — | interne Simulationszeit, akkumuliert aus der tatsächlichen Differenz aufeinanderfolgender `tick(currentTime)`-Aufrufe (nicht aus einer fixen Schrittweite) — verfolgt reale Wanduhrzeit exakt, unabhängig von Framerate-Schwankungen | `number` | [0,∞) |
 | `onPhaseTransition(listener)` | `listener: (name) => void` | Registrierung eines Callbacks, aufgerufen bei jedem Phasenwechsel mit dem Namen der *neuen* Phase | `void` | `name ∈ {'cluster','burst','metaball'}` |
-| `getSimulationUniformDefinitions()` | — | Basissatz, geteilt mit `simulation.js` | `{ time, metaballWeight, clusterWeight, burstWeight, motionSpeed }` | — |
+| `getSimulationUniformDefinitions()` | — | Basissatz, geteilt mit `simulation.js` | `{ time, metaballWeight, clusterWeight, burstWeight, motionSpeed, pulse }` | — |
 | `getUniformDefinitions()` | — | Erweiterung des obigen Satzes um die aktuell gewählte Cluster-Formvariante | `{ ...obiger Satz, clusterShapeIndex }` | — |
-| `applySimulationState(material)` | `material` | Schreiben von `time`, den drei Gewichten & `motionSpeed` | `void` | — |
+| `applySimulationState(material)` | `material` | Schreiben von `time`, den drei Gewichten, `motionSpeed`, `pulse` | `void` | — |
 | `applyStateToMaterial(material)` | `material` | `applySimulationState` + `clusterShapeIndex` | `void` | — |
 
 **`src/input.js`:** Kapselung von Webcam-Zugriff, Bewegungsenergie- & Blickerkennung, ausschließliche Meldung über `phase.js`-Funktionen nach außen
@@ -68,6 +69,7 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 | `GAZE_PERSIST_CYCLES` | — | konsekutive „blickend"-Erkennungszyklen vor `reportGazeDetected()`-Auslösung (Debounce nur beim Anschalten) | `number` |
 | `initializeInput()` | — | Start des Kamera-Streams (asynchron), Laden der face-api.js-Modelle (asynchron), Anlegen des internen Canvas | `void` |
 | `updateInput()` | — | Aufruf pro Frame; No-op ohne bereite Kamera / bereites Video; Berechnung der Bewegungsenergie jeden Frame, gedrosselte Blickerkennung | `void` |
+| `getDebugSnapshot()` | — | reiner Zusammensteller, keine eigene Berechnung, nur Lesen von `updateInput()`-gepflegtem Zustand, für `debug.js` | `{ video, ready, detections, isGazing }` |
 
 **Blickerkennung:** „blickend" nur bei beiden zutreffenden Tests
 - **zentriert:** Bounding-Box-Zentrum innerhalb der mittleren `GAZE_CENTER_FRACTION` des horizontal gespiegelten Kamerabilds
@@ -100,11 +102,10 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 | `getUniformDefinitions()` | — | — | `{ environmentMap }` |
 | `applyStateToMaterial(material)` | `material` | erneutes Rendern der Überblendung (abhängig von aktuellen Phasengewichten + `getTime()`), Setzen von `environmentMap.value` auf das Ergebnis | `void` |
 
-> **`flipY`-Gotcha:** `THREE.RGBELoader` liefert eine `DataTexture`, die (anders
-> als eine gewöhnliche, aus einem Bild geladene `Texture`) standardmäßig
-> `flipY = false` hat. Die Equirectangular-UV-Konvention erwartet aber die
-> `flipY = true`-Orientierung — daher wird `flipY` nach dem Laden explizit
-> gesetzt, sonst erscheint die Himmelskugel vertikal gespiegelt.
+> **`flipY`-Gotcha:**
+> - `THREE.RGBELoader` → `DataTexture`, Default `flipY = false` (anders als bildbasierte `Texture`)
+> - Equirectangular-UV-Konvention erwartet `flipY = true`
+> - explizites Setzen nach dem Laden nötig, sonst Himmelskugel vertikal gespiegelt
 
 - keine Isolation zwischen den beiden Quelltexturen während einer Phasen-Überblendung: gewichtete Mischung beider in dieselbe `environmentMap`-Textur, dadurch unvermeidlicher Rest der jeweils anderen Quelle bei echter Überblendung
 
@@ -120,15 +121,27 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 | `getUniformDefinitions()` | — | `{ cameraWorldPosition, resolution }` |
 | `applyStateToMaterial(material)` | `material` | Aktualisierung beider Uniformen aus Kamera-Position bzw. Canvas-Größe |
 
-**`src/audio.js`:** Web-Audio-Wiedergabe; Reaktion auf `phase.js` (Gewichte & Transition-Event), keine Shader-Uniformen
+**`src/audio.js`:** Web-Audio-Wiedergabe; Reaktion auf `phase.js` (Gewichte, Puls & Transition-Event), keine Shader-Uniformen
 
 | Funktion | Semantik |
 |---|---|
-| `initializeAudio()` | Erzeugung von `AudioContext` (Best Effort: `try`/`catch`, Auto-`resume()` + einmaliger Freischalt-Listener auf `pointerdown`/`keydown` gegen Browser-Autoplay-Sperren) & Gain-Nodes, Registrierung des Burst-Signal-Listeners via `onPhaseTransition`, Laden & Starten der drei Loop-Buffer (cluster/metaball/burst); No-op-Rückkehr ohne funktionierenden `AudioContext` |
-| `getAudioTime()` | `AudioContext.currentTime` — einzige Uhr des `AudioContext`, exakt synchron zur tatsächlichen Audio-Wiedergabe (Aussetzer dort wirken sich hier identisch aus); Fallback auf `performance.now() / 1000` ohne funktionierenden `AudioContext`. Von `main.js` als Uhrenquelle an `phase.js`s `tick(currentTime)` durchgereicht, nicht nur intern für die Gain-Automation genutzt |
-| `updateAudio()` | pro Frame; No-op ohne bereites Audio; sanfter Abgleich der drei Loop-Gains (`setTargetAtTime`) an `getWeights()` |
+| `initializeAudio()` | `AudioContext` (Best Effort) & Gain-Nodes, Burst-Signal-Listener via `onPhaseTransition`, Start der synthetischen Cluster-Puls-Quelle, Laden & Starten der Sample-Loops (metaball/burst); No-op ohne `AudioContext` |
+| `getAudioTime()` | `AudioContext.currentTime`, Fallback `performance.now() / 1000` ohne `AudioContext`; als Uhrenquelle an `phase.js`s `tick(currentTime)` durchgereicht |
+| `updateAudio()` | pro Frame; No-op ohne bereites Audio; Abgleich der drei Phasen-Gains an `getWeights()`, Puls-Hüllkurve an `getPulse()` |
 
-- keine Kenntnis von `audio.js` in `phase.js` — Kopplung ausschließlich über den bestehenden `onPhaseTransition(fn)`-Listener (Pattern: direkter Import von gemeinsamem Phasen-Zustand, siehe [codingStandards.md](./codingStandards.md)); die neue Zeitkopplung läuft über `main.js` als Composition Root (`tick(getAudioTime())`), nicht über einen direkten Import von `audio.js` in `phase.js`
+- keine Kenntnis von `audio.js` in `phase.js`, Kopplung nur über `onPhaseTransition(fn)` (Pattern: direkter Import gemeinsamen Phasen-Zustands, siehe [codingStandards.md](./codingStandards.md)); Zeitkopplung über `main.js` als Composition Root (`tick(getAudioTime())`)
+
+**Synthetische Cluster-Klangquelle statt Sample:**
+- von den drei Klangquellen (cluster/metaball/burst) nur noch `cluster` synthetisch: dauerhaft laufender, tiefpassgefilterter Rauschgenerator (`_startHeartbeat`) über eigene Hüllkurven-Gain-Node in `_clusterGain`
+- Hüllkurven-Lautstärke = `getPulse()`, derselbe Skalar wie die SDF-Größe der Cluster-Grundkörper (`shapeChunk.js`)
+- `_applyGainWeights` (Phasengewicht → `_clusterGain`) quellenagnostisch: Sample-Buffer vs. synthetische Quelle egal
+
+**`src/debug.js`:** Tab-umschaltbares Debug-Overlay; reiner Konsument von `phase.js` (`getWeights`, `getBumps`, `getPulse`, `getMotionSpeed`, `getTime`, `getShapeIndex`, `getStateName`) & `input.js` (`getDebugSnapshot`), keine Shader-Uniformen
+
+| Funktion | Semantik |
+|---|---|
+| `initializeDebug()` | anfangs unsichtbares Overlay + `Tab`-Toggle-Listener (`preventDefault` gegen Browser-Fokuswechsel) |
+| `updateDebugOverlay()` | pro Frame; No-op solange unsichtbar |
 
 **`src/gpuSetup.js`:** gemeinsame Low-Level-Fabriken für Fullscreen-Quad-Rendering, plus die eigenständige Bloom-Pipeline
 
@@ -143,7 +156,7 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 **`main.js`:** kein Export — Composition Root der Anwendung
 - Zusammenbau eines einzelnen `THREE.ShaderMaterial` aus `phase.getUniformDefinitions()`, `renderer.getUniformDefinitions()`, `simulation.getUniformDefinitions()`, `environment.getUniformDefinitions()`, mit `raymarchShader.js` (`mainVertex`/`mainFragment`) als Shader-Programm
 - Initialisierung aller Module
-- `animate()` (`requestAnimationFrame`-Loop): `tick` → `stepSimulation` → alle vier `applyStateToMaterial`-Aufrufe → `updateInput` → `updateAudio` → `bloom.render(...)`, mit `intensity`/`threshold` moduliert durch `burstWeight`
+- `animate()` (`requestAnimationFrame`-Loop): `tick` → `stepSimulation` → alle vier `applyStateToMaterial`-Aufrufe → `updateInput` → `updateAudio` → `updateDebugOverlay` → `bloom.render(...)`, mit `intensity`/`threshold` moduliert durch `burstWeight`
 
 ## 3. GLSL-Chunks (`shaderChunks/`, interpoliert via Template-Literal)
 
@@ -180,7 +193,7 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 | `_burstVelocity(position, center, orbit)` | Abstoßung vom Schwerpunkt, exponentiell abklingend mit der Distanz bis zu einem konstanten Sockel; Stärkeskalierung mit `motionSpeed` |
 | `blendPosition(inout position, inout velocity, orbit)` (öffentlich) | Gewichtung & Summierung aller drei Geschwindigkeitsbeiträge, Anwendung auf `position`, phasenabhängige Dämpfung von `velocity` |
 
-**`shaderChunks/shapeChunk.js`:** SDF-Komposition der drei Phasen-Grundkörper sowie Normalenberechnung, nur von `raymarchShader.js` verwendet — **Voraussetzung:** `perlin3D` (`noiseChunk`), `clusterWeight`/`metaballWeight`/`burstWeight`, `time`, Uniform `clusterShapeIndex` sowie die per `fetchBalls()` befüllten globalen `_ballCenter0..11`/`_ballRadius0..11` (siehe `raymarchShader.js`)
+**`shaderChunks/shapeChunk.js`:** SDF-Komposition der drei Phasen-Grundkörper sowie Normalenberechnung, nur von `raymarchShader.js` verwendet — **Voraussetzung:** `perlin3D` (`noiseChunk`), `clusterWeight`/`metaballWeight`/`burstWeight`, `time`, Uniform `clusterShapeIndex`, Uniform `pulse` (`_pulse()` = reiner Wrapper, Berechnung in `phase.js`s `getPulse()`) sowie die per `fetchBalls()` befüllten globalen `_ballCenter0..11`/`_ballRadius0..11` (siehe `raymarchShader.js`)
 
 | GLSL-Funktion | Semantik |
 |---|---|

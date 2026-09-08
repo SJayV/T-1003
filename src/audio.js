@@ -1,11 +1,10 @@
-import { getWeights, onPhaseTransition } from './phase.js';
+import { getWeights, getPulse, onPhaseTransition } from './phase.js';
 
 
 // ──── CONSTANTS ────────────────────────────────────────────────────────────
 
 
 const SOUNDS_URL = './resources/sounds';
-const CLUSTER_FILE = 'cluster.mp3';
 const METABALL_FILE = 'metaball.mp3';
 const BURST_FILE = 'burst.mp3';
 const BURST_SIGNAL_FILE = 'burstSound.mp3';
@@ -13,7 +12,12 @@ const BURST_SIGNAL_FILE = 'burstSound.mp3';
 const MASTER_GAIN = 0.35;
 const GAIN_SMOOTHING_TIME_CONSTANT = 0.15;
 
-const CLUSTER_VOLUME = 3.0;
+const CLUSTER_VOLUME = 5.0;
+
+const HEARTBEAT_NOISE_BUFFER_DURATION = 2.0;
+const HEARTBEAT_LOWPASS_FREQUENCY = 120;
+const HEARTBEAT_ENVELOPE_SMOOTHING_TIME_CONSTANT = 0.03;
+const HEARTBEAT_VOLUME = 40.0;
 
 
 // ──── INITIALIZATION ───────────────────────────────────────────────────────
@@ -24,6 +28,7 @@ let _masterGain = null;
 let _clusterGain = null;
 let _metaballGain = null;
 let _burstGain = null;
+let _heartbeatEnvelopeGain = null;
 let _burstSignalBuffer = null;
 let _ready = false;
 
@@ -66,15 +71,13 @@ function _registerBurstSignalListener() {
 
 function _loadBuffers() {
   return Promise.all([
-    _loadBuffer(_audioContext, CLUSTER_FILE),
     _loadBuffer(_audioContext, METABALL_FILE),
     _loadBuffer(_audioContext, BURST_FILE),
     _loadBuffer(_audioContext, BURST_SIGNAL_FILE)
   ]);
 }
 
-function _startLoops(clusterBuffer, metaballBuffer, burstBuffer) {
-  _startLoop(_audioContext, clusterBuffer, _clusterGain);
+function _startLoops(metaballBuffer, burstBuffer) {
   _startLoop(_audioContext, metaballBuffer, _metaballGain);
   _startLoop(_audioContext, burstBuffer, _burstGain);
 }
@@ -84,11 +87,12 @@ export async function initializeAudio() {
   if (_audioContextIsNotReady()) return;
   _initializeGains();
   _registerBurstSignalListener();
+  _startHeartbeat(_audioContext, _clusterGain);
 
-  const [clusterBuffer, metaballBuffer, burstBuffer, burstSignalBuffer] = await _loadBuffers();
+  const [metaballBuffer, burstBuffer, burstSignalBuffer] = await _loadBuffers();
 
   _burstSignalBuffer = burstSignalBuffer;
-  _startLoops(clusterBuffer, metaballBuffer, burstBuffer);
+  _startLoops(metaballBuffer, burstBuffer);
 
   _ready = true;
 }
@@ -124,6 +128,35 @@ function _initializeGain(destination, initialValue) {
 }
 
 
+// ──── HELPER FUNCTIONS - SYNTHETIC HEARTBEAT ───────────────────────────────
+
+
+function _createNoiseBuffer(audioContext) {
+  const buffer = audioContext.createBuffer(1, audioContext.sampleRate * HEARTBEAT_NOISE_BUFFER_DURATION, audioContext.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let sampleIndex = 0; sampleIndex < data.length; sampleIndex++) {
+    data[sampleIndex] = Math.random() * 2 - 1;
+  }
+  return buffer;
+}
+
+function _startHeartbeat(audioContext, destination) {
+  const noiseSource = audioContext.createBufferSource();
+  noiseSource.buffer = _createNoiseBuffer(audioContext);
+  noiseSource.loop = true;
+
+  const lowpassFilter = audioContext.createBiquadFilter();
+  lowpassFilter.type = 'lowpass';
+  lowpassFilter.frequency.value = HEARTBEAT_LOWPASS_FREQUENCY;
+
+  _heartbeatEnvelopeGain = _initializeGain(destination, 0);
+
+  noiseSource.connect(lowpassFilter);
+  lowpassFilter.connect(_heartbeatEnvelopeGain);
+  noiseSource.start();
+}
+
+
 // ──── HELPER FUNCTIONS - RUNTIME STATE ─────────────────────────────────────
 
 
@@ -149,6 +182,11 @@ function _applyGainWeights(weights, time) {
   _applyGain(_burstGain, weights.burstWeight, time);
 }
 
+function _applyHeartbeatEnvelope(pulse, time) {
+  const envelope = Math.max(0, pulse - 1) * HEARTBEAT_VOLUME;
+  _heartbeatEnvelopeGain.gain.setTargetAtTime(envelope, time, HEARTBEAT_ENVELOPE_SMOOTHING_TIME_CONSTANT);
+}
+
 
 // ──── PUBLIC INTERFACE ─────────────────────────────────────────────────────
 
@@ -159,5 +197,7 @@ export function getAudioTime() {
 
 export function updateAudio() {
   if (_audioIsNotReady()) return;
-  _applyGainWeights(getWeights(), getAudioTime());
+  const time = getAudioTime();
+  _applyGainWeights(getWeights(), time);
+  _applyHeartbeatEnvelope(getPulse(), time);
 }

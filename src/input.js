@@ -32,6 +32,7 @@ let _frameCount = 0;
 let _detectionInFlight = false;
 let _gazePersistCount = 0;
 let _lastGazeDetected = false;
+let _lastDetections = [];
 
 function _initializeCanvas() {
   const canvas = document.createElement('canvas');
@@ -131,7 +132,10 @@ function _detectGaze(options) {
   _detectionInFlight = true;
 
   faceapi.detectAllFaces(_video, options).withFaceLandmarks(true)
-    .then(detections => _updateGazePersistence(detections.some(_isGazing)))
+    .then(detections => {
+      _lastDetections = detections;
+      _updateGazePersistence(detections.some(_isGazing));
+    })
     .catch(error => console.warn('[input] face detection failed:', error))
     .finally(() => { _detectionInFlight = false; });
 }
@@ -205,4 +209,8 @@ export function updateInput() {
   _updateGaze();
 
   if (_lastGazeDetected) reportGazeDetected();
+}
+
+export function getDebugSnapshot() {
+  return { video: _video, ready: _ready && _modelsReady, detections: _lastDetections, isGazing: _lastGazeDetected };
 }
