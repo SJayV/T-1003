@@ -17,6 +17,8 @@ uniform sampler2D stateTexture;
 uniform float metaballWeight;
 uniform float clusterWeight;
 uniform float burstWeight;
+uniform int clusterShapeIndex;
+uniform float pulse;
 
 
 // ──── HELPER FUNCTIONS - STATE TEXTURE UNPACKING ───────────────────────────

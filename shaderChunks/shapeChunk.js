@@ -65,8 +65,6 @@ vec3 _rotateYX(vec3 point, float speedY, float speedX) {
   return point;
 }
 
-uniform float pulse;
-
 float _pulse() {
   return pulse;
 }
@@ -173,8 +171,6 @@ float _metaballShape(vec3 point) {
   const float SMIN_K = 0.35;
   return _noisyBallUnion(point, SMIN_K);
 }
-
-uniform int clusterShapeIndex;
 
 float _clusterShape(vec3 point) {
   ${CLUSTER_SHAPE_VARIANTS.map((variant, index) => `if (clusterShapeIndex == ${index}) return ${variant}(point);`).join('\n  ')}

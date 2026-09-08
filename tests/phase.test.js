@@ -1,7 +1,9 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { CLUSTER_SHAPE_VARIANTS } from '../src/constants.js';
 
 let tick, getTime, getWeights, getMotionSpeed, getPulse, reportGazeDetected, reportMotionEnergy, onPhaseTransition;
 let getSimulationUniformDefinitions, getUniformDefinitions, applySimulationState, applyStateToMaterial;
+let computeBumpWeight, getBumps, getShapeIndex, getStateName;
 
 let currentTime;
 const TIME_STEP = 0.05;
@@ -22,7 +24,8 @@ beforeEach(async () => {
   vi.resetModules();
   const phaseModule = await import('../src/phase.js');
   ({ tick, getTime, getWeights, getMotionSpeed, getPulse, reportGazeDetected, reportMotionEnergy, onPhaseTransition,
-     getSimulationUniformDefinitions, getUniformDefinitions, applySimulationState, applyStateToMaterial } = phaseModule);
+     getSimulationUniformDefinitions, getUniformDefinitions, applySimulationState, applyStateToMaterial,
+     computeBumpWeight, getBumps, getShapeIndex, getStateName } = phaseModule);
   currentTime = 0;
 });
 
@@ -55,6 +58,27 @@ describe('Gewichte: Startzustand', () => {
 
   it('getTime startet bei 0', () => {
     expect(getTime()).toBe(0);
+  });
+});
+
+
+describe('computeBumpWeight', () => {
+  it('liefert 0 für einen nicht aktivierten Bump, unabhängig vom Zeitpunkt', () => {
+    expect(computeBumpWeight({ mu: 5, sigma: 1, activated: false }, 5)).toBe(0);
+  });
+
+  it('erreicht das Maximum 1 genau bei t = mu', () => {
+    expect(computeBumpWeight({ mu: 3, sigma: 0.5, activated: true }, 3)).toBeCloseTo(1, 6);
+  });
+
+  it('fällt symmetrisch mit dem Abstand zu mu ab (Gauß-Kernel)', () => {
+    const bump = { mu: 0, sigma: 1, activated: true };
+    const atMu = computeBumpWeight(bump, 0);
+    const oneSigmaAway = computeBumpWeight(bump, 1);
+    const twoSigmaAway = computeBumpWeight(bump, 2);
+    expect(oneSigmaAway).toBeLessThan(atMu);
+    expect(twoSigmaAway).toBeLessThan(oneSigmaAway);
+    expect(computeBumpWeight(bump, -1)).toBeCloseTo(oneSigmaAway, 10);
   });
 });
 
@@ -189,6 +213,51 @@ describe('getTime', () => {
     advance(0.5);
     expect(secondTime).toBeGreaterThan(firstTime);
     expect(getTime()).toBeGreaterThan(secondTime);
+  });
+});
+
+describe('getBumps', () => {
+  it('liefert je Phase mu/sigma/activated, Cluster initial aktiviert', () => {
+    const bumps = getBumps();
+    for (const name of ['cluster', 'metaball', 'burst']) {
+      expect(bumps[name]).toEqual(expect.objectContaining({ mu: expect.any(Number), sigma: expect.any(Number), activated: expect.any(Boolean) }));
+    }
+    expect(bumps.cluster.activated).toBe(true);
+    expect(bumps.burst.activated).toBe(false);
+  });
+
+  it('aktiviert den Burst-Bump nach erkanntem Blick', () => {
+    reportGazeDetected();
+    advance(0.1);
+    expect(getBumps().burst.activated).toBe(true);
+  });
+});
+
+describe('getShapeIndex', () => {
+  it('bleibt innerhalb der gültigen Cluster-Formvarianten', () => {
+    expect(getShapeIndex()).toBeGreaterThanOrEqual(0);
+    expect(getShapeIndex()).toBeLessThan(CLUSTER_SHAPE_VARIANTS.length);
+  });
+
+  it('wird bei jedem Metaball-Eintritt neu gewählt (innerhalb gültiger Grenzen)', () => {
+    reportGazeDetected();
+    advance(1.3);
+    advance(2.0);
+    expect(getShapeIndex()).toBeGreaterThanOrEqual(0);
+    expect(getShapeIndex()).toBeLessThan(CLUSTER_SHAPE_VARIANTS.length);
+  });
+});
+
+describe('getStateName', () => {
+  it('spiegelt die Phasen-Zustandsmaschine über einen vollen Zyklus', () => {
+    expect(getStateName()).toBe('cluster');
+    reportGazeDetected();
+    advance(1.3);
+    expect(getStateName()).toBe('burst');
+    advance(2.0);
+    expect(getStateName()).toBe('metaball');
+    advance(21.0);
+    expect(getStateName()).toBe('cluster');
   });
 });
 

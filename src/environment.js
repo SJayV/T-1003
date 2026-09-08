@@ -9,7 +9,8 @@ import { initializeGpuSetup, initializeRenderTarget, initializeFullscreenMateria
 
 
 const CLUSTER_ENVIRONMENT_MAP_DEFAULT = 'neonStudio.hdr';
-const METABALL_ENVIRONMENT_MAP_DEFAULT = 'neonStudio.hdr';
+const ENVIRONMENT_MAP_FILES = ['neonStudio.hdr', 'aquarium.hdr', 'lightStudio.hdr', 'nightSky.hdr'];
+const MAP_CYCLE_KEY = ' ';
 
 const EQUIRECTANGULAR_HEIGHT = 256;
 const EQUIRECTANGULAR_WIDTH = EQUIRECTANGULAR_HEIGHT * 2;
@@ -24,6 +25,7 @@ let _equirectangularScene = null;
 let _equirectangularCamera = null;
 let _equirectangularMaterial = null;
 let _loader = null;
+let _metaballFileIndex = 0;
 
 function _initializeEquirectangularTarget() {
   const target = initializeRenderTarget(EQUIRECTANGULAR_WIDTH, EQUIRECTANGULAR_HEIGHT);
@@ -43,7 +45,15 @@ function _initializeEquirectangularMaterial() {
   }, environmentFragment);
 }
 
-export function initializeEnvironmentMap(renderer, clusterFilename = CLUSTER_ENVIRONMENT_MAP_DEFAULT, metaballFilename = METABALL_ENVIRONMENT_MAP_DEFAULT) {
+function _initializeMapCycleListener() {
+  window.addEventListener('keydown', event => {
+    if (event.key !== MAP_CYCLE_KEY) return;
+    event.preventDefault();
+    _cycleMetaballMap();
+  });
+}
+
+export function initializeEnvironmentMap(renderer, clusterFilename = CLUSTER_ENVIRONMENT_MAP_DEFAULT, metaballFilename = ENVIRONMENT_MAP_FILES[0]) {
   _renderer = renderer;
   _equirectangularTarget = _initializeEquirectangularTarget();
   _equirectangularMaterial = _initializeEquirectangularMaterial();
@@ -51,6 +61,7 @@ export function initializeEnvironmentMap(renderer, clusterFilename = CLUSTER_ENV
 
   _loader = new RGBELoader();
   _applyEnvironmentMapFiles(clusterFilename, metaballFilename);
+  _initializeMapCycleListener();
 }
 
 
@@ -69,6 +80,11 @@ function _loadSourceMap(uniformKey, filename) {
 function _applyEnvironmentMapFiles(clusterFilename, metaballFilename) {
   _loadSourceMap('clusterSourceMap', clusterFilename);
   _loadSourceMap('metaballSourceMap', metaballFilename);
+}
+
+function _cycleMetaballMap() {
+  _metaballFileIndex = (_metaballFileIndex + 1) % ENVIRONMENT_MAP_FILES.length;
+  _loadSourceMap('metaballSourceMap', ENVIRONMENT_MAP_FILES[_metaballFileIndex]);
 }
 
 

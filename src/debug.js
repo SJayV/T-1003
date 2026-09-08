@@ -1,4 +1,4 @@
-import { getWeights, getBumps, getPulse, getMotionSpeed, getTime, getShapeIndex, getStateName } from './phase.js';
+import { getWeights, getBumps, getPulse, getMotionSpeed, getTime, getShapeIndex, getStateName, computeBumpWeight } from './phase.js';
 import { getDebugSnapshot } from './input.js';
 
 
@@ -33,16 +33,12 @@ const PHASE_KERNEL_WINDOW = 6.0;
 const PULSE_DISPLAY_RANGE = 0.05;
 
 
-// ──── STATE ────────────────────────────────────────────────────────────────
+// ──── INITIALIZATION ────────────────────────────────────────────────────────
 
 
 let _canvas = null;
 let _context = null;
 let _visible = false;
-
-
-// ──── HELPER FUNCTIONS - SETUP ─────────────────────────────────────────────
-
 
 function _initializeOverlayContainer() {
   _canvas = document.createElement('canvas');
@@ -67,155 +63,180 @@ function _initializeToggleListener() {
   });
 }
 
+export function initializeDebug() {
+  _initializeOverlayContainer();
+  _initializeToggleListener();
+}
+
 
 // ──── HELPER FUNCTIONS - DRAWING PRIMITIVES ────────────────────────────────
 
 
+function _withStroke(color, draw) {
+  _context.strokeStyle = color;
+  draw();
+}
+
+function _withFill(color, draw) {
+  _context.fillStyle = color;
+  draw();
+}
+
 function _clearOverlay() {
-  _context.fillStyle = OVERLAY_BACKGROUND;
-  _context.fillRect(0, 0, OVERLAY_WIDTH, OVERLAY_HEIGHT);
+  _withFill(OVERLAY_BACKGROUND, () => _context.fillRect(0, 0, OVERLAY_WIDTH, OVERLAY_HEIGHT));
   _context.font = OVERLAY_FONT;
   _context.fillStyle = OVERLAY_TEXT_COLOR;
   _context.textBaseline = 'top';
 }
 
 function _drawText(text, x, y) {
-  _context.fillStyle = OVERLAY_TEXT_COLOR;
-  _context.fillText(text, x, y);
+  _withFill(OVERLAY_TEXT_COLOR, () => _context.fillText(text, x, y));
+}
+
+function _drawLabel(text, y, gap) {
+  _drawText(text, OVERLAY_MARGIN, y);
+  return y + gap;
 }
 
 function _drawHeader(text, y) {
-  _drawText(text, OVERLAY_MARGIN, y);
-  return y + HEADER_TO_CONTENT_GAP;
+  return _drawLabel(text, y, HEADER_TO_CONTENT_GAP);
 }
 
 function _drawBar(x, y, width, height, fraction, color) {
-  _context.strokeStyle = OVERLAY_TEXT_COLOR;
-  _context.strokeRect(x, y, width, height);
-  _context.fillStyle = color;
-  _context.fillRect(x, y, width * Math.max(0, Math.min(1, fraction)), height);
+  _withStroke(OVERLAY_TEXT_COLOR, () => _context.strokeRect(x, y, width, height));
+  _withFill(color, () => _context.fillRect(x, y, width * Math.max(0, Math.min(1, fraction)), height));
+}
+
+function _drawLabeledBar(label, fraction, color, y, labelGap = HEADER_TO_CONTENT_GAP, trailingGap = 0) {
+  const barY = _drawLabel(label, y, labelGap);
+  _drawBar(OVERLAY_MARGIN, barY, OVERLAY_WIDTH - 2 * OVERLAY_MARGIN, PHASE_BAR_HEIGHT, fraction, color);
+  return barY + PHASE_BAR_HEIGHT + trailingGap;
+}
+
+function _strokePath(color, buildPath) {
+  _withStroke(color, () => {
+    _context.beginPath();
+    buildPath();
+    _context.stroke();
+  });
 }
 
 
 // ──── HELPER FUNCTIONS - FACE DETECTION PANEL ──────────────────────────────
 
 
-function _drawVideoFrame(video, y) {
-  const width = FACE_PANEL_HEIGHT * (video.videoWidth / video.videoHeight);
+function _computeVideoScale(video) {
+  const scale = FACE_PANEL_HEIGHT / video.videoHeight;
+  return { scaleX: scale, scaleY: scale };
+}
+
+function _drawVideoFrame(video, y, scale) {
+  const width = video.videoWidth * scale.scaleX;
   _context.save();
   _context.translate(OVERLAY_MARGIN + width, y);
   _context.scale(-1, 1);
   _context.drawImage(video, 0, 0, width, FACE_PANEL_HEIGHT);
   _context.restore();
-  return width;
-}
-
-function _videoToPanelScale(video, panelWidth) {
-  return { scaleX: panelWidth / video.videoWidth, scaleY: FACE_PANEL_HEIGHT / video.videoHeight };
 }
 
 function _drawDetectionBox(detection, video, y, scale) {
   const { x, y: boxY, width, height } = detection.detection.box;
   const mirroredX = video.videoWidth - x - width;
-  _context.strokeStyle = BOX_COLOR;
-  _context.strokeRect(OVERLAY_MARGIN + mirroredX * scale.scaleX, y + boxY * scale.scaleY, width * scale.scaleX, height * scale.scaleY);
+  _withStroke(BOX_COLOR, () => {
+    _context.strokeRect(OVERLAY_MARGIN + mirroredX * scale.scaleX, y + boxY * scale.scaleY, width * scale.scaleX, height * scale.scaleY);
+  });
 }
 
 function _drawLandmarkPoints(points, video, y, scale) {
-  _context.fillStyle = LANDMARK_COLOR;
-  for (const point of points) {
-    const mirroredX = video.videoWidth - point.x;
-    _context.beginPath();
-    _context.arc(OVERLAY_MARGIN + mirroredX * scale.scaleX, y + point.y * scale.scaleY, 1.5, 0, Math.PI * 2);
-    _context.fill();
-  }
+  _withFill(LANDMARK_COLOR, () => {
+    for (const point of points) {
+      const mirroredX = video.videoWidth - point.x;
+      _context.beginPath();
+      _context.arc(OVERLAY_MARGIN + mirroredX * scale.scaleX, y + point.y * scale.scaleY, 1.5, 0, Math.PI * 2);
+      _context.fill();
+    }
+  });
 }
 
-function _drawDetections(detections, video, panelWidth, y) {
-  const scale = _videoToPanelScale(video, panelWidth);
+function _drawDetections(detections, video, y, scale) {
   for (const detection of detections) {
     _drawDetectionBox(detection, video, y, scale);
     _drawLandmarkPoints(detection.landmarks.positions, video, y, scale);
   }
 }
 
+function _cameraIsNotReady(snapshot) {
+  return !snapshot.ready || !snapshot.video.videoWidth;
+}
+
+function _drawCameraNotReady(contentY) {
+  _drawText('camera not ready', OVERLAY_MARGIN, contentY);
+  return contentY + LABEL_TO_BAR_GAP;
+}
+
 function _drawFaceDetectionPanel(startY) {
   const snapshot = getDebugSnapshot();
   const contentY = _drawHeader('FACE DETECTION', startY);
 
-  if (!snapshot.ready || !snapshot.video.videoWidth) {
-    _drawText('camera not ready', OVERLAY_MARGIN, contentY);
-    return contentY + LABEL_TO_BAR_GAP;
-  }
+  if (_cameraIsNotReady(snapshot)) return _drawCameraNotReady(contentY);
 
-  const panelWidth = _drawVideoFrame(snapshot.video, contentY);
-  _drawDetections(snapshot.detections, snapshot.video, panelWidth, contentY);
+  const scale = _computeVideoScale(snapshot.video);
+  _drawVideoFrame(snapshot.video, contentY, scale);
+  _drawDetections(snapshot.detections, snapshot.video, contentY, scale);
 
-  const textY = contentY + FACE_PANEL_HEIGHT + LABEL_TO_BAR_GAP;
-  _drawText(`gazing: ${snapshot.isGazing}  faces: ${snapshot.detections.length}`, OVERLAY_MARGIN, textY);
-  return textY + LABEL_TO_BAR_GAP;
+  return _drawLabel(`gazing: ${snapshot.isGazing}  faces: ${snapshot.detections.length}`, contentY + FACE_PANEL_HEIGHT, LABEL_TO_BAR_GAP);
 }
 
 
 // ──── HELPER FUNCTIONS - PHASE PANEL ───────────────────────────────────────
 
 
-function _drawWeightBar(name, weight, y) {
-  _drawText(`${name} ${weight.toFixed(2)}`, OVERLAY_MARGIN, y);
-  const barY = y + LABEL_TO_BAR_GAP;
-  _drawBar(OVERLAY_MARGIN, barY, OVERLAY_WIDTH - 2 * OVERLAY_MARGIN, PHASE_BAR_HEIGHT, weight, PHASE_COLORS[name]);
-  return barY + PHASE_BAR_HEIGHT + BAR_ROW_GAP;
-}
-
-function _computeKernelWeight(bump, time) {
-  return bump.activated ? Math.exp(-((time - bump.mu) ** 2) / (2 * bump.sigma * bump.sigma)) : 0;
-}
-
 function _drawKernelCurve(name, bump, currentTime, plotX, plotY, plotWidth, plotHeight) {
-  _context.strokeStyle = PHASE_COLORS[name];
-  _context.beginPath();
-  for (let sample = 0; sample <= plotWidth; sample++) {
-    const time = currentTime - PHASE_KERNEL_WINDOW / 2 + (sample / plotWidth) * PHASE_KERNEL_WINDOW;
-    const weight = _computeKernelWeight(bump, time);
-    const x = plotX + sample;
-    const y = plotY + plotHeight - weight * plotHeight;
-    if (sample === 0) _context.moveTo(x, y); else _context.lineTo(x, y);
+  _strokePath(PHASE_COLORS[name], () => {
+    for (let sample = 0; sample <= plotWidth; sample++) {
+      const time = currentTime - PHASE_KERNEL_WINDOW / 2 + (sample / plotWidth) * PHASE_KERNEL_WINDOW;
+      const weight = computeBumpWeight(bump, time);
+      const x = plotX + sample;
+      const y = plotY + plotHeight - weight * plotHeight;
+      if (sample === 0) _context.moveTo(x, y); else _context.lineTo(x, y);
+    }
+  });
+}
+
+function _drawKernelCurves(bumps, currentTime, x, y, width, height) {
+  for (const name of Object.keys(bumps)) {
+    _drawKernelCurve(name, bumps[name], currentTime, x, y, width, height);
   }
-  _context.stroke();
+}
+
+function _drawPlotFrame(x, y, width, height) {
+  _withStroke(OVERLAY_TEXT_COLOR, () => _context.strokeRect(x, y, width, height));
+
+  const nowX = x + width / 2;
+  _strokePath(OVERLAY_TEXT_COLOR, () => {
+    _context.moveTo(nowX, y);
+    _context.lineTo(nowX, y + height);
+  });
 }
 
 function _drawKernelPlot(bumps, currentTime, y) {
-  const plotX = OVERLAY_MARGIN;
   const plotWidth = OVERLAY_WIDTH - 2 * OVERLAY_MARGIN;
-  _context.strokeStyle = OVERLAY_TEXT_COLOR;
-  _context.strokeRect(plotX, y, plotWidth, PHASE_KERNEL_HEIGHT);
-
-  for (const name of Object.keys(bumps)) {
-    _drawKernelCurve(name, bumps[name], currentTime, plotX, y, plotWidth, PHASE_KERNEL_HEIGHT);
-  }
-
-  const nowX = plotX + plotWidth / 2;
-  _context.strokeStyle = OVERLAY_TEXT_COLOR;
-  _context.beginPath();
-  _context.moveTo(nowX, y);
-  _context.lineTo(nowX, y + PHASE_KERNEL_HEIGHT);
-  _context.stroke();
-
+  _drawPlotFrame(OVERLAY_MARGIN, y, plotWidth, PHASE_KERNEL_HEIGHT);
+  _drawKernelCurves(bumps, currentTime, OVERLAY_MARGIN, y, plotWidth, PHASE_KERNEL_HEIGHT);
   return y + PHASE_KERNEL_HEIGHT + LABEL_TO_BAR_GAP;
 }
 
 function _drawPhasePanel(startY) {
   const weights = getWeights();
-  const bumps = getBumps();
   const currentTime = getTime();
 
   let cursor = _drawHeader('PHASE WEIGHTS', startY);
-  cursor = _drawWeightBar('cluster', weights.clusterWeight, cursor);
-  cursor = _drawWeightBar('metaball', weights.metaballWeight, cursor);
-  cursor = _drawWeightBar('burst', weights.burstWeight, cursor);
+  cursor = _drawLabeledBar(`cluster ${weights.clusterWeight.toFixed(2)}`, weights.clusterWeight, PHASE_COLORS.cluster, cursor, LABEL_TO_BAR_GAP, BAR_ROW_GAP);
+  cursor = _drawLabeledBar(`metaball ${weights.metaballWeight.toFixed(2)}`, weights.metaballWeight, PHASE_COLORS.metaball, cursor, LABEL_TO_BAR_GAP, BAR_ROW_GAP);
+  cursor = _drawLabeledBar(`burst ${weights.burstWeight.toFixed(2)}`, weights.burstWeight, PHASE_COLORS.burst, cursor, LABEL_TO_BAR_GAP, BAR_ROW_GAP);
 
-  cursor = _drawHeader('PHASE KERNELS (mu / sigma over time)', cursor);
-  cursor = _drawKernelPlot(bumps, currentTime, cursor);
+  cursor = _drawHeader('GAUSSIAN PHASE KERNELS', cursor);
+  cursor = _drawKernelPlot(getBumps(), currentTime, cursor);
 
   _drawText(`state: ${getStateName()}  shape: ${getShapeIndex()}  t: ${currentTime.toFixed(2)}`, OVERLAY_MARGIN, cursor);
   return cursor + LABEL_TO_BAR_GAP;
@@ -229,9 +250,7 @@ function _drawPulsePanel(startY) {
   const pulse = getPulse();
   const fraction = (pulse - 1) / PULSE_DISPLAY_RANGE;
 
-  const barY = _drawHeader(`PULSE ${pulse.toFixed(4)}`, startY);
-  _drawBar(OVERLAY_MARGIN, barY, OVERLAY_WIDTH - 2 * OVERLAY_MARGIN, PHASE_BAR_HEIGHT, fraction, PHASE_COLORS.cluster);
-  return barY + PHASE_BAR_HEIGHT;
+  return _drawLabeledBar(`PULSE ${pulse.toFixed(4)}`, fraction, PHASE_COLORS.cluster, startY);
 }
 
 
@@ -241,19 +260,12 @@ function _drawPulsePanel(startY) {
 function _drawMotionPanel(startY) {
   const motionSpeed = getMotionSpeed();
 
-  const barY = _drawHeader(`MOTION SPEED ${motionSpeed.toFixed(3)}`, startY);
-  _drawBar(OVERLAY_MARGIN, barY, OVERLAY_WIDTH - 2 * OVERLAY_MARGIN, PHASE_BAR_HEIGHT, motionSpeed, OVERLAY_TEXT_COLOR);
-  return barY + PHASE_BAR_HEIGHT;
+  return _drawLabeledBar(`MOTION SPEED ${motionSpeed.toFixed(3)}`, motionSpeed, OVERLAY_TEXT_COLOR, startY);
 }
 
 
 // ──── PUBLIC INTERFACE ─────────────────────────────────────────────────────
 
-
-export function initializeDebug() {
-  _initializeOverlayContainer();
-  _initializeToggleListener();
-}
 
 export function updateDebugOverlay() {
   if (!_visible) return;

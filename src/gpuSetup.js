@@ -124,10 +124,6 @@ export function renderPass(renderer, target, pass, applyUniforms) {
   renderer.setRenderTarget(null);
 }
 
-function _renderMainPass(renderer, scene, camera, mainTarget) {
-  renderPass(renderer, mainTarget, { scene, camera });
-}
-
 function _renderExtractPass(renderer, materials, targets, extractPass) {
   renderPass(renderer, targets.extractTarget, extractPass, () => {
     materials.extractMaterial.uniforms.mainTexture.value = targets.mainTarget.texture;
@@ -169,7 +165,7 @@ export function initializeBloomSetup(renderer, fragments) {
       if (_rendererSizeChanged(renderer, targets.mainTarget)) _resizeBloomTargets(renderer, targets, materials);
 
       _applyBloomParameters(materials, { intensity, threshold });
-      _renderMainPass(renderer, scene, camera, targets.mainTarget);
+      renderPass(renderer, targets.mainTarget, { scene, camera });
       _renderExtractPass(renderer, materials, targets, passes.extractPass);
       _renderBlurPasses(renderer, materials, targets, passes.blurPass);
       _renderCompositePass(renderer, materials, targets, passes.compositePass);

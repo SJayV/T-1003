@@ -51,6 +51,7 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 | `getMotionSpeed()` | — | aktueller, evtl. zerfallener Bewegungswert | `number` | [0,1] |
 | `getPulse()` | — | Puls-Skalar aus `getTime()`, Basis für `pulse`-Uniform (`shapeChunk.js`) & synthetische Cluster-Lautstärke (`audio.js`) | `number` | [1, 1.04] |
 | `getBumps()` | — | Gauß-Kernel-Parameter je Phase (`mu`, `sigma`, `activated`), Referenz, nur lesend (z. B. `debug.js`) | `{ cluster, metaball, burst }` | — |
+| `computeBumpWeight(bump, currentTime)` | `bump: {mu, sigma, activated}`, `currentTime: number` | Gauß-Kernel-Wert eines Bumps zu beliebigem Zeitpunkt; einzige Formel-Implementierung, intern von `getWeights()` sowie von `debug.js`s Kernel-Plot (Kurvenverlauf über mehrere Zeitpunkte) genutzt | `number` | [0,1] |
 | `getShapeIndex()` | — | aktuelle Cluster-Formvariante (Index in `CLUSTER_SHAPE_VARIANTS`) | `number` | — |
 | `getStateName()` | — | Name der aktiven Phase | `string` | `'cluster' \| 'metaball' \| 'burst'` |
 | `getTime()` | — | interne Simulationszeit, akkumuliert aus der tatsächlichen Differenz aufeinanderfolgender `tick(currentTime)`-Aufrufe (nicht aus einer fixen Schrittweite) — verfolgt reale Wanduhrzeit exakt, unabhängig von Framerate-Schwankungen | `number` | [0,∞) |
@@ -98,7 +99,9 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 
 | Funktion | Parameter | Semantik | Rückgabe |
 |---|---|---|---|
-| `initializeEnvironmentMap(renderer, clusterFilename?, metaballFilename?)` | `renderer`, Dateinamen (Default: `neonStudio.hdr` für beide) | Laden beider HDR-Dateien aus `resources/environments/` (`RGBELoader`), Anlegen von Zieltextur (256×512, `LinearSRGBColorSpace`) & Blend-Material | `void` |
+| `initializeEnvironmentMap(renderer, clusterFilename?, metaballFilename?)` | `renderer`, Dateinamen (Default: `neonStudio.hdr` für beide) | Laden beider HDR-Dateien aus `resources/environments/` (`RGBELoader`), Anlegen von Zieltextur (256×512, `LinearSRGBColorSpace`) & Blend-Material, Registrierung des Leertaste-Listeners für den Map-Zyklus | `void` |
+
+- **Leertaste-Zyklus:** `metaballSourceMap` (mitgenutzt von `_burstEnvironment`, siehe `colorChunk.js` — kein separates Burst-Map) durchläuft bei jedem Druck der Leertaste (`preventDefault`, analog zu `debug.js`s `Tab`-Handler) `ENVIRONMENT_MAP_FILES` (alle vier Dateien in `resources/environments/`); Listener selbst-registriert am Ende von `initializeEnvironmentMap`, analog zu `audio.js`/`debug.js`; `clusterSourceMap` bleibt unverändert
 | `getUniformDefinitions()` | — | — | `{ environmentMap }` |
 | `applyStateToMaterial(material)` | `material` | erneutes Rendern der Überblendung (abhängig von aktuellen Phasengewichten + `getTime()`), Setzen von `environmentMap.value` auf das Ergebnis | `void` |
 
@@ -136,7 +139,7 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 - Hüllkurven-Lautstärke = `getPulse()`, derselbe Skalar wie die SDF-Größe der Cluster-Grundkörper (`shapeChunk.js`)
 - `_applyGainWeights` (Phasengewicht → `_clusterGain`) quellenagnostisch: Sample-Buffer vs. synthetische Quelle egal
 
-**`src/debug.js`:** Tab-umschaltbares Debug-Overlay; reiner Konsument von `phase.js` (`getWeights`, `getBumps`, `getPulse`, `getMotionSpeed`, `getTime`, `getShapeIndex`, `getStateName`) & `input.js` (`getDebugSnapshot`), keine Shader-Uniformen
+**`src/debug.js`:** Tab-umschaltbares Debug-Overlay; reiner Konsument von `phase.js` (`getWeights`, `getBumps`, `computeBumpWeight`, `getPulse`, `getMotionSpeed`, `getTime`, `getShapeIndex`, `getStateName`) & `input.js` (`getDebugSnapshot`), keine Shader-Uniformen
 
 | Funktion | Semantik |
 |---|---|
@@ -182,7 +185,7 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 | `_rotateAroundYAxis(direction)` | kontinuierliche Rotation der Sample-Richtung mit `time` (visuelle Abwechslung) |
 | `blendEnvironment(uv, clusterSourceMap, metaballSourceMap)` | öffentlicher Einstiegspunkt: Berechnung der Richtung aus `uv`, Rotation, 3-Wege-Gewichtsblend aus allen drei `_<phase>Environment`-Aufrufen |
 
-**`shaderChunks/positionChunk.js`:** Physik-Blend für die Ballbewegung — **Voraussetzung:** `stateTexture`, `TEXELS_PER_BALL`, `time`, `motionSpeed`, `clusterWeight`/`metaballWeight`/`burstWeight` in Scope; `stateUV(int)` definiert (aus `simulationShader.js`)
+**`shaderChunks/positionChunk.js`:** Physik-Blend für die Ballbewegung — **Voraussetzung:** `stateTexture`, `TEXELS_PER_BALL`, `motionSpeed`, `clusterWeight`/`metaballWeight`/`burstWeight` in Scope; `stateUV(int)` definiert (aus `simulationShader.js`)
 
 | GLSL-Funktion | Semantik |
 |---|---|
@@ -256,6 +259,7 @@ applyStateToMaterial(material: THREE.ShaderMaterial): void
 | `stateTexture` | `sampler2D` | Ballzustand — `fetchBalls()` liest Position + Radius je Kugel |
 | `metaballWeight`, `clusterWeight`, `burstWeight` | `float` | steuern SDF-Komposition (`shapeChunk`) & Shading-Blend (`surfaceChunk`) |
 | `clusterShapeIndex` | `int` | wählt die aktive Cluster-Grundform (`shapeChunk`) |
+| `pulse` | `float` | Herzschlag-Skalierung der Cluster-Grundkörper (`shapeChunk`s `_pulse()`), aus `phase.js`s `getPulse()` |
 
 - eigener Code: `fetchBalls()` (Füllen der globalen `_ballCenter*`/`_ballRadius*` aus der Zustandstextur), `_primaryRayDirection()`, `_computeStepSafety()` (Dämpfung der Raymarch-Schrittweite während einer echten Cross-Phase-Überblendung, ohne Kosten in eingeschwungenen Zuständen), `raymarch()`, `main()` (`fetchBalls()` → `raymarch()` → `blendShading()`)
 

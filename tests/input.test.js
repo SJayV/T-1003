@@ -7,7 +7,7 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT, GAZE_DETECT_INTERVAL_FRAMES, GAZE_PERSIST_
 const VIDEO_WIDTH = 640;
 const VIDEO_HEIGHT = 480;
 
-let updateInput;
+let updateInput, getDebugSnapshot;
 let mockReportGazeDetected, mockReportMotionEnergy, mockGetImageData;
 let mockDetectAllFaces;
 
@@ -86,6 +86,7 @@ beforeEach(async () => {
 
   const inputModule = await import('../src/input.js');
   updateInput = inputModule.updateInput;
+  getDebugSnapshot = inputModule.getDebugSnapshot;
 
   inputModule.initializeInput();
   await flush();
@@ -156,5 +157,40 @@ describe('updateInput: Gaze-Erkennung (face-api.js, zentriert + frontal)', () =>
   it('Gesichtserkennung wird gedrosselt (nicht jeden Frame aufgerufen)', async () => {
     for (let frameIndex = 0; frameIndex < GAZE_DETECT_INTERVAL_FRAMES; frameIndex++) await tick([]);
     expect(mockDetectAllFaces).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+// ──── GET DEBUG SNAPSHOT ────────────────────────────────────────────────────
+
+
+describe('getDebugSnapshot', () => {
+  it('liefert Video-Element, Ready-Status und die letzten Rohdetektionen', async () => {
+    const face = faceAt({ centered: true, frontal: true });
+    for (let frameIndex = 0; frameIndex < GAZE_DETECT_INTERVAL_FRAMES; frameIndex++) await tick([face]);
+
+    const snapshot = getDebugSnapshot();
+    expect(snapshot.video).toBeInstanceOf(HTMLVideoElement);
+    expect(snapshot.ready).toBe(true);
+    expect(snapshot.detections).toEqual([face]);
+  });
+
+  it('detections spiegelt eine leere Erkennung wider', async () => {
+    for (let frameIndex = 0; frameIndex < GAZE_DETECT_INTERVAL_FRAMES; frameIndex++) await tick([]);
+    expect(getDebugSnapshot().detections).toEqual([]);
+  });
+
+  it('isGazing wird nach anhaltendem Blick true, synchron zu reportGazeDetected', async () => {
+    const face = faceAt({ centered: true, frontal: true });
+    expect(getDebugSnapshot().isGazing).toBe(false);
+
+    for (let cycleIndex = 0; cycleIndex < GAZE_PERSIST_CYCLES; cycleIndex++) {
+      for (let frameIndex = 0; frameIndex < GAZE_DETECT_INTERVAL_FRAMES; frameIndex++) await tick([face]);
+    }
+
+    expect(getDebugSnapshot().isGazing).toBe(true);
+
+    await tick([face]); // reportGazeDetected() liest _lastGazeDetected erst im Folge-Tick (async Detektion)
+    expect(mockReportGazeDetected).toHaveBeenCalled();
   });
 });

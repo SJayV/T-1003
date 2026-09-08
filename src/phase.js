@@ -192,7 +192,7 @@ function _scheduleTick(currentTime, gazeDetected) {
 // ──── HELPER FUNCTIONS - WEIGHT COMPUTATION ────────────────────────────────
 
 
-function _computeWeight(bump, currentTime) {
+export function computeBumpWeight(bump, currentTime) {
   return bump.activated ? Math.exp(-((currentTime - bump.mu) ** 2) / (2 * bump.sigma * bump.sigma)) : 0;
 }
 
@@ -200,7 +200,7 @@ function _computeWeights(currentTime, bumps) {
   const EPSILON = 1e-6;
   const raw = {};
   for (const key of ['cluster', 'metaball', 'burst']) {
-    raw[key] = _computeWeight(bumps[key], currentTime);
+    raw[key] = computeBumpWeight(bumps[key], currentTime);
   }
   const sum = raw.cluster + raw.metaball + raw.burst + EPSILON;
   return {

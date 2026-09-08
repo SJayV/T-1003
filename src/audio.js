@@ -12,7 +12,7 @@ const BURST_SIGNAL_FILE = 'burstSound.mp3';
 const MASTER_GAIN = 0.35;
 const GAIN_SMOOTHING_TIME_CONSTANT = 0.15;
 
-const CLUSTER_VOLUME = 5.0;
+const CLUSTER_VOLUME = 8.0;
 
 const HEARTBEAT_NOISE_BUFFER_DURATION = 2.0;
 const HEARTBEAT_LOWPASS_FREQUENCY = 120;
@@ -87,7 +87,7 @@ export async function initializeAudio() {
   if (_audioContextIsNotReady()) return;
   _initializeGains();
   _registerBurstSignalListener();
-  _startHeartbeat(_audioContext, _clusterGain);
+  _initializeHeartbeat(_audioContext, _clusterGain);
 
   const [metaballBuffer, burstBuffer, burstSignalBuffer] = await _loadBuffers();
 
@@ -140,20 +140,19 @@ function _createNoiseBuffer(audioContext) {
   return buffer;
 }
 
-function _startHeartbeat(audioContext, destination) {
-  const noiseSource = audioContext.createBufferSource();
-  noiseSource.buffer = _createNoiseBuffer(audioContext);
-  noiseSource.loop = true;
-
+function _initializeLowpassFilter(audioContext) {
   const lowpassFilter = audioContext.createBiquadFilter();
   lowpassFilter.type = 'lowpass';
   lowpassFilter.frequency.value = HEARTBEAT_LOWPASS_FREQUENCY;
+  return lowpassFilter;
+}
 
+function _initializeHeartbeat(audioContext, destination) {
+  const lowpassFilter = _initializeLowpassFilter(audioContext);
   _heartbeatEnvelopeGain = _initializeGain(destination, 0);
-
-  noiseSource.connect(lowpassFilter);
   lowpassFilter.connect(_heartbeatEnvelopeGain);
-  noiseSource.start();
+
+  _playBuffer(audioContext, _createNoiseBuffer(audioContext), lowpassFilter, true);
 }
 
 
