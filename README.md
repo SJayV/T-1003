@@ -64,7 +64,7 @@ stateDiagram-v2
 - **data:** $i$: index, $\mathbf{c}_i(t)$: position, $r_i(t)$: radius
 - **combined SDF** of the whole object via smoothing function $\operatorname{smin}_k$:
 
-$$S_M(\mathbf{x},t)=\operatorname*{smin}_k\;\bigl(\|\mathbf{x}-\mathbf{c}_i(t)\|-r_i(t)\bigr),\quad i=1,\dots,n$$
+$$S_M(\mathbf{x},t)=\text{smin}_k\;\bigl(\|\mathbf{x}-\mathbf{c}_i(t)\|-r_i(t)\bigr),\quad i=1,\dots,n$$
 
 **Geometric body in the cluster state:**
 - **combined SDF** $S_K$ from a set of prebuilt, closed base shapes
