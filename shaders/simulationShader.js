@@ -21,24 +21,24 @@ const int TEXELS_PER_BALL = ${TEXELS_PER_BALL};
 // ──── HELPER FUNCTIONS - STATE TEXTURE ACCESS ──────────────────────────────
 
 
-vec2 stateUV(int index) {
+vec2 _stateUV(int index) {
   return vec2((float(index) + 0.5) / TEXTURE_WIDTH, 0.5);
 }
 
-vec3 fetchPosition(int ball) {
-  return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL)).xyz;
+vec3 _fetchPosition(int ball) {
+  return texture2D(stateTexture, _stateUV(ball * TEXELS_PER_BALL)).xyz;
 }
 
-float fetchInitialRadius(int ball) {
-  return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL)).w;
+float _fetchInitialRadius(int ball) {
+  return texture2D(stateTexture, _stateUV(ball * TEXELS_PER_BALL)).w;
 }
 
-vec3 fetchVelocity(int ball) {
-  return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL + 1)).xyz;
+vec3 _fetchVelocity(int ball) {
+  return texture2D(stateTexture, _stateUV(ball * TEXELS_PER_BALL + 1)).xyz;
 }
 
-vec4 fetchOrbit(int ball) {
-  return texture2D(stateTexture, stateUV(ball * TEXELS_PER_BALL + 2));
+vec4 _fetchOrbit(int ball) {
+  return texture2D(stateTexture, _stateUV(ball * TEXELS_PER_BALL + 2));
 }
 
 ${positionChunk}
@@ -59,7 +59,7 @@ TexelIndices _computeIndices() {
 struct BallState { vec3 position; vec3 velocity; float initialRadius; vec4 orbit; };
 
 BallState _fetchBallState(int ball) {
-  return BallState(fetchPosition(ball), fetchVelocity(ball), fetchInitialRadius(ball), fetchOrbit(ball));
+  return BallState(_fetchPosition(ball), _fetchVelocity(ball), _fetchInitialRadius(ball), _fetchOrbit(ball));
 }
 
 bool _isOrbitTexel(int subIndex) {
@@ -78,7 +78,7 @@ void main() {
   TexelIndices indices = _computeIndices();
 
   if (_isOrbitTexel(indices.subIndex)) {
-    gl_FragColor = texture2D(stateTexture, stateUV(indices.texelIndex));
+    gl_FragColor = texture2D(stateTexture, _stateUV(indices.texelIndex));
     return;
   }
 

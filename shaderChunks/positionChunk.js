@@ -55,7 +55,7 @@ OrbitState _computeOrbitState(vec3 position, vec4 orbit) {
 vec3 _computeCenter() {
   vec3 center = vec3(0.0);
   for (int ballIndex = 0; ballIndex < BALL_COUNT; ballIndex++) {
-    center += texture2D(stateTexture, stateUV(ballIndex * TEXELS_PER_BALL)).xyz;
+    center += texture2D(stateTexture, _stateUV(ballIndex * TEXELS_PER_BALL)).xyz;
   }
   return center / float(BALL_COUNT);
 }

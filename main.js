@@ -19,7 +19,7 @@ const BLOOM_INTENSITY_BURST_BOOST = 1.5;
 const BLOOM_THRESHOLD_BASE = 0.65;
 const BLOOM_THRESHOLD_BURST_DROP = 0.25;
 
-const material = new THREE.ShaderMaterial({
+const _material = new THREE.ShaderMaterial({
   uniforms: {
     ...getPhaseUniformDefinitions(),
     ...getRendererUniformDefinitions(),
@@ -34,9 +34,9 @@ const material = new THREE.ShaderMaterial({
 // ──── INITIALIZATION ───────────────────────────────────────────────────────
 
 
-const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
-mesh.frustumCulled = false;
-applyMeshToScene(mesh);
+const _mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), _material);
+_mesh.frustumCulled = false;
+applyMeshToScene(_mesh);
 
 initializeRendering();
 initializeEnvironmentMap(renderer);
@@ -45,32 +45,32 @@ initializeAudio();
 initializeDebug();
 initializeSimulation(renderer);
 
-const bloom = initializeBloomSetup(renderer, { brightExtractFragment, blurFragment, compositeFragment });
+const _bloom = initializeBloomSetup(renderer, { brightExtractFragment, blurFragment, compositeFragment });
 
 
 // ──── ANIMATION LOOP ───────────────────────────────────────────────────────
 
 
-function animate() {
+function _animate() {
   tick(getAudioTime());
 
   const { burstWeight } = getWeights();
 
   stepSimulation();
-  applyPhaseState(material);
-  applyRendererState(material);
-  applySimulationState(material);
-  applyEnvironmentState(material);
+  applyPhaseState(_material);
+  applyRendererState(_material);
+  applySimulationState(_material);
+  applyEnvironmentState(_material);
   updateInput();
   updateAudio();
   updateDebugOverlay();
 
-  bloom.render(scene, camera, {
+  _bloom.render(scene, camera, {
     intensity: BLOOM_INTENSITY_BASE + burstWeight * BLOOM_INTENSITY_BURST_BOOST,
     threshold: BLOOM_THRESHOLD_BASE - burstWeight * BLOOM_THRESHOLD_BURST_DROP
   });
 
-  requestAnimationFrame(animate);
+  requestAnimationFrame(_animate);
 }
 
-animate();
+_animate();
