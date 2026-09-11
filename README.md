@@ -62,7 +62,7 @@ stateDiagram-v2
 
 **Metaball surface:**
 - **data:** $i$: index, $\mathbf{c}_i(t)$: position, $r_i(t)$: radius
-- **combined SDF** of the whole object via smoothing function $\operatorname{smin}_k$:
+- **combined SDF** of the whole object via smoothing function $\text{smin}_k$:
 
 $$S_M(\mathbf{x},t)=\text{smin}_k\;\bigl(\|\mathbf{x}-\mathbf{c}_i(t)\|-r_i(t)\bigr),\quad i=1,\dots,n$$
 
