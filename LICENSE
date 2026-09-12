@@ -1,0 +1,66 @@
+MIT License
+
+Copyright (c) 2026 SJayV
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+--------------------------------------------------------------------------------
+THIRD-PARTY NOTICES
+--------------------------------------------------------------------------------
+
+This project incorporates or is derived from material from the following
+third-party sources.
+
+1. face-api.js (pretrained model weights)
+   Files: resources/weights/*
+   Source: face-api.js by justadudewhohacks (https://github.com/justadudewhohacks/face-api.js)
+   License: MIT License
+   Also used at runtime via CDN (face-api.js@0.22.2), unmodified.
+
+2. three.js
+   Used at runtime via CDN (three@0.160.0), unmodified, not vendored into this repo.
+   Source: https://github.com/mrdoob/three.js
+   License: MIT License
+
+3. HDR environment maps
+   Files: resources/environments/aquarium.hdr, lightStudio.hdr, neonStudio.hdr, nightSky.hdr
+   Source: Poly Haven (https://polyhaven.com)
+   License: CC0 1.0 Universal (no attribution required; credited here as a courtesy)
+
+4. Signed distance function formulas
+   Files: shaderChunks/shapeChunk.js (_signedDistanceSphere, _signedDistanceBox,
+   _signedDistanceTorus, _smoothMin, and related helpers)
+   Adapted from the distance function and smooth-minimum articles by Inigo Quilez
+   (https://iquilezles.org/articles/distfunctions/, https://iquilezles.org/articles/smin/)
+   Reimplemented with this project's own naming and structure.
+
+5. Glass shading technique
+   File: shaderChunks/surfaceChunk.js (_clusterShading, _clusterRefractedColor,
+   _clusterTraceInterior, _exitRefractedRay, and related helpers)
+   Adapted from a Shadertoy glass shader by mmalex, created 2013-12-09
+   (https://www.shadertoy.com/view/XsSGDh), including the interior raymarch / refraction / exponential-absorption technique and the glass tint color.
+   Reimplemented with this project's own naming and structure.
+
+6. Audio samples
+   Files: resources/sounds/burst.mp3, resources/sounds/burstSound.mp3,
+   resources/sounds/metaball.mp3
+   Source: Pixabay (https://pixabay.com)
+   License: Pixabay Content License (free for commercial and non-commercial use,
+   no attribution required; credited here as a courtesy)
