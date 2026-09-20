@@ -109,29 +109,32 @@ $$a(\xi,t)=\sum_p \hat w_p(t)\cdot a_p(\xi,t)$$
 1. **Metaball:**
     - **orbital motion:** movement along a fixed, inclined orbit around the scene center
     - **orbit parameters:** $\rho_i$: orbit radius, $\nu_i$: orbit inclination, $\varsigma_z$: global $z$-squash, $\varphi(t)$: angle along the orbit
-
-    $$\mathbf{q}_i(\varphi(t)) = \rho_i\begin{pmatrix}
-      \cos\varphi(t)\\
-      \sin\varphi(t)\sin\nu_i\\
-      \varsigma_z\cdot\sin\varphi(t)\cos\nu_i
-    \end{pmatrix}$$
-
     - **orbit properties:** random initial angle on each orbit; incommensurable orbit speeds — motion pattern never exactly repeats
     - additional modulation of angular speed by detected motion energy
+
+  
+$$
+\mathbf{q}_i(\varphi(t)) = \rho_i\begin{pmatrix}
+  \cos\varphi(t)\\
+  \sin\varphi(t)\sin\nu_i\\
+  \varsigma_z\cdot\sin\varphi(t)\cos\nu_i
+\end{pmatrix}
+$$
+
 2. **Cluster:**
     - **origin pull:** gentle pull toward the scene origin
-
-    $$\mathbf{v}_i\propto \mathbf{o}-\mathbf{c}_i$$
-
     - merger into a single body
+
+$$\mathbf{v}_i\propto \mathbf{o}-\mathbf{c}_i$$
+
 3. **Burst:**
     - **repulsion:** acceleration away from the shared center of mass
-
-    $$\hat{\mathbf{c}}(t)=\frac1n\sum_i\mathbf{c}_i(t)$$
-
-    $$\mathbf{v}_i\propto \mathbf{c}_i-\hat{\mathbf{c}}$$
-
     - **force scaling:** strength dependent on motion energy
+
+$$\hat{\mathbf{c}}(t)=\frac1n\sum_i\mathbf{c}_i(t)$$
+
+$$\mathbf{v}_i\propto \mathbf{c}_i-\hat{\mathbf{c}}$$
+
 
 ### 1.7 Audio
 
