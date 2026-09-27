@@ -1,5 +1,9 @@
+import * as THREE from 'three';
 import { getWeights, getBumps, getPulse, getMotionSpeed, getTime, getShapeIndex, getStateName, computeBumpWeight } from './phase.js';
 import { getDebugSnapshot } from './input.js';
+import { getBallStates } from './simulation.js';
+import { camera, renderer } from './renderer.js';
+import { CAMERA_FOCAL_LENGTH } from './constants.js';
 
 
 // ──── CONSTANTS ────────────────────────────────────────────────────────────
@@ -32,6 +36,11 @@ const PHASE_KERNEL_WINDOW = 6.0;
 
 const PULSE_DISPLAY_RANGE = 0.05;
 
+const BALL_VECTOR_SCALE = 6.0;
+const BALL_VECTOR_MIN_SPEED = 1e-5;
+const BALL_VECTOR_ARROWHEAD_SIZE = 6;
+const BALL_VECTOR_ARROWHEAD_SPREAD = Math.PI / 7;
+
 
 // ──── INITIALIZATION ────────────────────────────────────────────────────────
 
@@ -40,10 +49,13 @@ let _canvas = null;
 let _context = null;
 let _visible = false;
 
+function _resizeOverlayCanvas() {
+  _canvas.width = window.innerWidth;
+  _canvas.height = window.innerHeight;
+}
+
 function _initializeOverlayContainer() {
   _canvas = document.createElement('canvas');
-  _canvas.width = OVERLAY_WIDTH;
-  _canvas.height = OVERLAY_HEIGHT;
   _canvas.style.position = 'fixed';
   _canvas.style.top = '0';
   _canvas.style.left = '0';
@@ -52,6 +64,9 @@ function _initializeOverlayContainer() {
   _canvas.style.display = 'none';
   _context = _canvas.getContext('2d');
   document.body.appendChild(_canvas);
+
+  _resizeOverlayCanvas();
+  window.addEventListener('resize', _resizeOverlayCanvas);
 }
 
 function _initializeToggleListener() {
@@ -83,6 +98,7 @@ function _withFill(color, draw) {
 }
 
 function _clearOverlay() {
+  _context.clearRect(0, 0, _canvas.width, _canvas.height);
   _withFill(OVERLAY_BACKGROUND, () => _context.fillRect(0, 0, OVERLAY_WIDTH, OVERLAY_HEIGHT));
   _context.font = OVERLAY_FONT;
   _context.fillStyle = OVERLAY_TEXT_COLOR;
@@ -119,6 +135,63 @@ function _strokePath(color, buildPath) {
     buildPath();
     _context.stroke();
   });
+}
+
+
+// ──── HELPER FUNCTIONS - BALL VECTOR OVERLAY ───────────────────────────────
+
+
+const _ballRelativePosition = new THREE.Vector3();
+const _ballVectorTip = new THREE.Vector3();
+
+function _projectWorldPoint(point) {
+  _ballRelativePosition.copy(point).sub(camera.position);
+  const depth = -_ballRelativePosition.z;
+  if (depth <= 0) return null;
+
+  const resolutionX = renderer.domElement.width;
+  const resolutionY = renderer.domElement.height;
+  const fragX = (CAMERA_FOCAL_LENGTH * _ballRelativePosition.x / depth) * resolutionY + 0.5 * resolutionX;
+  const fragY = (CAMERA_FOCAL_LENGTH * _ballRelativePosition.y / depth) * resolutionY + 0.5 * resolutionY;
+
+  return {
+    x: (fragX / resolutionX) * _canvas.width,
+    y: _canvas.height - (fragY / resolutionY) * _canvas.height,
+  };
+}
+
+function _drawArrowhead(start, end, color) {
+  const angle = Math.atan2(end.y - start.y, end.x - start.x);
+  _strokePath(color, () => {
+    _context.moveTo(end.x, end.y);
+    _context.lineTo(end.x - BALL_VECTOR_ARROWHEAD_SIZE * Math.cos(angle - BALL_VECTOR_ARROWHEAD_SPREAD), end.y - BALL_VECTOR_ARROWHEAD_SIZE * Math.sin(angle - BALL_VECTOR_ARROWHEAD_SPREAD));
+    _context.moveTo(end.x, end.y);
+    _context.lineTo(end.x - BALL_VECTOR_ARROWHEAD_SIZE * Math.cos(angle + BALL_VECTOR_ARROWHEAD_SPREAD), end.y - BALL_VECTOR_ARROWHEAD_SIZE * Math.sin(angle + BALL_VECTOR_ARROWHEAD_SPREAD));
+  });
+}
+
+function _drawBallVector(ball, color) {
+  if (ball.velocity.lengthSq() < BALL_VECTOR_MIN_SPEED * BALL_VECTOR_MIN_SPEED) return;
+
+  const start = _projectWorldPoint(ball.position);
+  if (!start) return;
+
+  _ballVectorTip.copy(ball.position).addScaledVector(ball.velocity, BALL_VECTOR_SCALE);
+  const end = _projectWorldPoint(_ballVectorTip);
+  if (!end) return;
+
+  _strokePath(color, () => {
+    _context.moveTo(start.x, start.y);
+    _context.lineTo(end.x, end.y);
+  });
+  _drawArrowhead(start, end, color);
+}
+
+function _drawBallVectorsOverlay() {
+  const color = PHASE_COLORS[getStateName()] ?? OVERLAY_TEXT_COLOR;
+  for (const ball of getBallStates()) {
+    _drawBallVector(ball, color);
+  }
 }
 
 
@@ -271,6 +344,7 @@ export function updateDebugOverlay() {
   if (!_visible) return;
 
   _clearOverlay();
+  _drawBallVectorsOverlay();
   let cursor = PANEL_START_Y;
   cursor = _drawFaceDetectionPanel(cursor) + PANEL_GAP;
   cursor = _drawPhasePanel(cursor) + PANEL_GAP;

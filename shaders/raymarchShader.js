@@ -1,7 +1,7 @@
 import { noiseChunk, sampleChunk, vertexChunk } from '../shaderChunks/helpersChunk.js';
 import { shapeChunk } from '../shaderChunks/shapeChunk.js';
 import { surfaceChunk } from '../shaderChunks/surfaceChunk.js';
-import { STATE_TEXTURE_WIDTH, glslFloat } from '../src/constants.js';
+import { STATE_TEXTURE_WIDTH, CAMERA_FOCAL_LENGTH, glslFloat } from '../src/constants.js';
 
 export const mainVertex = vertexChunk;
 
@@ -87,7 +87,7 @@ float _computeStepSafety() {
 }
 
 vec3 _primaryRayDirection() {
-  const float CAMERA_FOCAL_LENGTH = 1.5;
+  const float CAMERA_FOCAL_LENGTH = ${glslFloat(CAMERA_FOCAL_LENGTH)};
   vec2 uv = (gl_FragCoord.xy - 0.5 * resolution.xy) / resolution.y;
   return normalize(vec3(uv, -CAMERA_FOCAL_LENGTH));
 }

@@ -60,12 +60,6 @@ vec3 _computeCenter() {
   return center / float(BALL_COUNT);
 }
 
-vec3 _burstNudgedDirection(vec3 direction, vec3 position, vec4 orbit) {
-  vec3 outwardDirection = normalize(direction);
-  vec3 orbitDirection = normalize(_computeOrbitState(position, orbit).tangentStep);
-  return normalize(mix(outwardDirection, orbitDirection, 1.0));
-}
-
 float _burstForceMagnitude(float distance) {
   float peak = BURST_FORCE_BASE + motionSpeed * BURST_FORCE_SCALE;
   return BURST_FORCE_OFFSET + peak * exp(-distance * BURST_FALLOFF);
@@ -85,10 +79,10 @@ vec3 _clusterVelocity(vec3 position) {
   return -position * ORIGIN_PULL;
 }
 
-vec3 _burstVelocity(vec3 position, vec3 center, vec4 orbit) {
+vec3 _burstVelocity(vec3 position, vec3 center) {
   vec3 direction = position - center;
   float distance = length(direction) + BURST_DIST_EPSILON;
-  return _burstNudgedDirection(direction, position, orbit) * _burstForceMagnitude(distance) + _clusterVelocity(position);
+  return (direction / distance) * _burstForceMagnitude(distance) + _clusterVelocity(position);
 }
 
 
@@ -99,7 +93,7 @@ vec3 _blendVelocity(vec3 position, vec3 velocity, vec4 orbit) {
   vec3 center = _computeCenter();
   return velocity + _metaballVelocity(position, velocity, orbit) * metaballWeight
                    + _clusterVelocity(position) * clusterWeight
-                   + _burstVelocity(position, center, orbit) * burstWeight;
+                   + _burstVelocity(position, center) * burstWeight;
 }
 
 void _decayVelocity(inout vec3 velocity) {

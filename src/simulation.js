@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { simulationVertex, simulationFragment } from '../shaders/simulationShader.js';
 import { initializeGpuSetup, renderPass } from './gpuSetup.js';
 import { getSimulationUniformDefinitions, applySimulationState } from './phase.js';
-import { BALLS, TEXELS_PER_BALL, STATE_TEXTURE_WIDTH, ORBIT_Z_SQUASH } from './constants.js';
+import { BALLS, BALL_COUNT, TEXELS_PER_BALL, STATE_TEXTURE_WIDTH, ORBIT_Z_SQUASH } from './constants.js';
 
 
 // ──── CONSTANTS ────────────────────────────────────────────────────────────
@@ -10,6 +10,7 @@ import { BALLS, TEXELS_PER_BALL, STATE_TEXTURE_WIDTH, ORBIT_Z_SQUASH } from './c
 
 const FLOATS_PER_TEXEL = 4;
 const FLOATS_PER_BALL = TEXELS_PER_BALL * FLOATS_PER_TEXEL;
+const _ballStateBuffer = new Float32Array(STATE_TEXTURE_WIDTH * FLOATS_PER_TEXEL);
 
 
 // ──── INITIALIZATION ───────────────────────────────────────────────────────
@@ -123,4 +124,18 @@ export function getUniformDefinitions() {
 
 export function applyStateToMaterial(material) {
   material.uniforms.stateTexture.value = _readTarget.texture;
+}
+
+export function getBallStates() {
+  _renderer.readRenderTargetPixels(_readTarget, 0, 0, STATE_TEXTURE_WIDTH, 1, _ballStateBuffer);
+
+  const balls = [];
+  for (let ball = 0; ball < BALL_COUNT; ball++) {
+    const offset = ball * FLOATS_PER_BALL;
+    balls.push({
+      position: new THREE.Vector3(_ballStateBuffer[offset + 0], _ballStateBuffer[offset + 1], _ballStateBuffer[offset + 2]),
+      velocity: new THREE.Vector3(_ballStateBuffer[offset + 4], _ballStateBuffer[offset + 5], _ballStateBuffer[offset + 6]),
+    });
+  }
+  return balls;
 }

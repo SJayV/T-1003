@@ -32,6 +32,12 @@ export const ORBIT_Z_SQUASH = 0.18;
 export const FRAME_TIME_STEP = 0.004;
 
 
+// ──── CAMERA ────────────────────────────────────────────────────────────────
+
+
+export const CAMERA_FOCAL_LENGTH = 1.5;
+
+
 // ──── CLUSTER SHAPES ───────────────────────────────────────────────────────
 
 
