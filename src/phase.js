@@ -5,10 +5,10 @@ import { CLUSTER_SHAPE_VARIANTS } from './constants.js';
 
 
 const LEAD_BURST = 3.0;
-const LEAD_METABALL = -2.0;
 
 const SIGMA_CLUSTER = 0.4;
 const SIGMA_METABALL = 6.0;
+const SIGMA_METABALL_RISE = 0.5;
 const SIGMA_BURST = 0.5;
 
 const HOLD_BURST = LEAD_BURST * SIGMA_BURST;
@@ -37,7 +37,7 @@ let _metaballActivationStart = 0;
 let _burstActivationStart = 0;
 let _bumps = {
   cluster: { mu: 0, sigma: SIGMA_CLUSTER, activated: true },
-  metaball: { mu: -Infinity, sigma: SIGMA_METABALL, activated: false },
+  metaball: { mu: -Infinity, sigma: SIGMA_METABALL, sigmaRise: SIGMA_METABALL_RISE, activated: false },
   burst: { mu: -Infinity, sigma: SIGMA_BURST, activated: false },
 };
 
@@ -95,8 +95,12 @@ function _fireTransition(name) {
 // ──── DISPATCHER ───────────────────────────────────────────────────────────
 
 
+function _riseSigma(bump) {
+  return bump.sigmaRise ?? bump.sigma;
+}
+
 function _activate(bump, currentTime, lead = LEAD_BURST) {
-  bump.mu = currentTime + lead * bump.sigma;
+  bump.mu = currentTime + lead * _riseSigma(bump);
   bump.activated = true;
 }
 
@@ -119,7 +123,7 @@ function _metaballShouldHold(currentTime, gazeDetected) {
 
 function _metaballStart(currentTime) {
   _metaballActivationStart = currentTime;
-  _activate(_bumps.metaball, currentTime, LEAD_METABALL);
+  _activate(_bumps.metaball, currentTime);
   _state = STATE_METABALL;
   _shapeIndex = _pickRandomShapeIndex();
   _fireTransition('metaball');
@@ -193,7 +197,8 @@ function _scheduleTick(currentTime, gazeDetected) {
 
 
 export function computeBumpWeight(bump, currentTime) {
-  return bump.activated ? Math.exp(-((currentTime - bump.mu) ** 2) / (2 * bump.sigma * bump.sigma)) : 0;
+  const sigma = currentTime < bump.mu ? _riseSigma(bump) : bump.sigma;
+  return bump.activated ? Math.exp(-((currentTime - bump.mu) ** 2) / (2 * sigma * sigma)) : 0;
 }
 
 function _computeWeights(currentTime, bumps) {
